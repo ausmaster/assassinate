@@ -1,13 +1,8 @@
 from __future__ import annotations
-import asyncio
-from python.core import MetasploitCore
-from python.async_core import MetasploitCoreAsync
-from python.exceptions import InitializationError, RPCError, ValidationError
-from python.logger import logger
-from python.utils import validate_json
+from assassinate import MetasploitCore
 
 
-class Assassinate:
+class BBOTAssassinate:
     """
     Assassinate API provides both synchronous and asynchronous interaction
     with the Metasploit Core shared library.
@@ -122,4 +117,4 @@ class Assassinate:
             raise
 
 
-__all__ = ["Assassinate"]
+__all__ = ["BBOTAssassinate"]

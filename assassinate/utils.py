@@ -1,13 +1,20 @@
+"""Utility functions for Metasploit Core Python bindings.
+
+This module provides helper functions for JSON validation, deep dictionary merging,
+and pretty-printing JSON outputs.
+"""
+
 from __future__ import annotations
+
 import json
 from typing import Any
 
 
 def validate_json_structure(data: Any, schema: dict) -> bool:
-    """
-    Validate a JSON structure against a schema.
+    """Validate a JSON structure against a schema.
 
-    This function checks if the given JSON-like object matches the expected schema.
+    This function checks if the given JSON-like object
+    matches the expected schema.
 
     :param data: The JSON-like object to validate.
     :type data: Any
@@ -41,8 +48,7 @@ def validate_json_structure(data: Any, schema: dict) -> bool:
 
 
 def load_json(file_path: str) -> dict:
-    """
-    Load JSON data from a file.
+    """Load JSON data from a file.
 
     :param file_path: Path to the JSON file.
     :type file_path: str
@@ -66,8 +72,7 @@ def load_json(file_path: str) -> dict:
 
 
 def save_json(data: dict, file_path: str) -> None:
-    """
-    Save a dictionary as a JSON file.
+    """Save a dictionary as a JSON file.
 
     :param data: The data to save.
     :type data: dict
@@ -89,8 +94,7 @@ def save_json(data: dict, file_path: str) -> None:
 
 
 def deep_merge_dicts(base: dict, updates: dict) -> dict:
-    """
-    Recursively merge two dictionaries.
+    """Recursively merge two dictionaries.
 
     :param base: The base dictionary.
     :type base: dict
@@ -110,7 +114,8 @@ def deep_merge_dicts(base: dict, updates: dict) -> dict:
         {'a': 1, 'b': {'c': 2, 'd': 3}}
 
     .. note::
-        Nested keys will be recursively merged, and non-dictionary keys will be overwritten.
+        Nested keys will be recursively merged, and non-dictionary keys
+        will be overwritten.
     """
     for key, value in updates.items():
         if key in base and isinstance(base[key], dict) and isinstance(value, dict):
@@ -121,8 +126,7 @@ def deep_merge_dicts(base: dict, updates: dict) -> dict:
 
 
 def pretty_print_json(data: dict) -> None:
-    """
-    Print a dictionary in a human-readable JSON format.
+    """Print a dictionary in a human-readable JSON format.
 
     :param data: The dictionary to print.
     :type data: dict

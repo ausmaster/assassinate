@@ -1,24 +1,31 @@
+"""Asynchronous Python bindings for the Metasploit Core library.
+
+This module provides asynchronous versions of the core Metasploit library functions
+using `asyncio` for non-blocking operations.
+"""
+
 from __future__ import annotations
+
 import asyncio
-from core import (
-    msf_init,
-    msf_get_version,
-    msf_list_modules,
-    msf_module_info,
-    msf_run_module,
-    msf_list_sessions,
-    msf_interact_session,
+
+from assassinate.core import (
     msf_close_session,
+    msf_get_version,
+    msf_init,
+    msf_interact_session,
     msf_list_jobs,
-    msf_stop_job,
+    msf_list_modules,
+    msf_list_sessions,
+    msf_module_info,
     msf_payload_generator,
+    msf_run_module,
     msf_shutdown,
+    msf_stop_job,
 )
 
 
 async def async_msf_init() -> bool:
-    """
-    Asynchronously initialize the Metasploit Core library.
+    """Asynchronously initialize the Metasploit Core library.
 
     :return: True if initialization is successful, False otherwise.
     :rtype: bool
@@ -31,8 +38,7 @@ async def async_msf_init() -> bool:
 
 
 async def async_msf_get_version() -> str:
-    """
-    Asynchronously retrieve the version of Metasploit Core.
+    """Asynchronously retrieve the version of Metasploit Core.
 
     :return: The version string of Metasploit Core.
     :rtype: str
@@ -46,8 +52,7 @@ async def async_msf_get_version() -> str:
 
 
 async def async_msf_list_modules(module_type: str) -> list[str]:
-    """
-    Asynchronously list available modules of a specific type.
+    """Asynchronously list available modules of a specific type.
 
     :param module_type: The type of modules to list (e.g., "exploit", "auxiliary").
     :type module_type: str
@@ -63,8 +68,7 @@ async def async_msf_list_modules(module_type: str) -> list[str]:
 
 
 async def async_msf_module_info(module_type: str, module_name: str) -> dict:
-    """
-    Asynchronously get module information.
+    """Asynchronously get module information.
 
     :param module_type: The type of the module.
     :type module_type: str
@@ -81,9 +85,10 @@ async def async_msf_module_info(module_type: str, module_name: str) -> dict:
     return await asyncio.to_thread(msf_module_info, module_type, module_name)
 
 
-async def async_msf_run_module(module_type: str, module_name: str, options: dict) -> bool:
-    """
-    Asynchronously run a module with given options.
+async def async_msf_run_module(
+    module_type: str, module_name: str, options: dict
+) -> bool:
+    """Asynchronously run a module with given options.
 
     :param module_type: The type of the module.
     :type module_type: str
@@ -103,8 +108,7 @@ async def async_msf_run_module(module_type: str, module_name: str, options: dict
 
 
 async def async_msf_list_sessions() -> list[str]:
-    """
-    Asynchronously list active sessions.
+    """Asynchronously list active sessions.
 
     :return: A list of active session identifiers.
     :rtype: list[str]
@@ -115,8 +119,7 @@ async def async_msf_list_sessions() -> list[str]:
 
 
 async def async_msf_interact_session(session_id: str) -> bool:
-    """
-    Asynchronously interact with an active session.
+    """Asynchronously interact with an active session.
 
     :param session_id: The ID of the session to interact with.
     :type session_id: str
@@ -132,8 +135,7 @@ async def async_msf_interact_session(session_id: str) -> bool:
 
 
 async def async_msf_close_session(session_id: str) -> bool:
-    """
-    Asynchronously close an active session.
+    """Asynchronously close an active session.
 
     :param session_id: The ID of the session to close.
     :type session_id: str
@@ -149,8 +151,7 @@ async def async_msf_close_session(session_id: str) -> bool:
 
 
 async def async_msf_list_jobs() -> list[str]:
-    """
-    Asynchronously list active jobs.
+    """Asynchronously list active jobs.
 
     :return: A list of active job identifiers.
     :rtype: list[str]
@@ -161,8 +162,7 @@ async def async_msf_list_jobs() -> list[str]:
 
 
 async def async_msf_stop_job(job_id: str) -> bool:
-    """
-    Asynchronously stop a specific job.
+    """Asynchronously stop a specific job.
 
     :param job_id: The ID of the job to stop.
     :type job_id: str
@@ -178,8 +178,7 @@ async def async_msf_stop_job(job_id: str) -> bool:
 
 
 async def async_msf_payload_generator(options: dict) -> dict:
-    """
-    Asynchronously generate a payload with given options.
+    """Asynchronously generate a payload with given options.
 
     :param options: A dictionary containing payload options.
     :type options: dict
@@ -193,8 +192,7 @@ async def async_msf_payload_generator(options: dict) -> dict:
 
 
 async def async_msf_shutdown() -> None:
-    """
-    Asynchronously shutdown the Metasploit Core library.
+    """Asynchronously shutdown the Metasploit Core library.
 
     .. warning::
         This will clean up resources and disable further library usage.

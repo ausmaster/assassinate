@@ -1,6 +1,5 @@
 # General dependencies
-flake8
-black
+ruff
 mypy
 
 # Testing dependencies

@@ -1,13 +1,19 @@
+"""Synchronous Python bindings for the Metasploit Core library.
+
+This module provides synchronous versions of the core Metasploit library functions,
+allowing direct and immediate interaction with the Metasploit Core.
+"""
+
 from __future__ import annotations
-from ctypes import cdll, c_char_p, c_bool
+
+from ctypes import c_bool, c_char_p, cdll
 
 # Load the shared library
 lib = cdll.LoadLibrary("./libmetasploit_core.so")
 
 
 def msf_init() -> bool:
-    """
-    Initialize the Metasploit Core library.
+    """Initialize the Metasploit Core library.
 
     :return: True if initialization is successful, False otherwise.
     :rtype: bool
@@ -21,8 +27,7 @@ def msf_init() -> bool:
 
 
 def msf_get_version() -> str:
-    """
-    Retrieve the version of Metasploit Core.
+    """Retrieve the version of Metasploit Core.
 
     :return: The version string of Metasploit Core.
     :rtype: str
@@ -37,10 +42,10 @@ def msf_get_version() -> str:
 
 
 def msf_list_modules(module_type: str) -> list[str]:
-    """
-    List available modules of a specific type.
+    """List available modules of a specific type.
 
-    :param module_type: The type of modules to list (e.g., "exploit", "auxiliary").
+    :param module_type: The type of modules to list
+    (e.g., "exploit", "auxiliary").
     :type module_type: str
 
     :return: A list of available module names.
@@ -51,12 +56,13 @@ def msf_list_modules(module_type: str) -> list[str]:
     .. seealso:: :func:`msf_module_info`
     """
     lib.rb_msf_list_modules.restype = c_char_p
-    return lib.rb_msf_list_modules(module_type.encode("utf-8")).decode("utf-8").split(",")
+    return (
+        lib.rb_msf_list_modules(module_type.encode("utf-8")).decode("utf-8").split(",")
+    )
 
 
 def msf_module_info(module_type: str, module_name: str) -> dict:
-    """
-    Get module information.
+    """Get module information.
 
     :param module_type: The type of the module.
     :type module_type: str
@@ -74,12 +80,11 @@ def msf_module_info(module_type: str, module_name: str) -> dict:
     info = lib.rb_msf_module_info(
         module_type.encode("utf-8"), module_name.encode("utf-8")
     ).decode("utf-8")
-    return eval(info)  # Assuming JSON-like string
+    return eval(info)
 
 
 def msf_run_module(module_type: str, module_name: str, options: dict) -> bool:
-    """
-    Run a module with given options.
+    """Run a module with given options.
 
     :param module_type: The type of the module.
     :type module_type: str
@@ -104,8 +109,7 @@ def msf_run_module(module_type: str, module_name: str, options: dict) -> bool:
 
 
 def msf_list_sessions() -> list[str]:
-    """
-    List active sessions.
+    """List active sessions.
 
     :return: A list of active session identifiers.
     :rtype: list[str]
@@ -117,8 +121,7 @@ def msf_list_sessions() -> list[str]:
 
 
 def msf_interact_session(session_id: str) -> bool:
-    """
-    Interact with an active session.
+    """Interact with an active session.
 
     :param session_id: The ID of the session to interact with.
     :type session_id: str
@@ -135,8 +138,7 @@ def msf_interact_session(session_id: str) -> bool:
 
 
 def msf_close_session(session_id: str) -> bool:
-    """
-    Close an active session.
+    """Close an active session.
 
     :param session_id: The ID of the session to close.
     :type session_id: str
@@ -153,8 +155,7 @@ def msf_close_session(session_id: str) -> bool:
 
 
 def msf_list_jobs() -> list[str]:
-    """
-    List active jobs.
+    """List active jobs.
 
     :return: A list of active job identifiers.
     :rtype: list[str]
@@ -166,8 +167,7 @@ def msf_list_jobs() -> list[str]:
 
 
 def msf_stop_job(job_id: str) -> bool:
-    """
-    Stop a specific job.
+    """Stop a specific job.
 
     :param job_id: The ID of the job to stop.
     :type job_id: str
@@ -184,8 +184,7 @@ def msf_stop_job(job_id: str) -> bool:
 
 
 def msf_payload_generator(options: dict) -> dict:
-    """
-    Generate a payload with given options.
+    """Generate a payload with given options.
 
     :param options: A dictionary containing payload options.
     :type options: dict
@@ -208,10 +207,8 @@ def msf_payload_generator(options: dict) -> dict:
     return eval(payload)  # Assuming JSON-like string
 
 
-
 def msf_shutdown() -> None:
-    """
-    Shutdown the Metasploit Core library.
+    """Shutdown the Metasploit Core library.
 
     .. warning::
         This will clean up resources and disable further library usage.

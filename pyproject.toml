@@ -1,0 +1,35 @@
+[tool.ruff]
+line-length = 88   # Matches Black's default; change to 79 if preferred
+target-version = "py311"
+
+# Enable linting and formatting
+lint.extend-select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "W",  # warnings
+    "I",  # isort (import sorting)
+    "D"   # pydocstyle (docstring style)
+]
+
+# Ignore specific rules (if needed)
+lint.ignore = [
+    "D203",  # One-blank-line-before-class
+    "D213"   # Multi-line-summary-second-line
+]
+
+# Exclude directories
+exclude = [
+    "__pycache__",
+    ".git",
+    ".github",
+    "venv",
+    "build",
+    "dist"
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = false
+explicit_package_bases = true
+mypy_path = ["./assassinate"]
