@@ -1,0 +1,113 @@
+# 🛠️ Build Artifacts
+*.o
+*.so
+*.dll
+*.a
+*.lib
+*.exe
+
+# 📂 C and Build Files
+metasploit_core/metasploit_core.so
+metasploit_core/Makefile
+
+# 📦 Python Compiled Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 🧪 Testing Artifacts
+*.coverage
+coverage.xml
+htmlcov/
+pytest_cache/
+nose2-*.xml
+test-results/
+
+# 📝 Logs and Temporary Files
+*.log
+*.tmp
+*.swp
+*.bak
+.DS_Store
+Thumbs.db
+
+# 📊 Documentation Builds
+/build/
+/dist/
+/docs/_build/
+/docs/build/
+
+# 🔐 Sensitive Data
+.env
+*.key
+*.pem
+secrets.yaml
+
+# 🚀 Dependency Files
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 📄 IDE and Editor Specific
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+workspace.xml
+tasks.xml
+*.pydevproject
+.idea_modules/
+jetbrains/
+
+# 🚚 Distribution Files
+*.tar.gz
+*.zip
+*.egg
+*.egg-info
+build/
+dist/
+.eggs/
+wheelhouse/
+
+# 📋 Project Configurations
+*.config
+config.yaml
+bbot/config.yaml
+
+# 🔑 Security
+.metasp*.secret
+
+# 🗑️ Ignore root-level README copies
+README_backup.md
+README_temp.md
+
+# 🚀 CI/CD Cache
+.gitlab-ci.yml.lock
+
+# 🚧 Temporary User Files
+*.orig
+*.rej
+
+# ⚙️ Virtual Environments
+env/
+venv/
+ENV/
+
+# 📂 PyCharm Specific
+*.sqlite
+*.db
+scratches/
+logs/
+tmp/
+*.pid
+*.seed
+
+# 🧩 Miscellaneous
+node_modules/
+coverage/
+cache/
+thumbs.db
+*.sublime-project
+*.sublime-workspace

@@ -1,0 +1,58 @@
+## Doxyfile Configuration for Metasploit Core Documentation
+
+# General Project Information
+PROJECT_NAME           = "Metasploit Core C Wrapper"
+PROJECT_NUMBER         = "1.0"
+PROJECT_BRIEF          = "Core C FFI Wrapper for Metasploit Framework"
+OUTPUT_DIRECTORY       = docs
+CREATE_SUBDIRS         = YES
+
+# Source Code Documentation
+INPUT                  = metasploit_core.c
+FILE_PATTERNS          = *.c *.h
+RECURSIVE              = NO
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+
+# Documentation Output Formats
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+
+# Source Browser
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = YES
+
+# Index Generation
+GENERATE_INDEX         = YES
+
+# Warnings
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+
+# Additional Settings
+GENERATE_TREEVIEW      = YES
+
+# External Tools
+DOT_FONTNAME           = Helvetica
+DOT_FONTSIZE           = 10
+HAVE_DOT              = YES
+DOT_GRAPH_MAX_NODES   = 50
+MAX_DOT_GRAPH_DEPTH   = 0
+
+# Markdown Support
+MARKDOWN_SUPPORT       = YES
+
+# Documentation Examples
+EXAMPLE_PATH           = ./examples
+
+# Logging
+WARN_LOGFILE           = docs/doxygen_warnings.log
+
+# Deployment Settings (Optional for GitHub Pages)
+GENERATE_XML           = NO
+GENERATE_JSON          = NO
