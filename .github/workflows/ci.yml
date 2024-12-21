@@ -39,8 +39,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Install Build Tools
-        run: sudo apt-get install -y build-essential
+      - name: Install Build Tools and Ruby Development Headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ruby-dev libruby-dev
+
+      - name: Verify Ruby Installation
+        run: |
+          ruby --version
+          gem --version
+          ls /usr/include/ruby*
 
       - name: Build C Library
         run: make
