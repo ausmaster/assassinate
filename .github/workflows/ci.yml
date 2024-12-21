@@ -42,7 +42,9 @@ jobs:
       - name: Install Build Tools and Ruby Development Headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ruby-dev libruby-dev
+          sudo apt-get install -y build-essential ruby-full
+          RUBY_VERSION=$(ruby -e 'puts RUBY_VERSION.split(".")[0..1].join(".")')
+          sudo apt-get install -y libruby${RUBY_VERSION}-dev
 
       - name: Verify Ruby Installation
         run: |
@@ -51,6 +53,8 @@ jobs:
           ls /usr/include/ruby*
 
       - name: Build C Library
+        env:
+          CFLAGS: "-I/usr/include/ruby-${RUBY_VERSION} -I/usr/include/x86_64-linux-gnu/ruby-${RUBY_VERSION}"
         run: make
 
       - name: Verify Shared Library
