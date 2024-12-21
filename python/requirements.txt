@@ -1,0 +1,10 @@
+# General dependencies
+flake8
+black
+mypy
+
+# Testing dependencies
+pytest
+
+# Documentation dependencies
+sphinx
