@@ -1,11 +1,19 @@
+"""Logging configuration for Metasploit Core Python bindings.
+
+This module provides logger setup, configuration, and management utilities
+to ensure consistent logging across the Python codebase.
+"""
+
 from __future__ import annotations
+
 import logging
 from typing import Optional
 
 
-def setup_logger(name: str, level: int = logging.INFO, file: Optional[str] = None) -> logging.Logger:
-    """
-    Set up a logger for the application.
+def setup_logger(
+    name: str, level: int = logging.INFO, file: Optional[str] = None
+) -> logging.Logger:
+    """Set up a logger for the application.
 
     This function initializes a logger with a specific name and log level.
     Optionally, logs can also be written to a file.
@@ -56,8 +64,7 @@ def setup_logger(name: str, level: int = logging.INFO, file: Optional[str] = Non
 
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    Retrieve an existing logger by name.
+    """Retrieve an existing logger by name.
 
     :param name: The name of the logger.
     :type name: str
@@ -77,12 +84,12 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def set_logger_level(logger: logging.Logger, level: int) -> None:
-    """
-    Set the logging level for an existing logger.
+    """Set the logging level for an existing logger.
 
     :param logger: The logger instance.
     :type logger: logging.Logger
-    :param level: The desired logging level (e.g., logging.DEBUG, logging.INFO).
+    :param level: The desired logging level
+    (e.g., logging.DEBUG, logging.INFO).
     :type level: int
 
     :Example:

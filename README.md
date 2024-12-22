@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-FF8400)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-GPLv3-FF8400.svg)](https://github.com/ausmaster/assassinate/blob/main/LICENSE)
-[![Tests](https://github.com/ausmaster/assassinate/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ausmaster/assassinate/actions?query=workflow%3A"tests")
+[![Tests](https://github.com/ausmaster/assassinate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ausmaster/assassinate/actions?query=workflow%3A"CI%3APipeline")
 [![Codecov](https://codecov.io/gh/ausmaster/assassinate/branch/main/graph/badge.svg?token=TOKEN)](https://codecov.io/gh/ausmaster/assassinate)
 [![Discord](https://img.shields.io/discord/859164869970362439)](https://discord.com/invite/PZqkgxu5SA)
 
