@@ -1,23 +1,48 @@
-from __future__ import annotations
-from assassinate import MetasploitCore
+"""
+BBOTAssassinate module provides an API for interacting with the Metasploit Core
+shared library.
+It supports synchronous and asynchronous operations, allowing users to manage
+modules, sessions,
+jobs, and payloads. The functionality is designed to streamline interaction with
+Metasploit
+through a well-defined Python interface.
+"""
 
+from __future__ import annotations
+
+from assassinate.core import (
+    msf_init,
+    msf_get_version,
+    msf_list_modules,
+    msf_module_info,
+    msf_run_module,
+    msf_list_sessions,
+    msf_interact_session,
+    msf_close_session,
+    msf_list_jobs,
+    msf_stop_job,
+    msf_payload_generator,
+    msf_shutdown
+)
+from assassinate.exceptions import InitializationError, ValidationError
+from assassinate.logger import setup_logger
+from assassinate.utils import validate_json_structure
+
+logger = setup_logger("BBOTAssassinate")
 
 class BBOTAssassinate:
     """
-    Assassinate API provides both synchronous and asynchronous interaction
+    BBOTAssassinate API provides both synchronous and asynchronous interaction
     with the Metasploit Core shared library.
     """
-
-    def __init__(self, shared_library_path: str = "./metasploit_core.so") -> None:
+    def __init__(self) -> None:
         """
         Initialize both synchronous and asynchronous APIs.
-
-        :param shared_library_path: Path to the Metasploit Core shared library.
         """
         try:
-            self.core = MetasploitCore(shared_library_path)
-            self.async_core = MetasploitCoreAsync(shared_library_path)
-            logger.info("Successfully initialized Assassinate interface.")
+            if not msf_init():
+                raise InitializationError("Failed to initialize Metasploit Core library.")
+            logger.info("Successfully initialized BBOTAssassinate interface.")
         except InitializationError as e:
             logger.error(f"Initialization failed: {e}")
             raise
@@ -25,96 +50,111 @@ class BBOTAssassinate:
     def get_version(self) -> str:
         """
         Retrieve the Metasploit version.
-
         :return: Version string.
         """
-        try:
-            version = self.core.get_version()
-            logger.info(f"Metasploit version: {version}")
-            return version
-        except RPCError as e:
-            logger.error(f"Failed to fetch version: {e}")
-            raise
+        version = msf_get_version()
+        logger.info(f"Metasploit version: {version}")
+        return version
 
     def list_modules(self, module_type: str) -> list:
         """
         List available modules.
-
         :param module_type: Module type (e.g., 'exploit', 'payload').
         :return: List of modules.
         """
-        try:
-            modules = self.core.list_modules(module_type)
-            logger.info(f"Retrieved {len(modules)} modules of type '{module_type}'.")
-            return modules
-        except RPCError as e:
-            logger.error(f"Failed to list modules: {e}")
-            raise
+        modules = msf_list_modules(module_type)
+        logger.info(f"Retrieved {len(modules)} modules of type '{module_type}'.")
+        return modules
+
+    def module_info(self, module_type: str, module_name: str) -> dict:
+        """
+        Retrieve module information.
+        :param module_type: Module type.
+        :param module_name: Module name.
+        :return: Module details as a dictionary.
+        """
+        info = msf_module_info(module_type, module_name)
+        logger.info(f"Retrieved module info for '{module_name}'.")
+        return info
 
     def run_module(self, module_type: str, module_name: str, options: dict) -> bool:
         """
-        Run a module.
-
+        Run a module with given options.
         :param module_type: Module type.
         :param module_name: Module name.
         :param options: Module options.
         :return: True if execution is successful.
         """
-        try:
-            validate_json(str(options))
-            result = self.core.run_module(module_type, module_name, options)
-            logger.info(f"Module '{module_name}' executed successfully.")
-            return result
-        except (RPCError, ValidationError) as e:
-            logger.error(f"Failed to run module: {e}")
-            raise
+        schema = {"module_type": str, "module_name": str, "options": dict}
+        if not validate_json_structure({"module_type": module_type, "module_name": module_name, "options": options}, schema):
+            raise ValidationError("Invalid module configuration.")
+        result = msf_run_module(module_type, module_name, options)
+        logger.info(f"Module '{module_name}' executed successfully.")
+        return result
 
-    async def async_get_version(self) -> str:
+    def list_sessions(self) -> list:
         """
-        Asynchronously retrieve the Metasploit version.
-
-        :return: Version string.
+        List active sessions.
+        :return: List of active session identifiers.
         """
-        try:
-            version = await self.async_core.get_version()
-            logger.info(f"Async Metasploit version: {version}")
-            return version
-        except RPCError as e:
-            logger.error(f"Async failed to fetch version: {e}")
-            raise
+        sessions = msf_list_sessions()
+        logger.info(f"Retrieved {len(sessions)} active sessions.")
+        return sessions
 
-    async def async_list_modules(self, module_type: str) -> list:
+    def interact_session(self, session_id: str) -> bool:
         """
-        Asynchronously list available modules.
-
-        :param module_type: Module type.
-        :return: List of modules.
+        Interact with an active session.
+        :param session_id: The ID of the session to interact with.
+        :return: True if interaction is successful.
         """
-        try:
-            modules = await self.async_core.list_modules(module_type)
-            logger.info(f"Async retrieved {len(modules)} modules of type '{module_type}'.")
-            return modules
-        except RPCError as e:
-            logger.error(f"Async failed to list modules: {e}")
-            raise
+        result = msf_interact_session(session_id)
+        logger.info(f"Interacted with session '{session_id}'.")
+        return result
 
-    async def async_run_module(self, module_type: str, module_name: str, options: dict) -> bool:
+    def close_session(self, session_id: str) -> bool:
         """
-        Asynchronously run a module.
-
-        :param module_type: Module type.
-        :param module_name: Module name.
-        :param options: Module options.
-        :return: True if execution is successful.
+        Close an active session.
+        :param session_id: The ID of the session to close.
+        :return: True if the session was closed successfully.
         """
-        try:
-            validate_json(str(options))
-            result = await self.async_core.run_module(module_type, module_name, options)
-            logger.info(f"Async module '{module_name}' executed successfully.")
-            return result
-        except (RPCError, ValidationError) as e:
-            logger.error(f"Async failed to run module: {e}")
-            raise
+        result = msf_close_session(session_id)
+        logger.info(f"Closed session '{session_id}'.")
+        return result
 
+    def list_jobs(self) -> list:
+        """
+        List active jobs.
+        :return: List of active job identifiers.
+        """
+        jobs = msf_list_jobs()
+        logger.info(f"Retrieved {len(jobs)} active jobs.")
+        return jobs
+
+    def stop_job(self, job_id: str) -> bool:
+        """
+        Stop a specific job.
+        :param job_id: The ID of the job to stop.
+        :return: True if the job was stopped successfully.
+        """
+        result = msf_stop_job(job_id)
+        logger.info(f"Stopped job '{job_id}'.")
+        return result
+
+    def payload_generator(self, options: dict) -> dict:
+        """
+        Generate a payload with given options.
+        :param options: Dictionary containing payload options.
+        :return: Dictionary containing payload details.
+        """
+        payload = msf_payload_generator(options)
+        logger.info(f"Generated payload with options: {options}.")
+        return payload
+
+    def shutdown(self) -> None:
+        """
+        Shutdown the Metasploit Core library.
+        """
+        msf_shutdown()
+        logger.info("Metasploit Core library shutdown successfully.")
 
 __all__ = ["BBOTAssassinate"]

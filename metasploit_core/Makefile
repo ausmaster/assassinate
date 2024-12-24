@@ -2,8 +2,8 @@
 
 CC = gcc
 CFLAGS = -Wall -fPIC -shared -O2 -g
-RUBY_CFLAGS = $(shell pkg-config --cflags ruby-3.2 || ruby -rrbconfig -e 'print RbConfig::CONFIG["CFLAGS"]')
-RUBY_LDFLAGS = $(shell pkg-config --libs ruby-3.2 || ruby -rrbconfig -e 'print RbConfig::CONFIG["LDFLAGS"]')
+RUBY_CFLAGS = -I/usr/include
+RUBY_LDFLAGS = -L/usr/lib64 -lruby -lm -lpthread
 
 TARGET = metasploit_core.so
 SRC = metasploit_core.c

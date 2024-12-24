@@ -111,3 +111,4 @@ cache/
 thumbs.db
 *.sublime-project
 *.sublime-workspace
+/metasploit-framework/

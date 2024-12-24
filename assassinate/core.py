@@ -6,10 +6,16 @@ allowing direct and immediate interaction with the Metasploit Core.
 
 from __future__ import annotations
 
-from ctypes import c_bool, c_char_p, cdll
+from ctypes import c_bool, c_char_p, CDLL
+import os
 
-# Load the shared library
-lib = cdll.LoadLibrary("./libmetasploit_core.so")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LIB_PATH = os.path.join(BASE_DIR, "../metasploit_core/libmetasploit_core.so")
+
+try:
+    metasploit_core = CDLL(LIB_PATH)
+except OSError as e:
+    raise RuntimeError(f"Failed to load shared library at {LIB_PATH}: {e}")
 
 
 def msf_init() -> bool:
