@@ -1,0 +1,19 @@
+[package]
+name = "metasploit_python_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+magnus = { version = "0.5", features = ["embed"] }  # Ruby bindings
+lazy_static = "1.4"
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "pyo3"
