@@ -14,8 +14,37 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Installation Script
-        run: bash scripts/install/ubuntu.sh
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            libssl-dev \
+            pkg-config \
+            libclang-dev \
+            libpcap-dev \
+            ruby-full \
+            ruby-dev
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Clone Metasploit Framework
+        run: |
+          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git ~/metasploit-framework
+
+      - name: Install MSF Dependencies
+        run: |
+          cd ~/metasploit-framework
+          sudo gem install bundler
+          bundle install
+
+      - name: Build Rust Bridge
+        working-directory: assassinate_bridge
+        run: cargo build --release
 
       - name: Verify Rust Bridge Build
         run: |
@@ -24,7 +53,9 @@ jobs:
 
       - name: Run Rust Tests
         working-directory: assassinate_bridge
-        run: cargo test --release --lib
+        run: |
+          export MSF_ROOT="$HOME/metasploit-framework"
+          cargo test --release --lib
 
       - name: Upload Test Results
         if: always()
