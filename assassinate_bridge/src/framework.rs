@@ -20,8 +20,10 @@ pub struct Framework {
 
 #[cfg_attr(feature = "python-bindings", pymethods)]
 impl Framework {
-    #[cfg_attr(feature = "python-bindings", new)]
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (options=None)))]
+    #[cfg(feature = "python-bindings")]
+    #[new]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (options=None))]
     pub fn new(options: Option<HashMap<String, String>>) -> Result<Self> {
         let opts_json = options.and_then(|o| serde_json::to_value(o).ok());
 
@@ -37,7 +39,8 @@ impl Framework {
     }
 
     /// List all module reference names for a given type
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (module_type)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (module_type))]
     pub fn list_modules(&self, module_type: &str) -> Result<Vec<String>> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
@@ -58,7 +61,8 @@ impl Framework {
     }
 
     /// Create a module instance by name
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (module_name)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (module_name))]
     pub fn create_module(&self, module_name: &str) -> Result<Module> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
@@ -146,7 +150,8 @@ impl Module {
     }
 
     /// Set a datastore option
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key, value)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (key, value))]
     pub fn set_option(&self, key: &str, value: &str) -> Result<()> {
         let datastore = self.datastore()?;
         datastore.set(key, value)?;
@@ -154,7 +159,8 @@ impl Module {
     }
 
     /// Get a datastore option
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (key))]
     pub fn get_option(&self, key: &str) -> Result<Option<String>> {
         let datastore = self.datastore()?;
         datastore.get(key)
@@ -166,13 +172,14 @@ impl Module {
 
         match result {
             Ok(_) => Ok(true),
-            Err(e) => Err(AssassinateError::ModuleValidationError(e.to_string()).into()),
+            Err(e) => Err(AssassinateError::ModuleValidationError(e.to_string())),
         }
     }
 
     /// Run an exploit module
     /// Returns the session ID if successful, None otherwise
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload, **options)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (payload, **options))]
     pub fn exploit(
         &self,
         payload: &str,
@@ -223,7 +230,8 @@ impl Module {
 
     /// Run an auxiliary module
     /// Returns true if successful, false otherwise
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (**options)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (**options))]
     pub fn run(&self, options: Option<HashMap<String, String>>) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -328,7 +336,8 @@ pub struct DataStore {
 #[cfg_attr(feature = "python-bindings", pymethods)]
 impl DataStore {
     /// Set a value in the datastore
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key, value)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (key, value))]
     pub fn set(&self, key: &str, value: &str) -> Result<()> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
         let value_val = crate::ruby_bridge::get_ruby()?.str_new(value).as_value();
@@ -339,7 +348,8 @@ impl DataStore {
     }
 
     /// Get a value from the datastore
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (key))]
     pub fn get(&self, key: &str) -> Result<Option<String>> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
 
@@ -393,7 +403,8 @@ impl SessionManager {
     }
 
     /// Get a session by ID
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (session_id)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (session_id))]
     pub fn get(&self, session_id: i64) -> Result<Option<Session>> {
         let id_val = crate::ruby_bridge::get_ruby()?
             .eval::<Value>(&format!("{}", session_id))
@@ -454,7 +465,8 @@ impl Session {
     }
 
     /// Write data to the session
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (data)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (data))]
     pub fn write(&self, data: &str) -> Result<usize> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
@@ -468,7 +480,8 @@ impl Session {
     }
 
     /// Read data from the session
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (length=None)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (length=None))]
     pub fn read(&self, length: Option<usize>) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -489,7 +502,8 @@ impl Session {
     }
 
     /// Execute a command in the session (shell command)
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (command)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (command))]
     pub fn execute(&self, command: &str) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -505,7 +519,8 @@ impl Session {
     }
 
     /// Run a Meterpreter command (if it's a meterpreter session)
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (command)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (command))]
     pub fn run_cmd(&self, command: &str) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let cmd_val = ruby.str_new(command).as_value();
@@ -556,7 +571,8 @@ pub struct PayloadGenerator {
 
 #[cfg_attr(feature = "python-bindings", pymethods)]
 impl PayloadGenerator {
-    #[cfg_attr(feature = "python-bindings", new)]
+    #[cfg(feature = "python-bindings")]
+    #[new]
     pub fn new(framework: &Framework) -> Result<Self> {
         Ok(PayloadGenerator {
             ruby_framework: framework.ruby_framework,
@@ -564,7 +580,8 @@ impl PayloadGenerator {
     }
 
     /// Generate a payload
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload_name, **options)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (payload_name, **options))]
     pub fn generate(
         &self,
         payload_name: &str,
@@ -581,8 +598,7 @@ impl PayloadGenerator {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
-            ))
-            .into());
+            )));
         }
 
         // Set options
@@ -610,7 +626,8 @@ impl PayloadGenerator {
     }
 
     /// Generate a payload and encode it
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload_name, encoder=None, iterations=1, **options)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (payload_name, encoder=None, iterations=1, **options))]
     pub fn generate_encoded(
         &self,
         payload_name: &str,
@@ -629,8 +646,7 @@ impl PayloadGenerator {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
-            ))
-            .into());
+            )));
         }
 
         // Get datastore
@@ -690,7 +706,8 @@ impl PayloadGenerator {
     }
 
     /// Generate a standalone executable payload
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload_name, platform, arch, **options)))]
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (payload_name, platform, arch, **options))]
     pub fn generate_executable(
         &self,
         payload_name: &str,
@@ -709,8 +726,7 @@ impl PayloadGenerator {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
-            ))
-            .into());
+            )));
         }
 
         // Get datastore
@@ -764,8 +780,7 @@ impl PayloadGenerator {
         if is_nil(exe) {
             return Err(AssassinateError::PayloadError(
                 "Failed to generate executable".to_string(),
-            )
-            .into());
+            ));
         }
 
         // Convert Ruby string to bytes

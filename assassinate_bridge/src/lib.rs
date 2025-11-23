@@ -57,7 +57,7 @@ mod python_bindings {
     #[pyfunction]
     fn get_version() -> PyResult<String> {
         let framework = Framework::new(None)?;
-        framework.version()
+        Ok(framework.version()?)
     }
 
     /// Python module definition
@@ -84,7 +84,3 @@ mod python_bindings {
         Ok(())
     }
 }
-
-// Re-export the Python module when the feature is enabled
-#[cfg(feature = "python-bindings")]
-pub use python_bindings::assassinate_bridge;
