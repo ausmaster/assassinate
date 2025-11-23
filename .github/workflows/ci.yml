@@ -93,7 +93,7 @@ jobs:
 
       - name: Run Integration Tests
         working-directory: ./assassinate_bridge
-        run: cargo test --verbose --release
+        run: cargo test --verbose --release --lib
         env:
           RUST_BACKTRACE: full
 
