@@ -42,6 +42,12 @@ jobs:
           sudo gem install bundler
           bundle install
 
+      - name: Setup PostgreSQL
+        run: |
+          sudo systemctl start postgresql || sudo pg_ctlcluster 16 main start || true
+          sudo -u postgres createuser -s $USER || true
+          sudo -u postgres createdb -O $USER msf_test || true
+
       - name: Build Rust Bridge
         working-directory: assassinate_bridge
         run: cargo build --release
@@ -51,8 +57,18 @@ jobs:
           cd assassinate_bridge
           ls -lh target/release/libassassinate_bridge.*
 
-      - name: Run Rust Tests
+      - name: Run Rust Bridge Tests
         working-directory: assassinate_bridge
         run: |
           export MSF_ROOT="$HOME/metasploit-framework"
           cargo test --release --lib
+
+      - name: Run MSF Framework Test Suite
+        working-directory: ~/metasploit-framework
+        run: |
+          export MSF_ROOT="$HOME/metasploit-framework"
+          bundle exec rspec spec/lib/msf/core/ \
+            --require ../assassinate/assassinate_bridge/spec/bridge_spec_helper_minimal.rb \
+            --format progress \
+            --format documentation \
+            --out test_results.txt
