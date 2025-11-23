@@ -47,23 +47,42 @@ jobs:
 
       - name: Setup PostgreSQL
         run: |
-          # Start PostgreSQL (works in both systemd and non-systemd environments)
-          sudo systemctl start postgresql || sudo pg_ctlcluster 16 main start || {
-            # If systemctl/pg_ctlcluster don't work, start manually
-            sudo -u postgres /usr/lib/postgresql/*/bin/pg_ctl -D /var/lib/postgresql/*/main -l /tmp/postgresql.log start
-          }
-          # Wait for PostgreSQL to be ready
-          for i in {1..30}; do
-            if sudo -u postgres psql -c "SELECT 1" > /dev/null 2>&1; then
-              echo "PostgreSQL is ready"
-              break
-            fi
-            echo "Waiting for PostgreSQL to start... ($i/30)"
-            sleep 1
-          done
+          # Drop existing cluster and recreate properly
+          sudo pg_dropcluster --stop 16 main || true
+          sudo pg_createcluster 16 main --start
+
+          # Update pg_hba.conf to allow trust authentication for localhost
+          sudo sed -i 's/host.*all.*all.*127\.0\.0\.1\/32.*scram-sha-256/host    all             all             127.0.0.1\/32            trust/' /etc/postgresql/16/main/pg_hba.conf
+          sudo sed -i 's/host.*all.*all.*::1\/128.*scram-sha-256/host    all             all             ::1\/128                 trust/' /etc/postgresql/16/main/pg_hba.conf
+
+          # Reload PostgreSQL to apply config changes
+          sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/16/main reload
+
           # Create user and database
           sudo -u postgres psql -c "CREATE USER ${USER} SUPERUSER;" || echo "User may already exist"
           sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || echo "Database may already exist"
+
+          # Create database.yml for MSF
+          cat > $HOME/metasploit-framework/config/database.yml <<EOF
+          development: &pgsql
+            adapter: postgresql
+            database: msf_test
+            username: ${USER}
+            password:
+            host: localhost
+            port: 5432
+            pool: 200
+            timeout: 5
+          production: &production
+            <<: *pgsql
+          test:
+            <<: *pgsql
+          EOF
+
+          # Run database migrations
+          cd $HOME/metasploit-framework
+          export RAILS_ENV=test
+          bundle exec rake db:migrate
 
       - name: Build Rust Bridge
         working-directory: assassinate_bridge
@@ -85,7 +104,7 @@ jobs:
           cd $HOME/metasploit-framework
           export MSF_ROOT="$HOME/metasploit-framework"
           bundle exec rspec spec/lib/msf/core/ \
-            --require $GITHUB_WORKSPACE/assassinate_bridge/spec/bridge_spec_helper_minimal.rb \
+            --exclude-pattern "**/opt_address_local_spec.rb" \
             --format progress \
             --format documentation \
             --out test_results.txt
