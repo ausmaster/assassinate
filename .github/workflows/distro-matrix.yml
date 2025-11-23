@@ -56,13 +56,3 @@ jobs:
         run: |
           export MSF_ROOT="$HOME/metasploit-framework"
           cargo test --release --lib
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ubuntu-test-results
-          path: |
-            assassinate_bridge/target/release/*.so
-            assassinate_bridge/target/release/*.rlib
-          retention-days: 7
