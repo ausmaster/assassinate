@@ -1,20 +1,30 @@
-use crate::error::AssassinateError;
+//! Framework types and operations for Metasploit Framework interaction
+
+use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, create_framework, is_nil, value_to_string};
 use magnus::{value::ReprValue, TryConvert, Value};
-use pyo3::prelude::*;
 use std::collections::HashMap;
 
-#[pyclass(unsendable)]
+// Only import PyO3 types when python-bindings feature is enabled
+#[cfg(feature = "python-bindings")]
+use pyo3::prelude::*;
+
+/// Core Metasploit Framework interface
+///
+/// This type provides access to the Metasploit Framework functionality through Ruby FFI.
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct Framework {
     pub(crate) ruby_framework: Value,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python-bindings", pymethods)]
 impl Framework {
+    #[cfg(feature = "python-bindings")]
     #[new]
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (options=None))]
-    pub fn new(options: Option<HashMap<String, String>>) -> PyResult<Self> {
+    pub fn new(options: Option<HashMap<String, String>>) -> Result<Self> {
         let opts_json = options.and_then(|o| serde_json::to_value(o).ok());
 
         let ruby_framework = create_framework(opts_json)?;
@@ -23,14 +33,15 @@ impl Framework {
     }
 
     /// Get the Metasploit Framework version
-    pub fn version(&self) -> PyResult<String> {
+    pub fn version(&self) -> Result<String> {
         let version_val = call_method(self.ruby_framework, "version", &[])?;
         Ok(value_to_string(version_val)?)
     }
 
     /// List all module reference names for a given type
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (module_type))]
-    pub fn list_modules(&self, module_type: &str) -> PyResult<Vec<String>> {
+    pub fn list_modules(&self, module_type: &str) -> Result<Vec<String>> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
         let module_set = call_method(modules_manager, module_type, &[])?;
@@ -50,8 +61,9 @@ impl Framework {
     }
 
     /// Create a module instance by name
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (module_name))]
-    pub fn create_module(&self, module_name: &str) -> PyResult<Module> {
+    pub fn create_module(&self, module_name: &str) -> Result<Module> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
         let name_val = crate::ruby_bridge::get_ruby()?
@@ -62,7 +74,7 @@ impl Framework {
 
         // Check if module is nil
         if is_nil(module_instance) {
-            return Err(AssassinateError::ModuleNotFound(module_name.to_string()).into());
+            return Err(AssassinateError::ModuleNotFound(module_name.to_string()));
         }
 
         Ok(Module {
@@ -71,7 +83,7 @@ impl Framework {
     }
 
     /// Get the sessions manager
-    pub fn sessions(&self) -> PyResult<SessionManager> {
+    pub fn sessions(&self) -> Result<SessionManager> {
         let sessions_val = call_method(self.ruby_framework, "sessions", &[])?;
 
         Ok(SessionManager {
@@ -80,7 +92,7 @@ impl Framework {
     }
 
     /// Get the datastore
-    pub fn datastore(&self) -> PyResult<DataStore> {
+    pub fn datastore(&self) -> Result<DataStore> {
         let datastore_val = call_method(self.ruby_framework, "datastore", &[])?;
 
         Ok(DataStore {
@@ -88,45 +100,48 @@ impl Framework {
         })
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
+    #[cfg(feature = "python-bindings")]
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<Framework version={}>", self.version()?))
     }
 }
 
-#[pyclass(unsendable)]
+/// Metasploit module instance
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct Module {
     pub(crate) ruby_module: Value,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python-bindings", pymethods)]
 impl Module {
     /// Get module name
-    pub fn name(&self) -> PyResult<String> {
+    pub fn name(&self) -> Result<String> {
         let name_val = call_method(self.ruby_module, "name", &[])?;
         Ok(value_to_string(name_val)?)
     }
 
     /// Get module full name
-    pub fn fullname(&self) -> PyResult<String> {
+    pub fn fullname(&self) -> Result<String> {
         let fullname_val = call_method(self.ruby_module, "fullname", &[])?;
         Ok(value_to_string(fullname_val)?)
     }
 
     /// Get module description
-    pub fn description(&self) -> PyResult<String> {
+    pub fn description(&self) -> Result<String> {
         let desc_val = call_method(self.ruby_module, "description", &[])?;
         Ok(value_to_string(desc_val)?)
     }
 
     /// Get module type
-    pub fn module_type(&self) -> PyResult<String> {
+    pub fn module_type(&self) -> Result<String> {
         let type_val = call_method(self.ruby_module, "type", &[])?;
         Ok(value_to_string(type_val)?)
     }
 
     /// Get module datastore
-    pub fn datastore(&self) -> PyResult<DataStore> {
+    pub fn datastore(&self) -> Result<DataStore> {
         let datastore_val = call_method(self.ruby_module, "datastore", &[])?;
 
         Ok(DataStore {
@@ -135,38 +150,41 @@ impl Module {
     }
 
     /// Set a datastore option
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (key, value))]
-    pub fn set_option(&self, key: &str, value: &str) -> PyResult<()> {
+    pub fn set_option(&self, key: &str, value: &str) -> Result<()> {
         let datastore = self.datastore()?;
         datastore.set(key, value)?;
         Ok(())
     }
 
     /// Get a datastore option
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (key))]
-    pub fn get_option(&self, key: &str) -> PyResult<Option<String>> {
+    pub fn get_option(&self, key: &str) -> Result<Option<String>> {
         let datastore = self.datastore()?;
         datastore.get(key)
     }
 
     /// Validate module configuration
-    pub fn validate(&self) -> PyResult<bool> {
+    pub fn validate(&self) -> Result<bool> {
         let result = call_method(self.ruby_module, "validate", &[]);
 
         match result {
             Ok(_) => Ok(true),
-            Err(e) => Err(AssassinateError::ModuleValidationError(e.to_string()).into()),
+            Err(e) => Err(AssassinateError::ModuleValidationError(e.to_string())),
         }
     }
 
     /// Run an exploit module
     /// Returns the session ID if successful, None otherwise
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (payload, **options))]
     pub fn exploit(
         &self,
         payload: &str,
         options: Option<HashMap<String, String>>,
-    ) -> PyResult<Option<i64>> {
+    ) -> Result<Option<i64>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash in Ruby
@@ -212,8 +230,9 @@ impl Module {
 
     /// Run an auxiliary module
     /// Returns true if successful, false otherwise
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (**options))]
-    pub fn run(&self, options: Option<HashMap<String, String>>) -> PyResult<bool> {
+    pub fn run(&self, options: Option<HashMap<String, String>>) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash in Ruby
@@ -242,7 +261,7 @@ impl Module {
 
     /// Check if target is vulnerable
     /// Returns check result code as string
-    pub fn check(&self) -> PyResult<String> {
+    pub fn check(&self) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash in Ruby
@@ -268,13 +287,13 @@ impl Module {
     }
 
     /// Check if module has check method
-    pub fn has_check(&self) -> PyResult<bool> {
+    pub fn has_check(&self) -> Result<bool> {
         let result = call_method(self.ruby_module, "has_check?", &[])?;
         Ok(crate::ruby_bridge::value_to_bool(result)?)
     }
 
     /// Get available payloads for this exploit
-    pub fn compatible_payloads(&self) -> PyResult<Vec<String>> {
+    pub fn compatible_payloads(&self) -> Result<Vec<String>> {
         // Check if module responds to compatible_payloads
         let ruby = crate::ruby_bridge::get_ruby()?;
         let method_name = ruby.str_new("compatible_payloads").as_value();
@@ -298,7 +317,8 @@ impl Module {
         }
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
             "<Module name='{}' type='{}'>",
             self.fullname()?,
@@ -307,17 +327,18 @@ impl Module {
     }
 }
 
-#[pyclass(unsendable)]
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct DataStore {
     pub(crate) ruby_datastore: Value,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python-bindings", pymethods)]
 impl DataStore {
     /// Set a value in the datastore
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (key, value))]
-    pub fn set(&self, key: &str, value: &str) -> PyResult<()> {
+    pub fn set(&self, key: &str, value: &str) -> Result<()> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
         let value_val = crate::ruby_bridge::get_ruby()?.str_new(value).as_value();
 
@@ -327,8 +348,9 @@ impl DataStore {
     }
 
     /// Get a value from the datastore
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (key))]
-    pub fn get(&self, key: &str) -> PyResult<Option<String>> {
+    pub fn get(&self, key: &str) -> Result<Option<String>> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
 
         let result = call_method(self.ruby_datastore, "[]", &[key_val])?;
@@ -342,7 +364,7 @@ impl DataStore {
     }
 
     /// Convert datastore to dict
-    pub fn to_dict(&self) -> PyResult<HashMap<String, String>> {
+    pub fn to_dict(&self) -> Result<HashMap<String, String>> {
         let hash_val = call_method(self.ruby_datastore, "to_h", &[])?;
 
         let json = crate::ruby_bridge::hash_to_json(hash_val)?;
@@ -354,21 +376,22 @@ impl DataStore {
         Ok(dict)
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<DataStore {}>", self.to_dict()?.len()))
     }
 }
 
-#[pyclass(unsendable)]
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct SessionManager {
     pub(crate) ruby_sessions: Value,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python-bindings", pymethods)]
 impl SessionManager {
     /// List all session IDs
-    pub fn list(&self) -> PyResult<Vec<i64>> {
+    pub fn list(&self) -> Result<Vec<i64>> {
         let keys_val = call_method(self.ruby_sessions, "keys", &[])?;
 
         let session_ids: Vec<i64> =
@@ -380,8 +403,9 @@ impl SessionManager {
     }
 
     /// Get a session by ID
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (session_id))]
-    pub fn get(&self, session_id: i64) -> PyResult<Option<Session>> {
+    pub fn get(&self, session_id: i64) -> Result<Option<Session>> {
         let id_val = crate::ruby_bridge::get_ruby()?
             .eval::<Value>(&format!("{}", session_id))
             .map_err(|e| {
@@ -401,47 +425,49 @@ impl SessionManager {
         }
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<SessionManager count={}>", self.list()?.len()))
     }
 }
 
-#[pyclass(unsendable)]
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct Session {
     pub(crate) ruby_session: Value,
     pub session_id: i64,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python-bindings", pymethods)]
 impl Session {
     /// Get session type
-    pub fn session_type(&self) -> PyResult<String> {
+    pub fn session_type(&self) -> Result<String> {
         let type_val = call_method(self.ruby_session, "type", &[])?;
         Ok(value_to_string(type_val)?)
     }
 
     /// Get session info
-    pub fn info(&self) -> PyResult<String> {
+    pub fn info(&self) -> Result<String> {
         let info_val = call_method(self.ruby_session, "info", &[])?;
         Ok(value_to_string(info_val)?)
     }
 
     /// Check if session is alive
-    pub fn alive(&self) -> PyResult<bool> {
+    pub fn alive(&self) -> Result<bool> {
         let alive_val = call_method(self.ruby_session, "alive?", &[])?;
         Ok(crate::ruby_bridge::value_to_bool(alive_val)?)
     }
 
     /// Kill the session
-    pub fn kill(&self) -> PyResult<()> {
+    pub fn kill(&self) -> Result<()> {
         call_method(self.ruby_session, "kill", &[])?;
         Ok(())
     }
 
     /// Write data to the session
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (data))]
-    pub fn write(&self, data: &str) -> PyResult<usize> {
+    pub fn write(&self, data: &str) -> Result<usize> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
 
@@ -454,8 +480,9 @@ impl Session {
     }
 
     /// Read data from the session
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (length=None))]
-    pub fn read(&self, length: Option<usize>) -> PyResult<String> {
+    pub fn read(&self, length: Option<usize>) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let result = if let Some(len) = length {
@@ -475,8 +502,9 @@ impl Session {
     }
 
     /// Execute a command in the session (shell command)
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (command))]
-    pub fn execute(&self, command: &str) -> PyResult<String> {
+    pub fn execute(&self, command: &str) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Write command
@@ -491,8 +519,9 @@ impl Session {
     }
 
     /// Run a Meterpreter command (if it's a meterpreter session)
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (command))]
-    pub fn run_cmd(&self, command: &str) -> PyResult<String> {
+    pub fn run_cmd(&self, command: &str) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let cmd_val = ruby.str_new(command).as_value();
 
@@ -506,24 +535,25 @@ impl Session {
     }
 
     /// Get session description
-    pub fn desc(&self) -> PyResult<String> {
+    pub fn desc(&self) -> Result<String> {
         let desc_val = call_method(self.ruby_session, "desc", &[])?;
         Ok(value_to_string(desc_val)?)
     }
 
     /// Get tunnel peer (remote address)
-    pub fn tunnel_peer(&self) -> PyResult<String> {
+    pub fn tunnel_peer(&self) -> Result<String> {
         let peer_val = call_method(self.ruby_session, "tunnel_peer", &[])?;
         Ok(value_to_string(peer_val)?)
     }
 
     /// Get target host
-    pub fn target_host(&self) -> PyResult<String> {
+    pub fn target_host(&self) -> Result<String> {
         let host_val = call_method(self.ruby_session, "target_host", &[])?;
         Ok(value_to_string(host_val)?)
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
             "<Session id={} type='{}' alive={}>",
             self.session_id,
@@ -533,28 +563,30 @@ impl Session {
     }
 }
 
-#[pyclass(unsendable)]
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct PayloadGenerator {
     ruby_framework: Value,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python-bindings", pymethods)]
 impl PayloadGenerator {
+    #[cfg(feature = "python-bindings")]
     #[new]
-    pub fn new(framework: &Framework) -> PyResult<Self> {
+    pub fn new(framework: &Framework) -> Result<Self> {
         Ok(PayloadGenerator {
             ruby_framework: framework.ruby_framework,
         })
     }
 
     /// Generate a payload
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (payload_name, **options))]
     pub fn generate(
         &self,
         payload_name: &str,
         options: Option<HashMap<String, String>>,
-    ) -> PyResult<Vec<u8>> {
+    ) -> Result<Vec<u8>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Create payload instance
@@ -566,8 +598,7 @@ impl PayloadGenerator {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
-            ))
-            .into());
+            )));
         }
 
         // Set options
@@ -595,6 +626,7 @@ impl PayloadGenerator {
     }
 
     /// Generate a payload and encode it
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (payload_name, encoder=None, iterations=1, **options))]
     pub fn generate_encoded(
         &self,
@@ -602,7 +634,7 @@ impl PayloadGenerator {
         encoder: Option<&str>,
         iterations: Option<i32>,
         options: Option<HashMap<String, String>>,
-    ) -> PyResult<Vec<u8>> {
+    ) -> Result<Vec<u8>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Create payload instance
@@ -614,8 +646,7 @@ impl PayloadGenerator {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
-            ))
-            .into());
+            )));
         }
 
         // Get datastore
@@ -661,7 +692,7 @@ impl PayloadGenerator {
     }
 
     /// List all available payloads
-    pub fn list_payloads(&self) -> PyResult<Vec<String>> {
+    pub fn list_payloads(&self) -> Result<Vec<String>> {
         let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
         let payloads = call_method(modules_mgr, "payloads", &[])?;
         let refnames = call_method(payloads, "module_refnames", &[])?;
@@ -675,6 +706,7 @@ impl PayloadGenerator {
     }
 
     /// Generate a standalone executable payload
+    #[cfg(feature = "python-bindings")]
     #[pyo3(signature = (payload_name, platform, arch, **options))]
     pub fn generate_executable(
         &self,
@@ -682,7 +714,7 @@ impl PayloadGenerator {
         platform: &str,
         arch: &str,
         options: Option<HashMap<String, String>>,
-    ) -> PyResult<Vec<u8>> {
+    ) -> Result<Vec<u8>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Create payload instance
@@ -694,8 +726,7 @@ impl PayloadGenerator {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
-            ))
-            .into());
+            )));
         }
 
         // Get datastore
@@ -749,8 +780,7 @@ impl PayloadGenerator {
         if is_nil(exe) {
             return Err(AssassinateError::PayloadError(
                 "Failed to generate executable".to_string(),
-            )
-            .into());
+            ));
         }
 
         // Convert Ruby string to bytes
@@ -758,7 +788,8 @@ impl PayloadGenerator {
         Ok(bytes_str.into_bytes())
     }
 
-    pub fn __repr__(&self) -> PyResult<String> {
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
         Ok("<PayloadGenerator>".to_string())
     }
 }

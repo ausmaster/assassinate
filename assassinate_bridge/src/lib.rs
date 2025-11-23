@@ -1,47 +1,86 @@
+//! # Assassinate Bridge
+//!
+//! Rust FFI bridge to Metasploit Framework via Magnus (Ruby embedding).
+//!
+//! This library provides a native Rust API for interacting with Metasploit Framework
+//! by embedding the Ruby VM and bridging to MSF's Ruby API.
+//!
+//! ## Features
+//!
+//! - `python-bindings` (default): Enable Python bindings via PyO3
+//!
+//! ## Example (Rust)
+//!
+//! ```no_run
+//! use assassinate_bridge::{Framework, init_metasploit};
+//!
+//! // Initialize MSF environment
+//! init_metasploit("/path/to/metasploit-framework").unwrap();
+//!
+//! // Create framework instance
+//! let framework = Framework::new(None).unwrap();
+//!
+//! // Get version
+//! let version = framework.version().unwrap();
+//! println!("MSF Version: {}", version);
+//!
+//! // List exploits
+//! let exploits = framework.list_modules("exploits").unwrap();
+//! println!("Found {} exploits", exploits.len());
+//! ```
+
+#[cfg(feature = "python-bindings")]
 use pyo3::prelude::*;
 
 pub mod error;
 pub mod framework;
 pub mod ruby_bridge;
 
-use framework::{DataStore, Framework, Module, PayloadGenerator, Session, SessionManager};
-use ruby_bridge::init_metasploit;
+// Re-export main types for Rust users
+pub use framework::{DataStore, Framework, Module, PayloadGenerator, Session, SessionManager};
+pub use ruby_bridge::init_metasploit;
 
-/// Initialize the Metasploit Framework environment
-#[pyfunction]
-#[pyo3(signature = (msf_path))]
-fn initialize_metasploit(msf_path: String) -> PyResult<()> {
-    init_metasploit(&msf_path)?;
-    Ok(())
-}
+// Python bindings (only compiled when python-bindings feature is enabled)
+#[cfg(feature = "python-bindings")]
+mod python_bindings {
+    use super::*;
 
-/// Get the Metasploit Framework version (convenience function)
-#[pyfunction]
-fn get_version() -> PyResult<String> {
-    let framework = Framework::new(None)?;
-    framework.version()
-}
+    /// Initialize the Metasploit Framework environment
+    #[pyfunction]
+    #[pyo3(signature = (msf_path))]
+    fn initialize_metasploit(msf_path: String) -> PyResult<()> {
+        super::init_metasploit(&msf_path)?;
+        Ok(())
+    }
 
-/// Python module definition
-#[pymodule]
-fn assassinate_bridge(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.1.0")?;
-    m.add(
-        "__doc__",
-        "Rust+Magnus+PyO3 bridge for Python to Metasploit Framework FFI",
-    )?;
+    /// Get the Metasploit Framework version (convenience function)
+    #[pyfunction]
+    fn get_version() -> PyResult<String> {
+        let framework = Framework::new(None)?;
+        Ok(framework.version()?)
+    }
 
-    // Add functions
-    m.add_function(wrap_pyfunction!(initialize_metasploit, m)?)?;
-    m.add_function(wrap_pyfunction!(get_version, m)?)?;
+    /// Python module definition
+    #[pymodule]
+    fn assassinate_bridge(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        m.add("__version__", "0.1.0")?;
+        m.add(
+            "__doc__",
+            "Rust FFI bridge to Metasploit Framework (Magnus → Ruby) with Python bindings (PyO3)",
+        )?;
 
-    // Add classes
-    m.add_class::<Framework>()?;
-    m.add_class::<Module>()?;
-    m.add_class::<DataStore>()?;
-    m.add_class::<SessionManager>()?;
-    m.add_class::<Session>()?;
-    m.add_class::<PayloadGenerator>()?;
+        // Add functions
+        m.add_function(wrap_pyfunction!(initialize_metasploit, m)?)?;
+        m.add_function(wrap_pyfunction!(get_version, m)?)?;
 
-    Ok(())
+        // Add classes
+        m.add_class::<Framework>()?;
+        m.add_class::<Module>()?;
+        m.add_class::<DataStore>()?;
+        m.add_class::<SessionManager>()?;
+        m.add_class::<Session>()?;
+        m.add_class::<PayloadGenerator>()?;
+
+        Ok(())
+    }
 }

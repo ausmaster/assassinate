@@ -3,20 +3,24 @@ name = "assassinate_bridge"
 version = "0.1.0"
 edition = "2021"
 authors = ["Austin Stark <austin.stark@blacklanternsecurity.com>"]
-description = "Rust+Magnus+PyO3 bridge for Python to Metasploit Framework FFI"
+description = "Rust FFI bridge to Metasploit Framework via Magnus (Ruby) with optional Python bindings"
 license = "GPL-3.0"
 
 [lib]
 name = "assassinate_bridge"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["python-bindings"]
+python-bindings = ["dep:pyo3"]
+
 [dependencies]
 # Magnus for Ruby FFI with embed feature for proper VM initialization
 magnus = { version = "0.7", features = ["embed"] }
 rb-sys = "0.9"
 
-# PyO3 for Python bindings
-pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"] }
+# PyO3 for Python bindings (optional - only needed for Python support)
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"], optional = true }
 
 # Error handling
 thiserror = "2.0"
