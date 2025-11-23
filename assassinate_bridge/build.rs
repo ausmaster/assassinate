@@ -3,19 +3,9 @@ use std::process::Command;
 
 fn main() {
     // Determine Ruby command to use:
-    // 1. Check RUBY environment variable (for CI or custom setups)
-    // 2. Try rbenv Ruby 3.3.8 if it exists (local development)
-    // 3. Fall back to "ruby" in PATH (system Ruby)
-    let ruby_cmd = if let Ok(ruby_env) = env::var("RUBY") {
-        ruby_env
-    } else {
-        let rbenv_ruby = "/home/aus/.rbenv/versions/3.3.8/bin/ruby";
-        if std::path::Path::new(rbenv_ruby).exists() {
-            rbenv_ruby.to_string()
-        } else {
-            "ruby".to_string()
-        }
-    };
+    // 1. Check RUBY environment variable (for custom setups, e.g., export RUBY=/path/to/ruby)
+    // 2. Fall back to "ruby" in PATH (system Ruby or rbenv/rvm if configured in PATH)
+    let ruby_cmd = env::var("RUBY").unwrap_or_else(|_| "ruby".to_string());
 
     println!("cargo:warning=Using Ruby: {}", ruby_cmd);
 
