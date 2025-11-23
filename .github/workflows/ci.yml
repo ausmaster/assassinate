@@ -147,8 +147,8 @@ jobs:
       - name: Install MSF Dependencies
         working-directory: ../metasploit-framework
         run: |
-          gem install bundler
-          bundle install
+          sudo gem install bundler
+          sudo bundle install
 
       - name: Build Rust Bridge
         working-directory: ./assassinate_bridge
