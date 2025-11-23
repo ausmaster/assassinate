@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  kali-test:
+    build:
+      context: ../..
+      dockerfile: docker/test/Dockerfile.kali
+    image: assassinate-test:kali
+    container_name: assassinate-test-kali
+
+  ubuntu-test:
+    build:
+      context: ../..
+      dockerfile: docker/test/Dockerfile.ubuntu
+    image: assassinate-test:ubuntu
+    container_name: assassinate-test-ubuntu
+
+  debian-test:
+    build:
+      context: ../..
+      dockerfile: docker/test/Dockerfile.debian
+    image: assassinate-test:debian
+    container_name: assassinate-test-debian
+
+  arch-test:
+    build:
+      context: ../..
+      dockerfile: docker/test/Dockerfile.arch
+    image: assassinate-test:arch
+    container_name: assassinate-test-arch
+
+  fedora-test:
+    build:
+      context: ../..
+      dockerfile: docker/test/Dockerfile.fedora
+    image: assassinate-test:fedora
+    container_name: assassinate-test-fedora

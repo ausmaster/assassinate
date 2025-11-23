@@ -1,0 +1,23 @@
+FROM archlinux:latest
+
+# Install sudo and create test user
+RUN pacman -Sy --noconfirm sudo && \
+    useradd -m -s /bin/bash testuser && \
+    echo "testuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Copy project files
+COPY . /home/testuser/assassinate
+RUN chown -R testuser:testuser /home/testuser/assassinate
+
+# Switch to test user
+USER testuser
+WORKDIR /home/testuser/assassinate
+
+# Run installation script
+RUN bash scripts/install/arch.sh
+
+# Test the build
+RUN cd assassinate_bridge && \
+    ~/.cargo/bin/cargo test --lib --release
+
+CMD ["/bin/bash"]
