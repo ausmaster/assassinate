@@ -24,6 +24,9 @@ jobs:
             pkg-config \
             libclang-dev \
             libpcap-dev \
+            postgresql \
+            postgresql-contrib \
+            libpq-dev \
             ruby-full \
             ruby-dev
 
@@ -44,9 +47,23 @@ jobs:
 
       - name: Setup PostgreSQL
         run: |
-          sudo systemctl start postgresql || sudo pg_ctlcluster 16 main start || true
-          sudo -u postgres createuser -s $USER || true
-          sudo -u postgres createdb -O $USER msf_test || true
+          # Start PostgreSQL (works in both systemd and non-systemd environments)
+          sudo systemctl start postgresql || sudo pg_ctlcluster 16 main start || {
+            # If systemctl/pg_ctlcluster don't work, start manually
+            sudo -u postgres /usr/lib/postgresql/*/bin/pg_ctl -D /var/lib/postgresql/*/main -l /tmp/postgresql.log start
+          }
+          # Wait for PostgreSQL to be ready
+          for i in {1..30}; do
+            if sudo -u postgres psql -c "SELECT 1" > /dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Waiting for PostgreSQL to start... ($i/30)"
+            sleep 1
+          done
+          # Create user and database
+          sudo -u postgres psql -c "CREATE USER ${USER} SUPERUSER;" || echo "User may already exist"
+          sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || echo "Database may already exist"
 
       - name: Build Rust Bridge
         working-directory: assassinate_bridge
