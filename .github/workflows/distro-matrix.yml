@@ -64,11 +64,11 @@ jobs:
           cargo test --release --lib
 
       - name: Run MSF Framework Test Suite
-        working-directory: ~/metasploit-framework
         run: |
+          cd $HOME/metasploit-framework
           export MSF_ROOT="$HOME/metasploit-framework"
           bundle exec rspec spec/lib/msf/core/ \
-            --require ../assassinate/assassinate_bridge/spec/bridge_spec_helper_minimal.rb \
+            --require $GITHUB_WORKSPACE/assassinate_bridge/spec/bridge_spec_helper_minimal.rb \
             --format progress \
             --format documentation \
             --out test_results.txt
