@@ -19,6 +19,7 @@ sudo apt-get install -y \
     libssl-dev \
     pkg-config \
     libclang-dev \
+    libpcap-dev \
     postgresql \
     postgresql-contrib \
     libpq-dev \
@@ -45,7 +46,7 @@ fi
 # Install MSF dependencies
 echo "[5/7] Installing Metasploit dependencies..."
 cd "$HOME/metasploit-framework"
-gem install bundler
+sudo gem install bundler
 bundle install
 
 # Setup PostgreSQL

@@ -19,6 +19,7 @@ sudo pacman -S --needed --noconfirm \
     openssl \
     pkg-config \
     clang \
+    libpcap \
     postgresql \
     ruby \
     ruby-bundler

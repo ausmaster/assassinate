@@ -1,0 +1,110 @@
+name: Multi-Distro Validation
+
+on:
+  push:
+    branches: [ main, test/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ubuntu-test:
+    name: Ubuntu 24.04 Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            libssl-dev \
+            pkg-config \
+            libclang-dev \
+            libpcap-dev \
+            postgresql \
+            postgresql-contrib \
+            libpq-dev \
+            ruby-full \
+            ruby-dev
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Clone Metasploit Framework
+        run: |
+          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git ~/metasploit-framework
+
+      - name: Install MSF Dependencies
+        run: |
+          cd ~/metasploit-framework
+          sudo gem install bundler
+          sudo bundle install
+
+      - name: Setup PostgreSQL
+        run: |
+          # Drop existing cluster and recreate properly
+          sudo pg_dropcluster --stop 16 main || true
+          sudo pg_createcluster 16 main --start
+
+          # Update pg_hba.conf to allow trust authentication for localhost
+          sudo sed -i 's/host.*all.*all.*127\.0\.0\.1\/32.*scram-sha-256/host    all             all             127.0.0.1\/32            trust/' /etc/postgresql/16/main/pg_hba.conf
+          sudo sed -i 's/host.*all.*all.*::1\/128.*scram-sha-256/host    all             all             ::1\/128                 trust/' /etc/postgresql/16/main/pg_hba.conf
+
+          # Reload PostgreSQL to apply config changes
+          sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/16/main reload
+
+          # Create user and database
+          sudo -u postgres psql -c "CREATE USER ${USER} SUPERUSER;" || echo "User may already exist"
+          sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || echo "Database may already exist"
+
+          # Create database.yml for MSF
+          cat > $HOME/metasploit-framework/config/database.yml <<EOF
+          development: &pgsql
+            adapter: postgresql
+            database: msf_test
+            username: ${USER}
+            password:
+            host: localhost
+            port: 5432
+            pool: 200
+            timeout: 5
+          production: &production
+            <<: *pgsql
+          test:
+            <<: *pgsql
+          EOF
+
+          # Run database migrations
+          cd $HOME/metasploit-framework
+          export RAILS_ENV=test
+          bundle exec rake db:migrate
+
+      - name: Build Rust Bridge
+        working-directory: assassinate_bridge
+        run: cargo build --release
+
+      - name: Verify Rust Bridge Build
+        run: |
+          cd assassinate_bridge
+          ls -lh target/release/libassassinate_bridge.*
+
+      - name: Run Rust Bridge Tests
+        working-directory: assassinate_bridge
+        run: |
+          export MSF_ROOT="$HOME/metasploit-framework"
+          cargo test --release --lib
+
+      - name: Run MSF Framework Test Suite
+        run: |
+          cd $HOME/metasploit-framework
+          export MSF_ROOT="$HOME/metasploit-framework"
+          bundle exec rspec spec/lib/msf/core/ \
+            --exclude-pattern "**/opt_address_local_spec.rb" \
+            --format progress \
+            --format documentation \
+            --out test_results.txt

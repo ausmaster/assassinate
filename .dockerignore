@@ -1,0 +1,54 @@
+# Metasploit Framework (will be cloned inside container)
+metasploit-framework/
+
+# Rust build artifacts
+target/
+**/target/
+assassinate_bridge/target/
+
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+
+# Ruby
+vendor/
+.bundle/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.log.*
+
+# Test artifacts
+coverage/
+.coverage
+htmlcov/
+
+# Docker
+docker/test/*.log
+docker/test/ubuntu-test.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp

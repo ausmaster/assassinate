@@ -21,6 +21,7 @@ sudo dnf install -y \
     openssl-devel \
     pkg-config \
     clang-devel \
+    libpcap-devel \
     postgresql-server \
     postgresql-contrib \
     postgresql-devel \
@@ -48,7 +49,7 @@ fi
 # Install MSF dependencies
 echo "[5/7] Installing Metasploit dependencies..."
 cd "$HOME/metasploit-framework"
-gem install bundler
+sudo gem install bundler
 bundle install
 
 # Setup PostgreSQL
