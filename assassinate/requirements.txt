@@ -1,9 +1,0 @@
-# General dependencies
-ruff
-mypy
-
-# Testing dependencies
-pytest
-
-# Documentation dependencies
-sphinx

@@ -1,4 +1,4 @@
-[![Assassinate Logo](./docs/Assassinate.webp)](https://github.com/ausmaster/assassinate)
+[![Assassinate Logo](./docs/Assassinate.png)](https://github.com/ausmaster/assassinate)
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-FF8400)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-GPLv3-FF8400.svg)](https://github.com/ausmaster/assassinate/blob/main/LICENSE)
