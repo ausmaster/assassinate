@@ -24,13 +24,21 @@ fn test_all_metasploit_integration() {
     // Test 02: Metasploit loading
     println!("\n=== Test 02: Metasploit loading ===");
     let result = ruby_bridge::init_metasploit(MSF_PATH);
-    assert!(result.is_ok(), "Failed to load Metasploit: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to load Metasploit: {:?}",
+        result.err()
+    );
     println!("✓ Metasploit loaded successfully");
 
     // Test 03: Framework creation
     println!("\n=== Test 03: Framework creation ===");
     let framework = ruby_bridge::create_framework(None);
-    assert!(framework.is_ok(), "Failed to create framework: {:?}", framework.err());
+    assert!(
+        framework.is_ok(),
+        "Failed to create framework: {:?}",
+        framework.err()
+    );
     let fw = framework.unwrap();
     assert!(!ruby_bridge::is_nil(fw), "Framework is nil");
     println!("✓ Framework created successfully");
@@ -39,9 +47,17 @@ fn test_all_metasploit_integration() {
     println!("\n=== Test 04: Framework version ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
     let version = ruby_bridge::call_method(framework, "version", &[]);
-    assert!(version.is_ok(), "Failed to get version: {:?}", version.err());
+    assert!(
+        version.is_ok(),
+        "Failed to get version: {:?}",
+        version.err()
+    );
     let version_str = ruby_bridge::value_to_string(version.unwrap());
-    assert!(version_str.is_ok(), "Failed to convert version: {:?}", version_str.err());
+    assert!(
+        version_str.is_ok(),
+        "Failed to convert version: {:?}",
+        version_str.err()
+    );
     let ver = version_str.unwrap();
     println!("✓ Framework version: {}", ver);
     assert!(ver.contains("."), "Version doesn't contain '.'");
@@ -50,19 +66,35 @@ fn test_all_metasploit_integration() {
     println!("\n=== Test 05: Module Manager access ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
     let modules = ruby_bridge::call_method(framework, "modules", &[]);
-    assert!(modules.is_ok(), "Failed to get module manager: {:?}", modules.err());
-    assert!(!ruby_bridge::is_nil(modules.unwrap()), "Module manager is nil");
+    assert!(
+        modules.is_ok(),
+        "Failed to get module manager: {:?}",
+        modules.err()
+    );
+    assert!(
+        !ruby_bridge::is_nil(modules.unwrap()),
+        "Module manager is nil"
+    );
     println!("✓ Module manager accessible");
 
     // Test 06: List exploits
     println!("\n=== Test 06: Exploit enumeration ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let exploits = ruby_bridge::call_method(modules, "exploits", &[]);
-    assert!(exploits.is_ok(), "Failed to get exploits: {:?}", exploits.err());
+    assert!(
+        exploits.is_ok(),
+        "Failed to get exploits: {:?}",
+        exploits.err()
+    );
     let exploit_set = exploits.unwrap();
     let refnames = ruby_bridge::call_method(exploit_set, "module_refnames", &[]);
-    assert!(refnames.is_ok(), "Failed to get refnames: {:?}", refnames.err());
+    assert!(
+        refnames.is_ok(),
+        "Failed to get refnames: {:?}",
+        refnames.err()
+    );
     let names: Result<Vec<String>, _> = TryConvert::try_convert(refnames.unwrap());
     assert!(names.is_ok(), "Failed to convert names: {:?}", names.err());
     let name_list = names.unwrap();
@@ -75,11 +107,17 @@ fn test_all_metasploit_integration() {
     // Test 07: List auxiliary modules
     println!("\n=== Test 07: Auxiliary module enumeration ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let auxiliary = ruby_bridge::call_method(modules, "auxiliary", &[]);
-    assert!(auxiliary.is_ok(), "Failed to get auxiliary: {:?}", auxiliary.err());
+    assert!(
+        auxiliary.is_ok(),
+        "Failed to get auxiliary: {:?}",
+        auxiliary.err()
+    );
     let aux_set = auxiliary.unwrap();
-    let refnames = ruby_bridge::call_method(aux_set, "module_refnames", &[]).expect("Failed to get refnames");
+    let refnames =
+        ruby_bridge::call_method(aux_set, "module_refnames", &[]).expect("Failed to get refnames");
     let names: Vec<String> = TryConvert::try_convert(refnames).expect("Failed to convert names");
     println!("✓ Found {} auxiliary modules", names.len());
     assert!(names.len() > 0, "No auxiliary modules found");
@@ -87,11 +125,17 @@ fn test_all_metasploit_integration() {
     // Test 08: List payloads
     println!("\n=== Test 08: Payload enumeration ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let payloads = ruby_bridge::call_method(modules, "payloads", &[]);
-    assert!(payloads.is_ok(), "Failed to get payloads: {:?}", payloads.err());
+    assert!(
+        payloads.is_ok(),
+        "Failed to get payloads: {:?}",
+        payloads.err()
+    );
     let payload_set = payloads.unwrap();
-    let refnames = ruby_bridge::call_method(payload_set, "module_refnames", &[]).expect("Failed to get refnames");
+    let refnames = ruby_bridge::call_method(payload_set, "module_refnames", &[])
+        .expect("Failed to get refnames");
     let names: Vec<String> = TryConvert::try_convert(refnames).expect("Failed to convert names");
     println!("✓ Found {} payloads", names.len());
     assert!(names.len() > 0, "No payloads found");
@@ -99,11 +143,18 @@ fn test_all_metasploit_integration() {
     // Test 09: Create exploit module
     println!("\n=== Test 09: Exploit module creation ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
-    let module_name = ruby.str_new("exploit/unix/ftp/vsftpd_234_backdoor").as_value();
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
     let module = ruby_bridge::call_method(modules, "create", &[module_name]);
-    assert!(module.is_ok(), "Failed to create module: {:?}", module.err());
+    assert!(
+        module.is_ok(),
+        "Failed to create module: {:?}",
+        module.err()
+    );
     let mod_instance = module.unwrap();
     assert!(!ruby_bridge::is_nil(mod_instance), "Module instance is nil");
     let name = ruby_bridge::call_method(mod_instance, "name", &[]).expect("Failed to get name");
@@ -113,18 +164,25 @@ fn test_all_metasploit_integration() {
     // Test 10: Module metadata access
     println!("\n=== Test 10: Module metadata ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
-    let module_name = ruby.str_new("exploit/unix/ftp/vsftpd_234_backdoor").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name]).expect("Failed to create module");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
     let name = ruby_bridge::call_method(module, "name", &[]).expect("Failed to get name");
     let name_str = ruby_bridge::value_to_string(name).expect("Failed to convert name");
     println!("  Name: {}", name_str);
-    let fullname = ruby_bridge::call_method(module, "fullname", &[]).expect("Failed to get fullname");
+    let fullname =
+        ruby_bridge::call_method(module, "fullname", &[]).expect("Failed to get fullname");
     let fullname_str = ruby_bridge::value_to_string(fullname).expect("Failed to convert fullname");
     println!("  Fullname: {}", fullname_str);
-    let description = ruby_bridge::call_method(module, "description", &[]).expect("Failed to get description");
-    let desc_str = ruby_bridge::value_to_string(description).expect("Failed to convert description");
+    let description =
+        ruby_bridge::call_method(module, "description", &[]).expect("Failed to get description");
+    let desc_str =
+        ruby_bridge::value_to_string(description).expect("Failed to convert description");
     println!("  Description: {}", desc_str);
     let mod_type = ruby_bridge::call_method(module, "type", &[]).expect("Failed to get type");
     let type_str = ruby_bridge::value_to_string(mod_type).expect("Failed to convert type");
@@ -135,11 +193,16 @@ fn test_all_metasploit_integration() {
     // Test 11: DataStore operations
     println!("\n=== Test 11: DataStore operations ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
-    let module_name = ruby.str_new("exploit/unix/ftp/vsftpd_234_backdoor").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name]).expect("Failed to create module");
-    let datastore = ruby_bridge::call_method(module, "datastore", &[]).expect("Failed to get datastore");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+    let datastore =
+        ruby_bridge::call_method(module, "datastore", &[]).expect("Failed to get datastore");
     let key = ruby.str_new("RHOSTS").as_value();
     let value = ruby.str_new("192.168.1.100").as_value();
     ruby_bridge::call_method(datastore, "[]=", &[key, value]).expect("Failed to set value");
@@ -159,13 +222,34 @@ fn test_all_metasploit_integration() {
     // Test 12: DataStore to_h conversion
     println!("\n=== Test 12: DataStore to_h ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
-    let module_name = ruby.str_new("exploit/unix/ftp/vsftpd_234_backdoor").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name]).expect("Failed to create module");
-    let datastore = ruby_bridge::call_method(module, "datastore", &[]).expect("Failed to get datastore");
-    ruby_bridge::call_method(datastore, "[]=", &[ruby.str_new("RHOSTS").as_value(), ruby.str_new("192.168.1.100").as_value()]).expect("Failed to set RHOSTS");
-    ruby_bridge::call_method(datastore, "[]=", &[ruby.str_new("RPORT").as_value(), ruby.str_new("21").as_value()]).expect("Failed to set RPORT");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+    let datastore =
+        ruby_bridge::call_method(module, "datastore", &[]).expect("Failed to get datastore");
+    ruby_bridge::call_method(
+        datastore,
+        "[]=",
+        &[
+            ruby.str_new("RHOSTS").as_value(),
+            ruby.str_new("192.168.1.100").as_value(),
+        ],
+    )
+    .expect("Failed to set RHOSTS");
+    ruby_bridge::call_method(
+        datastore,
+        "[]=",
+        &[
+            ruby.str_new("RPORT").as_value(),
+            ruby.str_new("21").as_value(),
+        ],
+    )
+    .expect("Failed to set RPORT");
     let hash = ruby_bridge::call_method(datastore, "to_h", &[]).expect("Failed to convert to hash");
     assert!(!ruby_bridge::is_nil(hash), "Hash is nil");
     println!("✓ DataStore can be converted to hash");
@@ -173,11 +257,21 @@ fn test_all_metasploit_integration() {
     // Test 13: Global DataStore
     println!("\n=== Test 13: Global DataStore ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let datastore = ruby_bridge::call_method(framework, "datastore", &[]).expect("Failed to get datastore");
+    let datastore =
+        ruby_bridge::call_method(framework, "datastore", &[]).expect("Failed to get datastore");
     assert!(!ruby_bridge::is_nil(datastore), "Global datastore is nil");
     let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
-    ruby_bridge::call_method(datastore, "[]=", &[ruby.str_new("WORKSPACE").as_value(), ruby.str_new("default").as_value()]).expect("Failed to set global value");
-    let result = ruby_bridge::call_method(datastore, "[]", &[ruby.str_new("WORKSPACE").as_value()]).expect("Failed to get global value");
+    ruby_bridge::call_method(
+        datastore,
+        "[]=",
+        &[
+            ruby.str_new("WORKSPACE").as_value(),
+            ruby.str_new("default").as_value(),
+        ],
+    )
+    .expect("Failed to set global value");
+    let result = ruby_bridge::call_method(datastore, "[]", &[ruby.str_new("WORKSPACE").as_value()])
+        .expect("Failed to get global value");
     let result_str = ruby_bridge::value_to_string(result).expect("Failed to convert result");
     println!("  Global WORKSPACE = {}", result_str);
     assert_eq!(result_str, "default");
@@ -187,7 +281,11 @@ fn test_all_metasploit_integration() {
     println!("\n=== Test 14: SessionManager ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
     let sessions = ruby_bridge::call_method(framework, "sessions", &[]);
-    assert!(sessions.is_ok(), "Failed to get sessions: {:?}", sessions.err());
+    assert!(
+        sessions.is_ok(),
+        "Failed to get sessions: {:?}",
+        sessions.err()
+    );
     let session_mgr = sessions.unwrap();
     assert!(!ruby_bridge::is_nil(session_mgr), "Session manager is nil");
     let keys = ruby_bridge::call_method(session_mgr, "keys", &[]);
@@ -200,12 +298,20 @@ fn test_all_metasploit_integration() {
     // Test 15: Module options
     println!("\n=== Test 15: Module options ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
-    let modules = ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
     let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
-    let module_name = ruby.str_new("exploit/unix/ftp/vsftpd_234_backdoor").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name]).expect("Failed to create module");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
     let options = ruby_bridge::call_method(module, "options", &[]);
-    assert!(options.is_ok(), "Failed to get options: {:?}", options.err());
+    assert!(
+        options.is_ok(),
+        "Failed to get options: {:?}",
+        options.err()
+    );
     let opts = options.unwrap();
     assert!(!ruby_bridge::is_nil(opts), "Options is nil");
     println!("✓ Module options accessible");

@@ -1,7 +1,7 @@
 use crate::error::{AssassinateError, Result};
 use magnus::{embed, value::ReprValue, Ruby, TryConvert, Value};
-use std::sync::Once;
 use std::mem;
+use std::sync::Once;
 
 static INIT: Once = Once::new();
 
@@ -53,10 +53,7 @@ pub fn init_ruby() -> Result<()> {
 pub fn get_ruby() -> Result<Ruby> {
     init_ruby()?;
     Ruby::get().map_err(|e| {
-        AssassinateError::RubyInitError(format!(
-            "Failed to get Ruby VM reference: {}",
-            e
-        ))
+        AssassinateError::RubyInitError(format!("Failed to get Ruby VM reference: {}", e))
     })
 }
 
@@ -111,8 +108,7 @@ pub fn create_framework(options: Option<serde_json::Value>) -> Result<Value> {
             serde_json::to_string(&opts).unwrap_or_else(|_| "{}".to_string())
         )
     } else {
-        r#"Msf::Simple::Framework.create"#
-        .to_string()
+        r#"Msf::Simple::Framework.create"#.to_string()
     };
 
     ruby.eval(&code)
@@ -128,35 +124,22 @@ pub fn eval_ruby(code: &str) -> Result<Value> {
 }
 
 /// Call a Ruby method on an object
-pub fn call_method(
-    obj: Value,
-    method_name: &str,
-    args: &[Value],
-) -> Result<Value> {
+pub fn call_method(obj: Value, method_name: &str, args: &[Value]) -> Result<Value> {
     let _ruby = get_ruby()?;
 
-    obj.funcall(method_name, args)
-        .map_err(|e| AssassinateError::RubyError(format!(
-            "Failed to call method '{}': {}",
-            method_name,
-            e
-        )))
+    obj.funcall(method_name, args).map_err(|e| {
+        AssassinateError::RubyError(format!("Failed to call method '{}': {}", method_name, e))
+    })
 }
 
 /// Convert Ruby value to String
 pub fn value_to_string(val: Value) -> Result<String> {
-    let str_val = val
-        .funcall::<_, _, Value>("to_s", ())
-        .map_err(|e| AssassinateError::ConversionError(format!(
-            "Failed to call to_s on Ruby value: {}",
-            e
-        )))?;
+    let str_val = val.funcall::<_, _, Value>("to_s", ()).map_err(|e| {
+        AssassinateError::ConversionError(format!("Failed to call to_s on Ruby value: {}", e))
+    })?;
 
     TryConvert::try_convert(str_val).map_err(|e: magnus::Error| {
-        AssassinateError::ConversionError(format!(
-            "Failed to convert Ruby value to string: {}",
-            e
-        ))
+        AssassinateError::ConversionError(format!("Failed to convert Ruby value to string: {}", e))
     })
 }
 
@@ -164,10 +147,7 @@ pub fn value_to_string(val: Value) -> Result<String> {
 #[allow(dead_code)]
 pub fn value_to_i64(val: Value) -> Result<i64> {
     TryConvert::try_convert(val).map_err(|e: magnus::Error| {
-        AssassinateError::ConversionError(format!(
-            "Failed to convert Ruby value to i64: {}",
-            e
-        ))
+        AssassinateError::ConversionError(format!("Failed to convert Ruby value to i64: {}", e))
     })
 }
 
@@ -182,27 +162,17 @@ pub fn hash_to_json(hash: Value) -> Result<serde_json::Value> {
     let _ruby = get_ruby()?;
 
     let json_val: Value = _ruby
-        .eval::<Value>(&format!(
-            "require 'json'; JSON.generate({:?})",
-            hash
-        ))
-        .map_err(|e| AssassinateError::ConversionError(format!(
-            "Failed to convert Hash to JSON: {}",
-            e
-        )))?;
+        .eval::<Value>(&format!("require 'json'; JSON.generate({:?})", hash))
+        .map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to convert Hash to JSON: {}", e))
+        })?;
 
-    let json_str: String = TryConvert::try_convert(json_val)
-        .map_err(|e: magnus::Error| AssassinateError::ConversionError(format!(
-            "Failed to parse JSON string: {}",
-            e
-        )))?;
+    let json_str: String = TryConvert::try_convert(json_val).map_err(|e: magnus::Error| {
+        AssassinateError::ConversionError(format!("Failed to parse JSON string: {}", e))
+    })?;
 
-    serde_json::from_str(&json_str).map_err(|e| {
-        AssassinateError::ConversionError(format!(
-            "Failed to parse JSON: {}",
-            e
-        ))
-    })
+    serde_json::from_str(&json_str)
+        .map_err(|e| AssassinateError::ConversionError(format!("Failed to parse JSON: {}", e)))
 }
 
 #[cfg(test)]

@@ -35,15 +35,16 @@ impl Framework {
 
         let module_set = call_method(modules_manager, module_type, &[])?;
 
-        let module_refnames =
-            call_method(module_set, "module_refnames", &[])?;
+        let module_refnames = call_method(module_set, "module_refnames", &[])?;
 
         // Convert Ruby Array to Rust Vec<String>
-        let refnames: Vec<String> = TryConvert::try_convert(module_refnames)
-            .map_err(|e: magnus::Error| AssassinateError::ConversionError(format!(
-                "Failed to convert module refnames to Vec<String>: {}",
-                e
-            )))?;
+        let refnames: Vec<String> =
+            TryConvert::try_convert(module_refnames).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert module refnames to Vec<String>: {}",
+                    e
+                ))
+            })?;
 
         Ok(refnames)
     }
@@ -53,16 +54,15 @@ impl Framework {
     pub fn create_module(&self, module_name: &str) -> PyResult<Module> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
-        let name_val = crate::ruby_bridge::get_ruby()?.str_new(module_name).as_value();
+        let name_val = crate::ruby_bridge::get_ruby()?
+            .str_new(module_name)
+            .as_value();
 
         let module_instance = call_method(modules_manager, "create", &[name_val])?;
 
         // Check if module is nil
         if is_nil(module_instance) {
-            return Err(AssassinateError::ModuleNotFound(
-                module_name.to_string(),
-            )
-            .into());
+            return Err(AssassinateError::ModuleNotFound(module_name.to_string()).into());
         }
 
         Ok(Module {
@@ -155,10 +155,7 @@ impl Module {
 
         match result {
             Ok(_) => Ok(true),
-            Err(e) => Err(AssassinateError::ModuleValidationError(
-                e.to_string(),
-            )
-            .into()),
+            Err(e) => Err(AssassinateError::ModuleValidationError(e.to_string()).into()),
         }
     }
 
@@ -202,8 +199,8 @@ impl Module {
         } else {
             // Get session ID
             let sid_val = call_method(session_val, "sid", &[])?;
-            let session_id: i64 = TryConvert::try_convert(sid_val)
-                .map_err(|e: magnus::Error| {
+            let session_id: i64 =
+                TryConvert::try_convert(sid_val).map_err(|e: magnus::Error| {
                     AssassinateError::ConversionError(format!(
                         "Failed to convert session ID: {}",
                         e
@@ -293,9 +290,11 @@ impl Module {
                         "#;
 
                         // Set payloads_array variable
-                        ruby.eval::<Value>(&format!("$temp_payloads = {}",
-                            format!("{:?}", payloads_val)))
-                            .ok();
+                        ruby.eval::<Value>(&format!(
+                            "$temp_payloads = {}",
+                            format!("{:?}", payloads_val)
+                        ))
+                        .ok();
 
                         // For now, return empty if we can't easily extract
                         Ok(vec![])
@@ -356,13 +355,9 @@ impl DataStore {
 
         let json = crate::ruby_bridge::hash_to_json(hash_val)?;
 
-        let dict: HashMap<String, String> =
-            serde_json::from_value(json).map_err(|e| {
-                AssassinateError::ConversionError(format!(
-                    "Failed to convert datastore to dict: {}",
-                    e
-                ))
-            })?;
+        let dict: HashMap<String, String> = serde_json::from_value(json).map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to convert datastore to dict: {}", e))
+        })?;
 
         Ok(dict)
     }
@@ -384,11 +379,10 @@ impl SessionManager {
     pub fn list(&self) -> PyResult<Vec<i64>> {
         let keys_val = call_method(self.ruby_sessions, "keys", &[])?;
 
-        let session_ids: Vec<i64> = TryConvert::try_convert(keys_val)
-            .map_err(|e: magnus::Error| AssassinateError::ConversionError(format!(
-                "Failed to convert session IDs: {}",
-                e
-            )))?;
+        let session_ids: Vec<i64> =
+            TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert session IDs: {}", e))
+            })?;
 
         Ok(session_ids)
     }
@@ -399,10 +393,7 @@ impl SessionManager {
         let id_val = crate::ruby_bridge::get_ruby()?
             .eval::<Value>(&format!("{}", session_id))
             .map_err(|e| {
-                AssassinateError::ConversionError(format!(
-                    "Failed to convert session ID: {}",
-                    e
-                ))
+                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
             })?;
 
         let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
@@ -465,8 +456,7 @@ impl Session {
         let result = call_method(self.ruby_session, "write", &[data_val])?;
 
         // Try to convert to integer (bytes written)
-        let bytes_written: i64 = TryConvert::try_convert(result)
-            .unwrap_or(data.len() as i64);
+        let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
 
         Ok(bytes_written as usize)
     }
@@ -477,7 +467,8 @@ impl Session {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let result = if let Some(len) = length {
-            let len_val = ruby.eval::<Value>(&format!("{}", len))
+            let len_val = ruby
+                .eval::<Value>(&format!("{}", len))
                 .map_err(|e| AssassinateError::ConversionError(e.to_string()))?;
             call_method(self.ruby_session, "read", &[len_val])?
         } else {
@@ -601,10 +592,9 @@ impl PayloadGenerator {
         let generated = call_method(payload, "generate", &[])?;
 
         if is_nil(generated) {
-            return Err(AssassinateError::PayloadError(
-                "Failed to generate payload".to_string(),
-            )
-            .into());
+            return Err(
+                AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
+            );
         }
 
         // Convert Ruby string to bytes
@@ -649,7 +639,8 @@ impl PayloadGenerator {
         // Set iterations if provided
         if let Some(iter) = iterations {
             let iter_key = ruby.str_new("Iterations").as_value();
-            let iter_val = ruby.eval::<Value>(&format!("{}", iter))
+            let iter_val = ruby
+                .eval::<Value>(&format!("{}", iter))
                 .map_err(|e| AssassinateError::ConversionError(e.to_string()))?;
             call_method(datastore, "[]=", &[iter_key, iter_val])?;
         }
@@ -667,10 +658,9 @@ impl PayloadGenerator {
         let generated = call_method(payload, "generate", &[])?;
 
         if is_nil(generated) {
-            return Err(AssassinateError::PayloadError(
-                "Failed to generate payload".to_string(),
-            )
-            .into());
+            return Err(
+                AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
+            );
         }
 
         // Convert Ruby string to bytes
@@ -684,12 +674,9 @@ impl PayloadGenerator {
         let payloads = call_method(modules_mgr, "payloads", &[])?;
         let refnames = call_method(payloads, "module_refnames", &[])?;
 
-        let payload_list: Vec<String> = TryConvert::try_convert(refnames)
-            .map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!(
-                    "Failed to convert payload list: {}",
-                    e
-                ))
+        let payload_list: Vec<String> =
+            TryConvert::try_convert(refnames).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert payload list: {}", e))
             })?;
 
         Ok(payload_list)
@@ -744,10 +731,9 @@ impl PayloadGenerator {
         let raw_payload = call_method(payload, "generate", &[])?;
 
         if is_nil(raw_payload) {
-            return Err(AssassinateError::PayloadError(
-                "Failed to generate payload".to_string(),
-            )
-            .into());
+            return Err(
+                AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
+            );
         }
 
         // Convert to executable using Msf::Util::EXE

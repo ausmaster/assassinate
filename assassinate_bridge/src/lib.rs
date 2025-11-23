@@ -26,7 +26,10 @@ fn get_version() -> PyResult<String> {
 #[pymodule]
 fn assassinate_bridge(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", "0.1.0")?;
-    m.add("__doc__", "Rust+Magnus+PyO3 bridge for Python to Metasploit Framework FFI")?;
+    m.add(
+        "__doc__",
+        "Rust+Magnus+PyO3 bridge for Python to Metasploit Framework FFI",
+    )?;
 
     // Add functions
     m.add_function(wrap_pyfunction!(initialize_metasploit, m)?)?;
