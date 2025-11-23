@@ -19,6 +19,7 @@ sudo apt-get install -y \
     libssl-dev \
     pkg-config \
     libclang-dev \
+    libpcap-dev \
     postgresql \
     postgresql-contrib \
     libpq-dev \

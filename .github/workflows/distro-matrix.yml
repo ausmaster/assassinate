@@ -1,0 +1,37 @@
+name: Multi-Distro Validation
+
+on:
+  push:
+    branches: [ main, test/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ubuntu-test:
+    name: Ubuntu 24.04 Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Installation Script
+        run: bash scripts/install/ubuntu.sh
+
+      - name: Verify Rust Bridge Build
+        run: |
+          cd assassinate_bridge
+          ls -lh target/release/libassassinate_bridge.*
+
+      - name: Run Rust Tests
+        working-directory: assassinate_bridge
+        run: cargo test --release --lib
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-test-results
+          path: |
+            assassinate_bridge/target/release/*.so
+            assassinate_bridge/target/release/*.rlib
+          retention-days: 7

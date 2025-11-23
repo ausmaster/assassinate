@@ -21,6 +21,7 @@ sudo dnf install -y \
     openssl-devel \
     pkg-config \
     clang-devel \
+    libpcap-devel \
     postgresql-server \
     postgresql-contrib \
     postgresql-devel \
