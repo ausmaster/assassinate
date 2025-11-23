@@ -11,18 +11,21 @@ fn main() {
 
     // Get Ruby library configuration
     let output = Command::new(&ruby_cmd)
-        .args(["-e", "require 'rbconfig'; puts RbConfig::CONFIG['libdir']"])
+        .args([
+            "-e",
+            "require 'rbconfig'; puts RbConfig::CONFIG['libdir']; puts RbConfig::CONFIG['RUBY_SO_NAME']",
+        ])
         .output()
         .expect("Failed to execute ruby command");
 
-    let libdir = String::from_utf8(output.stdout)
-        .expect("Invalid UTF-8 in ruby output")
-        .trim()
-        .to_string();
+    let output_str = String::from_utf8(output.stdout).expect("Invalid UTF-8 in ruby output");
+    let mut lines = output_str.lines();
+    let libdir = lines.next().expect("No libdir in output").trim();
+    let ruby_so_name = lines.next().expect("No RUBY_SO_NAME in output").trim();
 
     // Tell Cargo where to find Ruby library
     println!("cargo:rustc-link-search=native={}", libdir);
-    println!("cargo:rustc-link-lib=dylib=ruby");
+    println!("cargo:rustc-link-lib=dylib={}", ruby_so_name);
 
     // Set environment variable for rb-sys to use the correct Ruby
     env::set_var("RUBY", &ruby_cmd);
