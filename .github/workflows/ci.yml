@@ -121,6 +121,7 @@ jobs:
             build-essential \
             libclang-dev \
             pkg-config \
+            libpcap-dev \
             postgresql \
             postgresql-contrib \
             libpq-dev \
