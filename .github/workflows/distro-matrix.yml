@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  ubuntu-test:
-    name: Ubuntu 24.04 Test
+  ubuntu-full-test:
+    name: Ubuntu 24.04 Full Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -108,3 +108,68 @@ jobs:
             --format progress \
             --format documentation \
             --out test_results.txt
+
+  distro-install-validation:
+    name: ${{ matrix.distro }} Installation Test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian
+            image: debian:bookworm
+            script: debian.sh
+          - distro: kali
+            image: kalilinux/kali-rolling:latest
+            script: kali.sh
+          - distro: parrot
+            image: parrotsec/security:latest
+            script: parrot.sh
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Test ${{ matrix.distro }} Installation in Docker
+        run: |
+          docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            ${{ matrix.image }} \
+            bash -c "
+              set -e
+              echo '=== Testing ${{ matrix.distro }} installation ==='
+
+              # Update package lists
+              if command -v apt-get &> /dev/null; then
+                apt-get update
+              fi
+
+              # Install system dependencies
+              apt-get install -y \
+                build-essential \
+                curl \
+                git \
+                libssl-dev \
+                pkg-config \
+                libclang-dev \
+                libpcap-dev \
+                ruby-full \
+                ruby-dev
+
+              # Install Rust
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source \$HOME/.cargo/env
+
+              # Verify Rust installation
+              rustc --version
+              cargo --version
+
+              # Build Rust bridge
+              cd assassinate_bridge
+              cargo build --release
+
+              # Verify Rust bridge built
+              ls -lh target/release/libassassinate_bridge.* || echo 'Bridge library not found'
+
+              echo '=== ${{ matrix.distro }} installation test completed ==='
+            "
