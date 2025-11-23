@@ -35,7 +35,7 @@ impl Framework {
     /// Get the Metasploit Framework version
     pub fn version(&self) -> Result<String> {
         let version_val = call_method(self.ruby_framework, "version", &[])?;
-        Ok(value_to_string(version_val)?)
+        value_to_string(version_val)
     }
 
     /// List all module reference names for a given type
@@ -119,25 +119,25 @@ impl Module {
     /// Get module name
     pub fn name(&self) -> Result<String> {
         let name_val = call_method(self.ruby_module, "name", &[])?;
-        Ok(value_to_string(name_val)?)
+        value_to_string(name_val)
     }
 
     /// Get module full name
     pub fn fullname(&self) -> Result<String> {
         let fullname_val = call_method(self.ruby_module, "fullname", &[])?;
-        Ok(value_to_string(fullname_val)?)
+        value_to_string(fullname_val)
     }
 
     /// Get module description
     pub fn description(&self) -> Result<String> {
         let desc_val = call_method(self.ruby_module, "description", &[])?;
-        Ok(value_to_string(desc_val)?)
+        value_to_string(desc_val)
     }
 
     /// Get module type
     pub fn module_type(&self) -> Result<String> {
         let type_val = call_method(self.ruby_module, "type", &[])?;
-        Ok(value_to_string(type_val)?)
+        value_to_string(type_val)
     }
 
     /// Get module datastore
@@ -289,7 +289,7 @@ impl Module {
     /// Check if module has check method
     pub fn has_check(&self) -> Result<bool> {
         let result = call_method(self.ruby_module, "has_check?", &[])?;
-        Ok(crate::ruby_bridge::value_to_bool(result)?)
+        crate::ruby_bridge::value_to_bool(result)
     }
 
     /// Get available payloads for this exploit
@@ -443,19 +443,19 @@ impl Session {
     /// Get session type
     pub fn session_type(&self) -> Result<String> {
         let type_val = call_method(self.ruby_session, "type", &[])?;
-        Ok(value_to_string(type_val)?)
+        value_to_string(type_val)
     }
 
     /// Get session info
     pub fn info(&self) -> Result<String> {
         let info_val = call_method(self.ruby_session, "info", &[])?;
-        Ok(value_to_string(info_val)?)
+        value_to_string(info_val)
     }
 
     /// Check if session is alive
     pub fn alive(&self) -> Result<bool> {
         let alive_val = call_method(self.ruby_session, "alive?", &[])?;
-        Ok(crate::ruby_bridge::value_to_bool(alive_val)?)
+        crate::ruby_bridge::value_to_bool(alive_val)
     }
 
     /// Kill the session
@@ -537,19 +537,19 @@ impl Session {
     /// Get session description
     pub fn desc(&self) -> Result<String> {
         let desc_val = call_method(self.ruby_session, "desc", &[])?;
-        Ok(value_to_string(desc_val)?)
+        value_to_string(desc_val)
     }
 
     /// Get tunnel peer (remote address)
     pub fn tunnel_peer(&self) -> Result<String> {
         let peer_val = call_method(self.ruby_session, "tunnel_peer", &[])?;
-        Ok(value_to_string(peer_val)?)
+        value_to_string(peer_val)
     }
 
     /// Get target host
     pub fn target_host(&self) -> Result<String> {
         let host_val = call_method(self.ruby_session, "target_host", &[])?;
-        Ok(value_to_string(host_val)?)
+        value_to_string(host_val)
     }
 
     #[cfg(feature = "python-bindings")]
@@ -616,7 +616,7 @@ impl PayloadGenerator {
 
         if is_nil(generated) {
             return Err(
-                AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
+                AssassinateError::PayloadError("Failed to generate payload".to_string()),
             );
         }
 
@@ -682,7 +682,7 @@ impl PayloadGenerator {
 
         if is_nil(generated) {
             return Err(
-                AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
+                AssassinateError::PayloadError("Failed to generate payload".to_string()),
             );
         }
 
@@ -755,7 +755,7 @@ impl PayloadGenerator {
 
         if is_nil(raw_payload) {
             return Err(
-                AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
+                AssassinateError::PayloadError("Failed to generate payload".to_string()),
             );
         }
 
