@@ -15,7 +15,7 @@ impl Framework {
     #[new]
     #[pyo3(signature = (options=None))]
     pub fn new(options: Option<HashMap<String, String>>) -> PyResult<Self> {
-        let opts_json = options.map(|o| serde_json::to_value(o).ok()).flatten();
+        let opts_json = options.and_then(|o| serde_json::to_value(o).ok());
 
         let ruby_framework = create_framework(opts_json)?;
 
@@ -284,17 +284,9 @@ impl Module {
                 // Get compatible payloads
                 match call_method(self.ruby_module, "compatible_payloads", &[]) {
                     Ok(payloads_val) => {
-                        // Convert to vec of first elements
-                        let code = r#"
-                            payloads_array.map { |p| p.first }
-                        "#;
-
                         // Set payloads_array variable
-                        ruby.eval::<Value>(&format!(
-                            "$temp_payloads = {}",
-                            format!("{:?}", payloads_val)
-                        ))
-                        .ok();
+                        ruby.eval::<Value>(&format!("$temp_payloads = {:?}", payloads_val))
+                            .ok();
 
                         // For now, return empty if we can't easily extract
                         Ok(vec![])
@@ -735,14 +727,6 @@ impl PayloadGenerator {
                 AssassinateError::PayloadError("Failed to generate payload".to_string()).into(),
             );
         }
-
-        // Convert to executable using Msf::Util::EXE
-        let code = format!(
-            r#"
-            Msf::Util::EXE.to_executable(framework, '{}', '{}', raw_payload_data)
-            "#,
-            arch, platform
-        );
 
         // Store raw_payload in global variable temporarily
         ruby.eval::<Value>(&format!("$temp_raw_payload = {:?}", raw_payload))
