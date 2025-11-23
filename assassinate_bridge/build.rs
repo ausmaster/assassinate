@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::env;
+use std::process::Command;
 
 fn main() {
     // Use rbenv Ruby 3.3.8 explicitly
@@ -7,7 +7,7 @@ fn main() {
 
     // Get Ruby library configuration
     let output = Command::new(ruby_cmd)
-        .args(&["-e", "require 'rbconfig'; puts RbConfig::CONFIG['libdir']"])
+        .args(["-e", "require 'rbconfig'; puts RbConfig::CONFIG['libdir']"])
         .output()
         .expect("Failed to execute ruby command");
 
