@@ -615,9 +615,9 @@ impl PayloadGenerator {
         let generated = call_method(payload, "generate", &[])?;
 
         if is_nil(generated) {
-            return Err(
-                AssassinateError::PayloadError("Failed to generate payload".to_string()),
-            );
+            return Err(AssassinateError::PayloadError(
+                "Failed to generate payload".to_string(),
+            ));
         }
 
         // Convert Ruby string to bytes
@@ -681,9 +681,9 @@ impl PayloadGenerator {
         let generated = call_method(payload, "generate", &[])?;
 
         if is_nil(generated) {
-            return Err(
-                AssassinateError::PayloadError("Failed to generate payload".to_string()),
-            );
+            return Err(AssassinateError::PayloadError(
+                "Failed to generate payload".to_string(),
+            ));
         }
 
         // Convert Ruby string to bytes
@@ -754,9 +754,9 @@ impl PayloadGenerator {
         let raw_payload = call_method(payload, "generate", &[])?;
 
         if is_nil(raw_payload) {
-            return Err(
-                AssassinateError::PayloadError("Failed to generate payload".to_string()),
-            );
+            return Err(AssassinateError::PayloadError(
+                "Failed to generate payload".to_string(),
+            ));
         }
 
         // Store raw_payload in global variable temporarily
