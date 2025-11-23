@@ -48,7 +48,7 @@ fi
 # Install MSF dependencies
 echo "[5/7] Installing Metasploit dependencies..."
 cd "$HOME/metasploit-framework"
-gem install bundler
+sudo gem install bundler
 bundle install
 
 # Setup PostgreSQL
