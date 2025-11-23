@@ -99,7 +99,7 @@ fn test_all_metasploit_integration() {
     assert!(names.is_ok(), "Failed to convert names: {:?}", names.err());
     let name_list = names.unwrap();
     println!("✓ Found {} exploits", name_list.len());
-    assert!(name_list.len() > 0, "No exploits found");
+    assert!(!name_list.is_empty(), "No exploits found");
     for (i, name) in name_list.iter().take(5).enumerate() {
         println!("  {}. {}", i + 1, name);
     }
@@ -120,7 +120,7 @@ fn test_all_metasploit_integration() {
         ruby_bridge::call_method(aux_set, "module_refnames", &[]).expect("Failed to get refnames");
     let names: Vec<String> = TryConvert::try_convert(refnames).expect("Failed to convert names");
     println!("✓ Found {} auxiliary modules", names.len());
-    assert!(names.len() > 0, "No auxiliary modules found");
+    assert!(!names.is_empty(), "No auxiliary modules found");
 
     // Test 08: List payloads
     println!("\n=== Test 08: Payload enumeration ===");
@@ -138,7 +138,7 @@ fn test_all_metasploit_integration() {
         .expect("Failed to get refnames");
     let names: Vec<String> = TryConvert::try_convert(refnames).expect("Failed to convert names");
     println!("✓ Found {} payloads", names.len());
-    assert!(names.len() > 0, "No payloads found");
+    assert!(!names.is_empty(), "No payloads found");
 
     // Test 09: Create exploit module
     println!("\n=== Test 09: Exploit module creation ===");
