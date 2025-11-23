@@ -104,99 +104,10 @@ jobs:
           path: assassinate_bridge/target/release/libassassinate_bridge.*
           retention-days: 7
 
-  msf_integration_test:
-    name: MSF Test Suite Validation
-    runs-on: ubuntu-latest
-    needs: build_and_test
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ruby-full \
-            ruby-dev \
-            build-essential \
-            libclang-dev \
-            pkg-config \
-            libpcap-dev \
-            postgresql \
-            postgresql-contrib \
-            libpq-dev \
-            git
-
-      - name: Setup PostgreSQL
-        run: |
-          sudo systemctl start postgresql
-          sudo -u postgres createuser -s $USER
-          sudo -u postgres createdb metasploit_test
-
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Clone Metasploit Framework
-        run: |
-          cd ..
-          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git
-          cd metasploit-framework
-
-      - name: Install MSF Dependencies
-        working-directory: ../metasploit-framework
-        run: |
-          sudo gem install bundler
-          sudo bundle install
-
-      - name: Build Rust Bridge
-        working-directory: ./assassinate_bridge
-        run: cargo build --release
-
-      - name: Run MSF Bridge Validation Tests
-        working-directory: ../metasploit-framework
-        run: |
-          bundle exec rspec ../assassinate/assassinate_bridge/spec/bridge_validation_spec.rb \
-            --require ../assassinate/assassinate_bridge/spec/bridge_spec_helper_minimal.rb \
-            --format documentation
-        continue-on-error: true
-        id: bridge_tests
-
-      - name: Run MSF Core Test Suite
-        working-directory: ../metasploit-framework
-        run: |
-          bundle exec rspec spec/lib/msf/core/ \
-            --require ../assassinate/assassinate_bridge/spec/bridge_spec_helper_minimal.rb \
-            --format progress \
-            2>&1 | tee msf_test_results.log
-        continue-on-error: true
-        id: msf_tests
-        timeout-minutes: 30
-
-      - name: Parse Test Results
-        if: always()
-        working-directory: ../metasploit-framework
-        run: |
-          if [ -f msf_test_results.log ]; then
-            echo "MSF_TEST_OUTPUT<<EOF" >> $GITHUB_ENV
-            tail -50 msf_test_results.log >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: msf-test-results
-          path: ../metasploit-framework/msf_test_results.log
-          retention-days: 30
-
   test_summary:
     name: Test Results Summary
     runs-on: ubuntu-latest
-    needs: [build_and_test, msf_integration_test]
+    needs: [build_and_test]
     if: always()
     steps:
       - name: Summary
@@ -206,13 +117,6 @@ jobs:
           echo "✅ Rust format and linting passed" >> $GITHUB_STEP_SUMMARY
           echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
           echo "✅ Unit tests passed (3 tests)" >> $GITHUB_STEP_SUMMARY
-          echo "✅ MSF integration tests completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Coverage" >> $GITHUB_STEP_SUMMARY
-          echo "- Framework initialization" >> $GITHUB_STEP_SUMMARY
-          echo "- Module enumeration" >> $GITHUB_STEP_SUMMARY
-          echo "- Module creation and execution" >> $GITHUB_STEP_SUMMARY
-          echo "- Payload generation" >> $GITHUB_STEP_SUMMARY
-          echo "- DataStore operations" >> $GITHUB_STEP_SUMMARY
-          echo "- Session management" >> $GITHUB_STEP_SUMMARY
-          echo "- MSF Core Test Suite (5,000+ tests)" >> $GITHUB_STEP_SUMMARY
+          echo "### Note" >> $GITHUB_STEP_SUMMARY
+          echo "Full MSF integration testing is handled by the Multi-Distro Validation workflow" >> $GITHUB_STEP_SUMMARY
