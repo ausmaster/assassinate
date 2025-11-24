@@ -163,7 +163,8 @@ jobs:
                   postgresql-contrib \
                   libpq-dev \
                   ruby-full \
-                  ruby-dev
+                  ruby-dev \
+                  libyaml-dev
               elif command -v dnf &> /dev/null; then
                 dnf install -y \
                   gcc \
@@ -179,7 +180,8 @@ jobs:
                   postgresql-server \
                   postgresql-devel \
                   ruby \
-                  ruby-devel
+                  ruby-devel \
+                  libyaml-devel
               elif command -v pacman &> /dev/null; then
                 pacman -Sy --noconfirm \
                   base-devel \
@@ -191,7 +193,8 @@ jobs:
                   libpcap \
                   postgresql \
                   postgresql-libs \
-                  ruby
+                  ruby \
+                  libyaml
               fi
 
               # Install Rust
