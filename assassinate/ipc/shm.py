@@ -48,12 +48,25 @@ class RingBuffer:
             else:
                 self.shm_path = f"/dev/shm/{name}"
 
+            # Check if shared memory exists
+            if not os.path.exists(self.shm_path):
+                raise IpcError(
+                    f"Shared memory '{name}' not found at {self.shm_path}.\n"
+                    f"Make sure the assassinate_daemon is running first:\n"
+                    f"  ./assassinate_daemon/target/release/assassinate_daemon --msf-root /path/to/msf"
+                )
+
             # Open the shared memory file descriptor
             fd = os.open(self.shm_path, os.O_RDWR)
             self.mmap = mmap.mmap(fd, self.total_size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
             os.close(fd)
+        except IpcError:
+            raise
         except (OSError, FileNotFoundError) as e:
-            raise IpcError(f"Failed to open shared memory '{name}': {e}") from e
+            raise IpcError(
+                f"Failed to open shared memory '{name}': {e}\n"
+                f"Make sure the assassinate_daemon is running."
+            ) from e
 
     def _read_atomic_u64(self, offset: int) -> int:
         """Read a 64-bit atomic value.
