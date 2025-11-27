@@ -37,7 +37,9 @@ pub mod framework;
 pub mod ruby_bridge;
 
 // Re-export main types for Rust users
-pub use framework::{DataStore, Framework, Module, PayloadGenerator, Session, SessionManager};
+pub use framework::{
+    DataStore, DbManager, Framework, JobManager, Module, PayloadGenerator, Session, SessionManager,
+};
 pub use ruby_bridge::init_metasploit;
 
 // Python bindings (only compiled when python-bindings feature is enabled)
@@ -80,6 +82,8 @@ mod python_bindings {
         m.add_class::<SessionManager>()?;
         m.add_class::<Session>()?;
         m.add_class::<PayloadGenerator>()?;
+        m.add_class::<DbManager>()?;
+        m.add_class::<JobManager>()?;
 
         Ok(())
     }

@@ -258,6 +258,58 @@ class Session:
         """
         return str(self._instance.target_host())
 
+    def session_host(self) -> str:
+        """Get session host IP address.
+
+        Returns:
+            Session host IP address.
+
+        Example:
+            >>> session = sm.get(1)
+            >>> print(session.session_host())
+            192.168.1.100
+        """
+        return str(self._instance.session_host())
+
+    def session_port(self) -> int:
+        """Get session port number.
+
+        Returns:
+            Session port number.
+
+        Example:
+            >>> session = sm.get(1)
+            >>> print(session.session_port())
+            4444
+        """
+        return int(self._instance.session_port())
+
+    def via_exploit(self) -> str:
+        """Get exploit that created this session.
+
+        Returns:
+            Exploit module name.
+
+        Example:
+            >>> session = sm.get(1)
+            >>> print(session.via_exploit())
+            exploit/unix/ftp/vsftpd_234_backdoor
+        """
+        return str(self._instance.via_exploit())
+
+    def via_payload(self) -> str:
+        """Get payload that created this session.
+
+        Returns:
+            Payload module name.
+
+        Example:
+            >>> session = sm.get(1)
+            >>> print(session.via_payload())
+            cmd/unix/reverse
+        """
+        return str(self._instance.via_payload())
+
     def __repr__(self) -> str:
         """Return string representation of Session.
 

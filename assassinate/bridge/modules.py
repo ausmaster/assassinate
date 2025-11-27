@@ -246,6 +246,104 @@ class Module:
         """
         return list(self._instance.compatible_payloads())
 
+    def author(self) -> list[str]:
+        """Get module authors.
+
+        Returns:
+            List of author names/credits.
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> authors = mod.author()
+            >>> print(authors[0])
+            hdm <x@hdm.io>
+        """
+        return list(self._instance.author())
+
+    def references(self) -> list[str]:
+        """Get module references (CVE, BID, URL, etc.).
+
+        Returns:
+            List of reference strings.
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> refs = mod.references()
+            >>> for ref in refs:
+            ...     print(ref)
+        """
+        return list(self._instance.references())
+
+    def options(self) -> str:
+        """Get module options schema.
+
+        Returns:
+            String representation of OptionContainer.
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> opts = mod.options()
+            >>> print(opts)
+        """
+        return str(self._instance.options())
+
+    def platform(self) -> list[str]:
+        """Get target platforms.
+
+        Returns:
+            List of platform names (e.g., ["linux", "windows"]).
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> platforms = mod.platform()
+            >>> print(platforms)
+            ['linux', 'unix']
+        """
+        return list(self._instance.platform())
+
+    def arch(self) -> list[str]:
+        """Get target architectures.
+
+        Returns:
+            List of architecture names (e.g., ["x86", "x64"]).
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> archs = mod.arch()
+            >>> print(archs)
+            ['x86']
+        """
+        return list(self._instance.arch())
+
+    def targets(self) -> list[str]:
+        """Get exploit targets (for exploit modules only).
+
+        Returns:
+            List of target names.
+
+        Example:
+            >>> mod = fw.create_module("exploit/windows/smb/ms17_010_eternalblue")
+            >>> targets = mod.targets()
+            >>> for target in targets:
+            ...     print(target)
+        """
+        return list(self._instance.targets())
+
+    def disclosure_date(self) -> str | None:
+        """Get vulnerability disclosure date.
+
+        Returns:
+            Disclosure date string or None if not available.
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> date = mod.disclosure_date()
+            >>> print(date)
+            2011-07-04
+        """
+        result = self._instance.disclosure_date()
+        return str(result) if result is not None else None
+
     def __repr__(self) -> str:
         """Return string representation of Module.
 

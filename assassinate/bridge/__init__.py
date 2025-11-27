@@ -15,6 +15,8 @@ Public API:
         - SessionManager: Manages active sessions
         - Session: Active session to compromised target
         - PayloadGenerator: Generates and encodes payloads
+        - DbManager: Database manager
+        - JobManager: Background job manager
 
 Example:
     >>> from assassinate.bridge import initialize, Framework
@@ -27,6 +29,8 @@ from __future__ import annotations
 
 from assassinate.bridge.core import Framework, get_version, initialize
 from assassinate.bridge.datastore import DataStore
+from assassinate.bridge.db import DbManager
+from assassinate.bridge.jobs import JobManager
 from assassinate.bridge.modules import Module
 from assassinate.bridge.payloads import PayloadGenerator
 from assassinate.bridge.sessions import Session, SessionManager
@@ -40,4 +44,6 @@ __all__ = [
     "SessionManager",
     "Session",
     "PayloadGenerator",
+    "DbManager",
+    "JobManager",
 ]

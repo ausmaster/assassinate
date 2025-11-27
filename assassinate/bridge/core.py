@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from assassinate.bridge.datastore import DataStore
+    from assassinate.bridge.db import DbManager
+    from assassinate.bridge.jobs import JobManager
     from assassinate.bridge.modules import Module
     from assassinate.bridge.payloads import PayloadGenerator
     from assassinate.bridge.sessions import SessionManager
@@ -198,6 +200,56 @@ class Framework:
         from assassinate.bridge.payloads import PayloadGenerator
 
         return PayloadGenerator(self)
+
+    def db(self) -> DbManager:
+        """Get database manager.
+
+        Returns:
+            DbManager instance for database operations.
+
+        Example:
+            >>> fw = Framework()
+            >>> db = fw.db()
+            >>> hosts = db.hosts()
+        """
+        # Import here to avoid circular dependency
+        from assassinate.bridge.db import DbManager
+
+        return DbManager(self._instance.db())
+
+    def search(self, query: str) -> list[str]:
+        """Search for modules by keyword, CVE, name, etc.
+
+        Args:
+            query: Search query string.
+
+        Returns:
+            List of matching module names.
+
+        Example:
+            >>> fw = Framework()
+            >>> results = fw.search("vsftpd")
+            >>> for module in results:
+            ...     print(module)
+            exploit/unix/ftp/vsftpd_234_backdoor
+        """
+        return list(self._instance.search(query))
+
+    def jobs(self) -> JobManager:
+        """Get jobs manager.
+
+        Returns:
+            JobManager instance for managing background jobs.
+
+        Example:
+            >>> fw = Framework()
+            >>> jm = fw.jobs()
+            >>> job_ids = jm.list()
+        """
+        # Import here to avoid circular dependency
+        from assassinate.bridge.jobs import JobManager
+
+        return JobManager(self._instance.jobs())
 
     def __repr__(self) -> str:
         """Return string representation of Framework.

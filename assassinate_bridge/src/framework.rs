@@ -100,6 +100,38 @@ impl Framework {
         })
     }
 
+    /// Get database manager
+    pub fn db(&self) -> Result<DbManager> {
+        let db_val = call_method(self.ruby_framework, "db", &[])?;
+
+        Ok(DbManager { ruby_db: db_val })
+    }
+
+    /// Search for modules
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (query))]
+    pub fn search(&self, query: &str) -> Result<Vec<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let query_val = ruby.str_new(query).as_value();
+
+        let results_val = call_method(self.ruby_framework, "search", &[query_val])?;
+
+        // Search returns an array of modules, convert to strings
+        let results: Vec<String> =
+            TryConvert::try_convert(results_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert search results: {}", e))
+            })?;
+
+        Ok(results)
+    }
+
+    /// Get jobs manager
+    pub fn jobs(&self) -> Result<JobManager> {
+        let jobs_val = call_method(self.ruby_framework, "jobs", &[])?;
+
+        Ok(JobManager { ruby_jobs: jobs_val })
+    }
+
     #[cfg(feature = "python-bindings")]
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
@@ -317,6 +349,108 @@ impl Module {
         }
     }
 
+    /// Get module authors
+    pub fn author(&self) -> Result<Vec<String>> {
+        let author_val = call_method(self.ruby_module, "author", &[])?;
+
+        // author is an array of Author objects, convert to strings
+        let authors: Vec<String> = TryConvert::try_convert(author_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert authors: {}", e))
+        })?;
+
+        Ok(authors)
+    }
+
+    /// Get module references (CVE, BID, URL, etc.)
+    pub fn references(&self) -> Result<Vec<String>> {
+        let refs_val = call_method(self.ruby_module, "references", &[])?;
+
+        // References is an array, convert each to string
+        let refs: Vec<String> = TryConvert::try_convert(refs_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert references: {}", e))
+        })?;
+
+        Ok(refs)
+    }
+
+    /// Get module options (returns the options attribute reader)
+    pub fn options(&self) -> Result<String> {
+        let options_val = call_method(self.ruby_module, "options", &[])?;
+        value_to_string(options_val)
+    }
+
+    /// Get module target platforms
+    pub fn platform(&self) -> Result<Vec<String>> {
+        let platform_val = call_method(self.ruby_module, "platform", &[])?;
+
+        // Platform can be PlatformList or nil
+        if is_nil(platform_val) {
+            return Ok(vec![]);
+        }
+
+        // Try to convert to array of strings
+        let platforms: Vec<String> =
+            TryConvert::try_convert(platform_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert platforms: {}", e))
+            })?;
+
+        Ok(platforms)
+    }
+
+    /// Get module target architectures
+    pub fn arch(&self) -> Result<Vec<String>> {
+        let arch_val = call_method(self.ruby_module, "arch", &[])?;
+
+        // Arch can be an array or nil
+        if is_nil(arch_val) {
+            return Ok(vec![]);
+        }
+
+        // Try to convert to array of strings
+        let archs: Vec<String> = TryConvert::try_convert(arch_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert architectures: {}", e))
+        })?;
+
+        Ok(archs)
+    }
+
+    /// Get exploit targets (for exploit modules only)
+    pub fn targets(&self) -> Result<Vec<String>> {
+        // Check if module responds to targets
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let method_name = ruby.str_new("targets").as_value();
+
+        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
+            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+                let targets_val = call_method(self.ruby_module, "targets", &[])?;
+
+                if is_nil(targets_val) {
+                    return Ok(vec![]);
+                }
+
+                // Targets is an array of Target objects, convert to strings
+                let targets: Vec<String> =
+                    TryConvert::try_convert(targets_val).map_err(|e: magnus::Error| {
+                        AssassinateError::ConversionError(format!("Failed to convert targets: {}", e))
+                    })?;
+
+                Ok(targets)
+            }
+            _ => Ok(vec![]),
+        }
+    }
+
+    /// Get vulnerability disclosure date
+    pub fn disclosure_date(&self) -> Result<Option<String>> {
+        let date_val = call_method(self.ruby_module, "disclosure_date", &[])?;
+
+        if is_nil(date_val) {
+            Ok(None)
+        } else {
+            Ok(Some(value_to_string(date_val)?))
+        }
+    }
+
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
@@ -374,6 +508,34 @@ impl DataStore {
         })?;
 
         Ok(dict)
+    }
+
+    /// Delete a key from datastore
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (key))]
+    pub fn delete(&self, key: &str) -> Result<()> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let key_val = ruby.str_new(key).as_value();
+
+        call_method(self.ruby_datastore, "delete", &[key_val])?;
+        Ok(())
+    }
+
+    /// Get all keys
+    pub fn keys(&self) -> Result<Vec<String>> {
+        let keys_val = call_method(self.ruby_datastore, "keys", &[])?;
+
+        let keys: Vec<String> = TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert keys: {}", e))
+        })?;
+
+        Ok(keys)
+    }
+
+    /// Clear all values
+    pub fn clear(&self) -> Result<()> {
+        call_method(self.ruby_datastore, "clear", &[])?;
+        Ok(())
     }
 
     #[cfg(feature = "python-bindings")]
@@ -552,6 +714,32 @@ impl Session {
         value_to_string(host_val)
     }
 
+    /// Get session host
+    pub fn session_host(&self) -> Result<String> {
+        let host_val = call_method(self.ruby_session, "session_host", &[])?;
+        value_to_string(host_val)
+    }
+
+    /// Get session port
+    pub fn session_port(&self) -> Result<i64> {
+        let port_val = call_method(self.ruby_session, "session_port", &[])?;
+        TryConvert::try_convert(port_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert port: {}", e))
+        })
+    }
+
+    /// Get exploit that created this session
+    pub fn via_exploit(&self) -> Result<String> {
+        let exploit_val = call_method(self.ruby_session, "via_exploit", &[])?;
+        value_to_string(exploit_val)
+    }
+
+    /// Get payload that created this session
+    pub fn via_payload(&self) -> Result<String> {
+        let payload_val = call_method(self.ruby_session, "via_payload", &[])?;
+        value_to_string(payload_val)
+    }
+
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
@@ -560,6 +748,127 @@ impl Session {
             self.session_type()?,
             self.alive()?
         ))
+    }
+}
+
+/// Database manager
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
+#[derive(Clone)]
+pub struct DbManager {
+    pub(crate) ruby_db: Value,
+}
+
+#[cfg_attr(feature = "python-bindings", pymethods)]
+impl DbManager {
+    /// Get all hosts
+    pub fn hosts(&self) -> Result<Vec<String>> {
+        let hosts_val = call_method(self.ruby_db, "hosts", &[])?;
+
+        // Convert to array of strings (host IPs)
+        let hosts: Vec<String> = TryConvert::try_convert(hosts_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert hosts: {}", e))
+        })?;
+
+        Ok(hosts)
+    }
+
+    /// Get all services
+    pub fn services(&self) -> Result<Vec<String>> {
+        let services_val = call_method(self.ruby_db, "services", &[])?;
+
+        // Convert to array of strings
+        let services: Vec<String> =
+            TryConvert::try_convert(services_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert services: {}", e))
+            })?;
+
+        Ok(services)
+    }
+
+    /// Report a host
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (**opts))]
+    pub fn report_host(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        })?;
+
+        if let Some(opts_map) = opts {
+            for (key, value) in opts_map {
+                let key_val = ruby.str_new(&key).as_value();
+                let value_val = ruby.str_new(&value).as_value();
+                call_method(opts_val, "[]=", &[key_val, value_val])?;
+            }
+        }
+
+        let host_val = call_method(self.ruby_db, "report_host", &[opts_val])?;
+
+        // Get host ID
+        let id: i64 = TryConvert::try_convert(host_val).unwrap_or(0);
+        Ok(id)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
+        Ok("<DbManager>".to_string())
+    }
+}
+
+/// Job manager
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
+#[derive(Clone)]
+pub struct JobManager {
+    pub(crate) ruby_jobs: Value,
+}
+
+#[cfg_attr(feature = "python-bindings", pymethods)]
+impl JobManager {
+    /// List all job IDs
+    pub fn list(&self) -> Result<Vec<String>> {
+        let keys_val = call_method(self.ruby_jobs, "keys", &[])?;
+
+        let job_ids: Vec<String> = TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert job IDs: {}", e))
+        })?;
+
+        Ok(job_ids)
+    }
+
+    /// Get job by ID
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (job_id))]
+    pub fn get(&self, job_id: &str) -> Result<Option<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.str_new(job_id).as_value();
+
+        let job_val = call_method(self.ruby_jobs, "[]", &[id_val])?;
+
+        if is_nil(job_val) {
+            Ok(None)
+        } else {
+            Ok(Some(value_to_string(job_val)?))
+        }
+    }
+
+    /// Kill a job by ID
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (job_id))]
+    pub fn kill(&self, job_id: &str) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.str_new(job_id).as_value();
+
+        match call_method(self.ruby_jobs, "stop", &[id_val]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
+        Ok(format!("<JobManager jobs={}>", self.list()?.len()))
     }
 }
 

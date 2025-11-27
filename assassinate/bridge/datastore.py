@@ -80,6 +80,48 @@ class DataStore:
         """
         return dict(self._instance.to_dict())
 
+    def delete(self, key: str) -> None:
+        """Delete a key from the datastore.
+
+        Args:
+            key: Option name to delete (case-insensitive).
+
+        Example:
+            >>> ds = mod.datastore()
+            >>> ds.set("RHOSTS", "192.168.1.100")
+            >>> ds.delete("RHOSTS")
+            >>> print(ds.get("RHOSTS"))
+            None
+        """
+        self._instance.delete(key)
+
+    def keys(self) -> list[str]:
+        """Get all keys in the datastore.
+
+        Returns:
+            List of all keys.
+
+        Example:
+            >>> ds = mod.datastore()
+            >>> ds.set("RHOSTS", "192.168.1.100")
+            >>> ds.set("RPORT", "21")
+            >>> print(ds.keys())
+            ['RHOSTS', 'RPORT']
+        """
+        return list(self._instance.keys())
+
+    def clear(self) -> None:
+        """Clear all values from the datastore.
+
+        Example:
+            >>> ds = mod.datastore()
+            >>> ds.set("RHOSTS", "192.168.1.100")
+            >>> ds.clear()
+            >>> print(ds.to_dict())
+            {}
+        """
+        self._instance.clear()
+
     def __repr__(self) -> str:
         """Return string representation of DataStore.
 
