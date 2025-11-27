@@ -227,9 +227,10 @@ jobs:
               fi
 
               # Use single-threaded install to avoid race conditions
-              # Timeout increased to 600s due to slow gem downloads
+              # No timeout - let GitHub Actions job timeout handle it (360min default)
+              # Bundle install for MSF can take 10-15 minutes depending on network
               # See: https://github.com/bundler/bundler/issues/6698
-              timeout 600 bundle install --jobs 1 || bundle install --jobs 1
+              bundle install --jobs 1
 
               # Setup PostgreSQL
               echo 'Setting up PostgreSQL...'
