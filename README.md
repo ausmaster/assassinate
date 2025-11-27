@@ -1,4 +1,8 @@
-[![Assassinate Logo](./docs/Assassinate.png)](https://github.com/ausmaster/assassinate)
+<p align="center">
+  <a href="https://github.com/ausmaster/assassinate">
+    <img src="./docs/Assassinate.png" alt="Assassinate Logo" width="200">
+  </a>
+</p>
 
 [![Rust](https://img.shields.io/badge/rust-1.91+-FF8400)](https://www.rust-lang.org)
 [![Python Version](https://img.shields.io/badge/python-3.8+-FF8400)](https://www.python.org)
@@ -99,23 +103,100 @@ assassinate/
 
 ## 📥 **Installation**
 
+### **Supported Platforms**
+
+Assassinate has been tested and validated on the following Linux distributions:
+
+- ✅ **Debian** 12 (Bookworm)
+- ✅ **Kali Linux** (Rolling)
+- ✅ **Parrot Security** OS
+- ✅ **Ubuntu** 24.04 LTS
+- ✅ **Fedora** (Latest)
+- ✅ **Arch Linux** (Rolling)
+
 ### **Prerequisites**
 
 - **Rust:** 1.91+ with `rustfmt` and `clippy`
-- **Ruby:** 3.2+ (system Ruby or rbenv)
+- **Ruby:** 3.1+ (system Ruby or rbenv)
 - **Python:** 3.8+ with development headers
 - **Metasploit Framework:** 6.4+
 - **PostgreSQL:** Required for full MSF functionality
+- **System Dependencies:**
+  - `build-essential` (Debian/Ubuntu) or equivalent
+  - `libssl-dev`, `pkg-config`, `libclang-dev`
+  - `libpcap-dev`, `libpq-dev`
+  - `ruby-dev`, `libyaml-dev`, `libffi-dev`
 
-### **Quick Setup**
+### **Distribution-Specific Installation**
+
+#### **Debian/Ubuntu/Kali/Parrot**
+```bash
+# Install system dependencies
+sudo apt-get update
+sudo apt-get install -y build-essential curl git \
+  libssl-dev pkg-config libclang-dev libpcap-dev \
+  postgresql postgresql-contrib libpq-dev \
+  ruby-full ruby-dev libyaml-dev libffi-dev
+
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+
+# Clone Metasploit Framework
+git clone --depth=1 https://github.com/rapid7/metasploit-framework.git /opt/metasploit-framework
+cd /opt/metasploit-framework
+
+# Install bundler and MSF dependencies
+gem install bundler
+bundle install --jobs 4
+```
+
+#### **Fedora**
+```bash
+# Install system dependencies
+sudo dnf install -y gcc gcc-c++ make git \
+  openssl-devel clang-devel libpcap-devel \
+  postgresql postgresql-server postgresql-devel \
+  ruby ruby-devel libyaml-devel libffi-devel
+
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+
+# Clone and setup Metasploit
+git clone --depth=1 https://github.com/rapid7/metasploit-framework.git /opt/metasploit-framework
+cd /opt/metasploit-framework
+gem install bundler
+bundle install --jobs 4
+```
+
+#### **Arch Linux**
+```bash
+# Install system dependencies
+sudo pacman -Syu --needed base-devel git rust \
+  openssl clang libpcap postgresql \
+  ruby libyaml libffi
+
+# Clone and setup Metasploit
+git clone --depth=1 https://github.com/rapid7/metasploit-framework.git /opt/metasploit-framework
+cd /opt/metasploit-framework
+gem install bundler
+# Add gem bin directory to PATH
+export PATH="$(ruby -e 'puts Gem.user_dir')/bin:$PATH"
+bundle install --jobs 4
+```
+
+### **Build Assassinate Bridge**
 
 ```bash
 # Clone the repository
 git clone https://github.com/ausmaster/assassinate.git
-cd assassinate
+cd assassinate/assassinate_bridge
 
-# Build the Rust bridge
-cd assassinate_bridge
+# Set MSF path (optional, defaults to /opt/metasploit-framework)
+export MSF_ROOT=/opt/metasploit-framework
+
+# Build the bridge
 cargo build --release
 
 # The compiled library will be at:
@@ -289,25 +370,50 @@ See [assassinate_bridge/MSF_TEST_RESULTS.md](assassinate_bridge/MSF_TEST_RESULTS
 ```bash
 # Run Rust integration tests (requires MSF installed)
 cd assassinate_bridge
-env LD_LIBRARY_PATH=$HOME/.rbenv/versions/3.3.8/lib \
-    RUBY=$HOME/.rbenv/versions/3.3.8/bin/ruby \
-    cargo test --release
+export MSF_ROOT=/opt/metasploit-framework  # Or your MSF path
+cargo test --release --test integration_tests
 
 # Run MSF test suite through the bridge
-cd metasploit-framework
+cd /opt/metasploit-framework
 bundle exec rspec spec/lib/msf/core/framework_spec.rb \
-    --require ../assassinate_bridge/spec/bridge_spec_helper_minimal.rb
+    --require /path/to/assassinate/assassinate_bridge/spec/bridge_spec_helper_minimal.rb
 ```
+
+### **Multi-Distro Testing**
+
+The project includes Docker-based testing for all supported distributions:
+
+```bash
+# Start test containers for all distros
+docker-compose -f docker-compose.test.yml up -d
+
+# Test in a specific distro (e.g., Kali)
+docker exec test-kali bash -c 'cd /workspace/assassinate_bridge && cargo test --release'
+
+# Clean up
+docker-compose -f docker-compose.test.yml down
+```
+
+See [TESTING.md](TESTING.md) for detailed testing instructions.
 
 ---
 
 ## 🚀 **CI/CD**
 
-The project includes a comprehensive CI/CD pipeline:
+The project includes comprehensive CI/CD pipelines:
 
+### **Assassinate Rust FFI Bridge CI**
 - **Format & Lint:** `cargo fmt` and `clippy` checks
 - **Build:** Multi-platform Rust compilation
-- **Tests:** Library unit tests (integration tests require MSF)
+- **Unit Tests:** Library tests without MSF dependencies
+
+### **Multi-Distro Validation**
+- **6 Linux Distributions:** Debian, Kali, Parrot, Ubuntu, Fedora, Arch
+- **Full Integration Tests:** Complete MSF installation and bridge testing
+- **Automated Testing:** Every PR runs full validation across all distros
+- **Docker-Based:** Reproducible testing environment
+
+All tests must pass before merging to ensure cross-platform compatibility.
 
 ---
 
