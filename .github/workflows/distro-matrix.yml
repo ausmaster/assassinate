@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  ubuntu-test:
-    name: Ubuntu 24.04 Test
+  ubuntu-full-test:
+    name: Ubuntu 24.04 Full Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -43,7 +43,8 @@ jobs:
         run: |
           cd ~/metasploit-framework
           sudo gem install bundler
-          sudo bundle install
+          # Use single-threaded install to avoid race conditions
+          sudo bundle install --jobs 1
 
       - name: Setup PostgreSQL
         run: |
@@ -108,3 +109,167 @@ jobs:
             --format progress \
             --format documentation \
             --out test_results.txt
+
+  distro-install-validation:
+    name: ${{ matrix.distro }} Validation Test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Debian
+            image: debian:bookworm
+            pkg_manager: apt-get
+          - distro: Kali
+            image: kalilinux/kali-rolling:latest
+            pkg_manager: apt-get
+          - distro: Parrot
+            image: parrotsec/security:latest
+            pkg_manager: apt-get
+          - distro: Ubuntu
+            image: ubuntu:24.04
+            pkg_manager: apt-get
+          - distro: Fedora
+            image: fedora:latest
+            pkg_manager: dnf
+          - distro: Arch
+            image: archlinux:latest
+            pkg_manager: pacman
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Test ${{ matrix.distro }} Installation and Bridge Tests
+        run: |
+          docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            ${{ matrix.image }} \
+            bash -c "
+              set -e
+              echo '=== Testing ${{ matrix.distro }} - Installation and Bridge Tests ==='
+
+              # Update package lists based on distro
+              if command -v apt-get &> /dev/null; then
+                apt-get update
+                apt-get install -y \
+                  build-essential \
+                  curl \
+                  git \
+                  libssl-dev \
+                  pkg-config \
+                  libclang-dev \
+                  libpcap-dev \
+                  postgresql \
+                  postgresql-contrib \
+                  libpq-dev \
+                  ruby-full \
+                  ruby-dev \
+                  libyaml-dev \
+                  libffi-dev
+              elif command -v dnf &> /dev/null; then
+                dnf install -y \
+                  gcc \
+                  gcc-c++ \
+                  make \
+                  curl \
+                  git \
+                  openssl-devel \
+                  pkg-config \
+                  clang-devel \
+                  libpcap-devel \
+                  postgresql \
+                  postgresql-server \
+                  postgresql-devel \
+                  ruby \
+                  ruby-devel \
+                  libyaml-devel \
+                  libffi-devel
+              elif command -v pacman &> /dev/null; then
+                pacman -Sy --noconfirm \
+                  base-devel \
+                  curl \
+                  git \
+                  openssl \
+                  pkg-config \
+                  clang \
+                  libpcap \
+                  postgresql \
+                  postgresql-libs \
+                  ruby \
+                  libyaml \
+                  libffi
+              fi
+
+              # Install Rust
+              echo 'Installing Rust toolchain...'
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              source \$HOME/.cargo/env
+
+              # Verify Rust installation
+              echo 'Rust toolchain installed:'
+              rustc --version
+              cargo --version
+
+              # Clone Metasploit Framework
+              echo 'Cloning Metasploit Framework...'
+              git clone --depth 1 https://github.com/rapid7/metasploit-framework.git /tmp/metasploit-framework
+
+              # Install MSF Ruby dependencies
+              echo 'Installing MSF dependencies...'
+              cd /tmp/metasploit-framework
+              gem install bundler
+
+              # Fix PATH for Arch Linux gem executables
+              # See: https://wiki.archlinux.org/title/Ruby
+              if command -v pacman &> /dev/null; then
+                export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
+              fi
+
+              # Workaround for Kali: xmlrpc gem fails during bundle install
+              # Install it separately first to avoid Bundler::GemNotFound error
+              # See: https://github.com/beefproject/beef/issues/2687
+              gem install xmlrpc
+
+              # Use single-threaded install to avoid race conditions
+              # Retry network errors (e.g., xmlrpc gem not found)
+              # No timeout - let GitHub Actions job timeout handle it (360min default)
+              # Bundle install for MSF can take 10-15 minutes depending on network
+              # See: https://github.com/bundler/bundler/issues/6698
+              bundle install --jobs 1 --retry 3
+
+              # Setup PostgreSQL
+              echo 'Setting up PostgreSQL...'
+              if command -v apt-get &> /dev/null || command -v dnf &> /dev/null; then
+                # Initialize PostgreSQL for Fedora
+                if command -v dnf &> /dev/null; then
+                  postgresql-setup --initdb || true
+                fi
+
+                # Start PostgreSQL
+                if command -v pg_ctlcluster &> /dev/null; then
+                  pg_ctlcluster \$(pg_lsclusters -h | head -1 | awk '{print \$1, \$2}') start || true
+                else
+                  su - postgres -c 'pg_ctl -D /var/lib/pgsql/data start' || true
+                fi
+
+                # Wait for PostgreSQL to start
+                sleep 5
+              fi
+
+              # Build and test Rust bridge
+              echo 'Building Rust bridge...'
+              cd /workspace/assassinate_bridge
+              cargo build --release
+
+              # Verify bridge library exists
+              echo 'Bridge library built:'
+              ls -lh target/release/libassassinate_bridge.*
+
+              # Run Rust bridge tests with MSF
+              echo 'Running Rust bridge tests...'
+              export MSF_ROOT=/tmp/metasploit-framework
+              cargo test --release -- --test-threads=1
+
+              echo '=== ${{ matrix.distro }} validation completed successfully ==='
+            "
