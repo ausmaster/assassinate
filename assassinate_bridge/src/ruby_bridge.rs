@@ -32,13 +32,9 @@ pub fn init_ruby() -> Result<()> {
             mem::forget(guard);
         }
 
-        // Add Ruby stdlib directory to load path for bundler
+        // Verify stdlib methods are available
         if let Ok(ruby) = Ruby::get() {
             let code = r###"
-                # Explicitly add Ruby stdlib directory to load path
-                ruby_stdlib = '/home/aus/.rbenv/versions/3.3.8/lib/ruby/3.3.0'
-                $LOAD_PATH.unshift(ruby_stdlib) unless $LOAD_PATH.include?(ruby_stdlib)
-
                 # Verify stdlib methods are available
                 Time.now
                 Dir.pwd

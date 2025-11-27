@@ -5,10 +5,6 @@ use crate::ruby_bridge::{call_method, create_framework, is_nil, value_to_string}
 use magnus::{value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
-// Only import PyO3 types when python-bindings feature is enabled
-#[cfg(feature = "python-bindings")]
-use pyo3::prelude::*;
-
 /// Core Metasploit Framework interface
 ///
 /// This type provides access to the Metasploit Framework functionality through Ruby FFI.

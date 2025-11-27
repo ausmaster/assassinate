@@ -2,12 +2,6 @@
 
 use thiserror::Error;
 
-// Only import PyO3 types when python-bindings feature is enabled
-#[cfg(feature = "python-bindings")]
-use pyo3::exceptions::PyRuntimeError;
-#[cfg(feature = "python-bindings")]
-use pyo3::PyErr;
-
 /// Core error type for the Assassinate bridge
 #[derive(Error, Debug)]
 pub enum AssassinateError {
@@ -57,15 +51,5 @@ impl From<magnus::Error> for AssassinateError {
     }
 }
 
-// Only implement PyErr conversion when python-bindings feature is enabled
-#[cfg(feature = "python-bindings")]
-impl From<AssassinateError> for PyErr {
-    fn from(err: AssassinateError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
-    }
-}
-
 /// Result type alias using AssassinateError
-///
-/// This type automatically converts to PyResult when used in Python bindings
 pub type Result<T> = std::result::Result<T, AssassinateError>;
