@@ -1,12 +1,18 @@
 """Core Metasploit Framework functionality.
 
 Provides framework initialization and the main Framework class for
-interacting with MSF.
+interacting with MSF via IPC.
+
+Note: This module now uses IPC to communicate with the MSF daemon.
+      Make sure the assassinate_daemon is running before using this API.
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
+
+from assassinate.ipc import MsfClient
 
 if TYPE_CHECKING:
     from assassinate.bridge.datastore import DataStore
@@ -16,34 +22,54 @@ if TYPE_CHECKING:
     from assassinate.bridge.payloads import PayloadGenerator
     from assassinate.bridge.sessions import SessionManager
 
-try:
-    import assassinate_bridge as _bridge  # type: ignore[import-not-found]
-except ImportError as e:
-    msg = (
-        "assassinate_bridge Rust module not found. "
-        "Please compile the Rust bridge first:\n"
-        "  cd assassinate_bridge && cargo build --release"
-    )
-    raise ImportError(msg) from e
+# Global IPC client - initialized on first use
+_client: MsfClient | None = None
 
 
-def initialize(msf_path: str) -> None:
-    """Initialize the Metasploit Framework.
+def _get_client() -> MsfClient:
+    """Get or create the global IPC client."""
+    global _client
+    if _client is None:
+        _client = MsfClient()
+        # Connect synchronously
+        asyncio.run(_client.connect())
+    return _client
 
-    Must be called before any other MSF operations. This loads the Ruby VM
-    and initializes the MSF environment.
+
+def _run_async(coro):
+    """Helper to run async code synchronously."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If event loop is already running, we need to use a different approach
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, coro)
+                return future.result()
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        # No event loop, create one
+        return asyncio.run(coro)
+
+
+def initialize(msf_path: str | None = None) -> None:
+    """Initialize connection to the Metasploit Framework daemon.
+
+    Note: With IPC architecture, this just establishes the connection to the daemon.
+          The daemon itself must be started separately with the MSF path.
 
     Args:
-        msf_path: Path to Metasploit Framework installation directory
-            (e.g., "/opt/metasploit-framework").
+        msf_path: Deprecated - MSF path is configured in the daemon.
+                  Kept for API compatibility.
 
     Raises:
-        RuntimeError: If initialization fails (invalid path, missing deps, etc.).
+        RuntimeError: If connection to daemon fails.
 
     Example:
-        >>> initialize("/opt/metasploit-framework")
+        >>> initialize()  # Connect to running daemon
     """
-    _bridge.initialize_metasploit(msf_path)  # type: ignore[attr-defined]
+    _get_client()
 
 
 def get_version() -> str:
@@ -60,17 +86,19 @@ def get_version() -> str:
         >>> print(f"MSF Version: {version}")
         MSF Version: 6.4.28-dev
     """
-    return str(_bridge.get_version())  # type: ignore[attr-defined]
+    client = _get_client()
+    result = _run_async(client.framework_version())
+    return result.get("version", "unknown")
 
 
 class Framework:
     """Metasploit Framework instance.
 
     Provides access to modules, sessions, datastores, and payload generation.
-    This is the main entry point for interacting with MSF.
+    This is the main entry point for interacting with MSF via IPC.
 
     Note:
-        Requires initialize() to be called first.
+        Requires initialize() to be called first to connect to the daemon.
 
     Example:
         >>> fw = Framework()
@@ -78,18 +106,18 @@ class Framework:
         6.4.28-dev
     """
 
-    _instance: Any  # The underlying PyO3 Framework instance
+    _client: MsfClient
 
     def __init__(self) -> None:
         """Initialize Framework instance.
 
         Raises:
-            RuntimeError: If MSF is not initialized or framework creation fails.
+            RuntimeError: If daemon connection fails.
 
         Example:
             >>> fw = Framework()
         """
-        self._instance = _bridge.Framework()  # type: ignore[attr-defined]
+        self._client = _get_client()
 
     def version(self) -> str:
         """Get MSF version.
@@ -102,14 +130,15 @@ class Framework:
             >>> print(fw.version())
             6.4.28-dev
         """
-        return str(self._instance.version())
+        result = _run_async(self._client.framework_version())
+        return result.get("version", "unknown")
 
     def list_modules(self, module_type: str) -> list[str]:
         """List all modules of a given type.
 
         Args:
             module_type: Type of modules to list. Valid values:
-                "exploits", "auxiliary", "payloads", "encoders", "nops", "post".
+                "exploit", "auxiliary", "payload", "encoder", "nop", "post".
 
         Returns:
             List of module names (e.g., ["exploit/unix/ftp/vsftpd_234_backdoor"]).
@@ -120,11 +149,11 @@ class Framework:
 
         Example:
             >>> fw = Framework()
-            >>> exploits = fw.list_modules("exploits")
+            >>> exploits = fw.list_modules("exploit")
             >>> print(f"Found {len(exploits)} exploits")
             Found 2575 exploits
         """
-        return list(self._instance.list_modules(module_type))
+        return _run_async(self._client.list_modules(module_type))
 
     def create_module(self, module_name: str) -> Module:
         """Create a module instance by name.
@@ -148,8 +177,8 @@ class Framework:
         # Import here to avoid circular dependency
         from assassinate.bridge.modules import Module
 
-        instance = self._instance.create_module(module_name)
-        return Module(instance)
+        module_info = _run_async(self._client.get_module_info(module_name))
+        return Module(module_name, module_info, self._client)
 
     def datastore(self) -> DataStore:
         """Get framework global datastore.
@@ -167,7 +196,7 @@ class Framework:
         # Import here to avoid circular dependency
         from assassinate.bridge.datastore import DataStore
 
-        return DataStore(self._instance.datastore())
+        return DataStore(self._client)
 
     def sessions(self) -> SessionManager:
         """Get session manager.
@@ -183,7 +212,7 @@ class Framework:
         # Import here to avoid circular dependency
         from assassinate.bridge.sessions import SessionManager
 
-        return SessionManager(self._instance.sessions())
+        return SessionManager(self._client)
 
     def payload_generator(self) -> PayloadGenerator:
         """Get payload generator.
@@ -199,7 +228,7 @@ class Framework:
         # Import here to avoid circular dependency
         from assassinate.bridge.payloads import PayloadGenerator
 
-        return PayloadGenerator(self)
+        return PayloadGenerator(self._client)
 
     def db(self) -> DbManager:
         """Get database manager.
@@ -215,7 +244,7 @@ class Framework:
         # Import here to avoid circular dependency
         from assassinate.bridge.db import DbManager
 
-        return DbManager(self._instance.db())
+        return DbManager(self._client)
 
     def search(self, query: str) -> list[str]:
         """Search for modules by keyword, CVE, name, etc.
@@ -233,7 +262,7 @@ class Framework:
             ...     print(module)
             exploit/unix/ftp/vsftpd_234_backdoor
         """
-        return list(self._instance.search(query))
+        return _run_async(self._client.search(query))
 
     def jobs(self) -> JobManager:
         """Get jobs manager.
@@ -249,7 +278,7 @@ class Framework:
         # Import here to avoid circular dependency
         from assassinate.bridge.jobs import JobManager
 
-        return JobManager(self._instance.jobs())
+        return JobManager(self._client)
 
     def threads(self) -> int:
         """Get framework threads configuration.
@@ -262,7 +291,7 @@ class Framework:
             >>> num_threads = fw.threads()
             >>> print(f"Framework threads: {num_threads}")
         """
-        return int(self._instance.threads())
+        return _run_async(self._client.threads())
 
     def threads_enabled(self) -> bool:
         """Check if framework has threads configured.
@@ -275,7 +304,9 @@ class Framework:
             >>> if fw.threads_enabled():
             ...     print("Threading is enabled")
         """
-        return bool(self._instance.threads_enabled())
+        # For IPC, assume threads are enabled if we can get a thread count
+        threads = _run_async(self._client.threads())
+        return threads > 0
 
     def __repr__(self) -> str:
         """Return string representation of Framework.

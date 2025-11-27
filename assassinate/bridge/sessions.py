@@ -1,31 +1,51 @@
-"""MSF Session management.
+"""MSF Session management via IPC.
 
 Provides access to active sessions from successful exploits.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from assassinate.ipc import MsfClient
+
+
+def _run_async(coro):
+    """Helper to run async code synchronously."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, coro)
+                return future.result()
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 
 class SessionManager:
-    """Manages active MSF sessions.
+    """Manages active MSF sessions via IPC.
 
     Provides access to established sessions from successful exploits.
     """
 
-    _instance: Any  # The underlying PyO3 SessionManager instance
+    _client: MsfClient
 
-    def __init__(self, instance: Any) -> None:
-        """Initialize SessionManager wrapper.
+    def __init__(self, client: MsfClient) -> None:
+        """Initialize SessionManager with IPC client.
 
         Args:
-            instance: PyO3 SessionManager instance.
+            client: IPC client for communication with daemon.
 
         Note:
             This is called internally via Framework.sessions().
         """
-        self._instance = instance
+        self._client = client
 
     def list(self) -> list[int]:
         """List all active session IDs.
@@ -39,7 +59,7 @@ class SessionManager:
             >>> print(f"Active sessions: {session_ids}")
             Active sessions: [1, 2]
         """
-        return list(self._instance.list())
+        return _run_async(self._client.list_sessions())
 
     def get(self, session_id: int) -> Session | None:
         """Get session by ID.
@@ -53,11 +73,14 @@ class SessionManager:
         Example:
             >>> sm = fw.sessions()
             >>> session = sm.get(1)
-            >>> if session and session.alive():
-            ...     output = session.execute("whoami")
+            >>> if session:
+            ...     print(f"Session {session_id} found")
         """
-        instance = self._instance.get(session_id)
-        return Session(instance) if instance is not None else None
+        # Check if session exists in list
+        sessions = self.list()
+        if session_id in sessions:
+            return Session(session_id, self._client)
+        return None
 
     def kill(self, session_id: int) -> bool:
         """Kill a session by ID.
@@ -68,14 +91,16 @@ class SessionManager:
         Returns:
             True if session was killed, False if not found.
 
+        Note:
+            This method requires daemon support - not yet implemented.
+
         Example:
             >>> sm = fw.sessions()
             >>> if sm.kill(1):
             ...     print("Session 1 terminated")
-            ... else:
-            ...     print("Session 1 not found")
         """
-        return bool(self._instance.kill(session_id))
+        # TODO: Add kill_session IPC method to daemon
+        raise NotImplementedError("Session.kill() requires daemon support (not yet implemented)")
 
     def __repr__(self) -> str:
         """Return string representation of SessionManager.
@@ -88,53 +113,72 @@ class SessionManager:
 
 
 class Session:
-    """Active MSF session.
+    """Active MSF session via IPC.
 
     Represents a connection to a compromised target. Can be a shell,
     meterpreter, or other session type.
+
+    Note:
+        Most session interaction methods require daemon support and are
+        not yet implemented in the IPC layer.
     """
 
-    _instance: Any  # The underlying PyO3 Session instance
+    _session_id: int
+    _client: MsfClient
 
-    def __init__(self, instance: Any) -> None:
+    def __init__(self, session_id: int, client: MsfClient) -> None:
         """Initialize Session wrapper.
 
         Args:
-            instance: PyO3 Session instance.
+            session_id: Session ID number.
+            client: IPC client for communication.
 
         Note:
             This is called internally via SessionManager.get().
         """
-        self._instance = instance
+        self._session_id = session_id
+        self._client = client
 
-    def info(self) -> str:
-        """Get session information.
+    @property
+    def id(self) -> int:
+        """Get session ID.
 
         Returns:
-            Session information string.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> info = session.info()
-            >>> print(info)
+            Session ID number.
         """
-        return str(self._instance.info())
+        return self._session_id
 
     def alive(self) -> bool:
-        """Check if session is still alive.
+        """Check if session is alive.
 
         Returns:
-            True if session is active, False if closed/dead.
+            True if session is active.
 
-        Example:
-            >>> session = sm.get(1)
-            >>> if session.alive():
-            ...     print("Session is active")
+        Note:
+            This method requires daemon support - not yet implemented.
+            Currently returns True if session ID exists.
         """
-        return bool(self._instance.alive())
+        # TODO: Add session_alive IPC method to daemon
+        # For now, just check if session is still in the list
+        try:
+            manager = SessionManager(self._client)
+            return self._session_id in manager.list()
+        except Exception:
+            return False
+
+    def kill(self) -> None:
+        """Kill this session.
+
+        Note:
+            This method requires daemon support - not yet implemented.
+
+        Raises:
+            NotImplementedError: Method not yet supported via IPC.
+        """
+        raise NotImplementedError("Session.kill() requires daemon support (not yet implemented)")
 
     def execute(self, command: str) -> str:
-        """Execute a command and return output.
+        """Execute a command in the session.
 
         Args:
             command: Command to execute.
@@ -142,191 +186,47 @@ class Session:
         Returns:
             Command output.
 
+        Note:
+            This method requires daemon support - not yet implemented.
+
         Raises:
-            RuntimeError: If session is dead or command fails.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> output = session.execute("whoami")
-            >>> print(output)
-            root
+            NotImplementedError: Method not yet supported via IPC.
         """
-        return str(self._instance.execute(command))
-
-    def session_type(self) -> str:
-        """Get the session type.
-
-        Returns:
-            Session type (e.g., "shell", "meterpreter", "powershell").
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.session_type())
-            shell
-        """
-        return str(self._instance.session_type())
-
-    def kill(self) -> None:
-        """Kill/close the session.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> session.kill()
-            >>> print(session.alive())
-            False
-        """
-        self._instance.kill()
+        raise NotImplementedError("Session.execute() requires daemon support (not yet implemented)")
 
     def write(self, data: str) -> int:
-        r"""Write data to the session.
+        """Write data to the session.
 
         Args:
-            data: Data to write to session.
+            data: Data to write.
 
         Returns:
             Number of bytes written.
 
-        Raises:
-            RuntimeError: If write fails or session is dead.
+        Note:
+            This method requires daemon support - not yet implemented.
 
-        Example:
-            >>> session = sm.get(1)
-            >>> bytes_written = session.write("whoami\n")
-            >>> print(f"Wrote {bytes_written} bytes")
+        Raises:
+            NotImplementedError: Method not yet supported via IPC.
         """
-        return int(self._instance.write(data))
+        raise NotImplementedError("Session.write() requires daemon support (not yet implemented)")
 
     def read(self, length: int | None = None) -> str:
-        r"""Read data from the session.
+        """Read data from the session.
 
         Args:
-            length: Optional maximum bytes to read. If None, reads all
-                available data.
+            length: Number of bytes to read (None = all available).
 
         Returns:
             Data read from session.
 
-        Raises:
-            RuntimeError: If read fails or session is dead.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> session.write("whoami\n")
-            >>> output = session.read()
-            >>> print(output)
-            root
-        """
-        return str(self._instance.read(length))
-
-    def run_cmd(self, command: str) -> str:
-        """Run a command and return output (meterpreter sessions).
-
-        Args:
-            command: Meterpreter command to run.
-
-        Returns:
-            Command output.
+        Note:
+            This method requires daemon support - not yet implemented.
 
         Raises:
-            RuntimeError: If session is not meterpreter or command fails.
-
-        Example:
-            >>> session = sm.get(1)  # Meterpreter session
-            >>> info = session.run_cmd("sysinfo")
-            >>> print(info)
+            NotImplementedError: Method not yet supported via IPC.
         """
-        return str(self._instance.run_cmd(command))
-
-    def desc(self) -> str:
-        """Get session description.
-
-        Returns:
-            Human-readable session description.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.desc())
-            Command shell on 192.168.1.100:4444
-        """
-        return str(self._instance.desc())
-
-    def tunnel_peer(self) -> str:
-        """Get tunnel peer information.
-
-        Returns:
-            Tunnel peer address (e.g., "192.168.1.100:4444").
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.tunnel_peer())
-            192.168.1.100:4444
-        """
-        return str(self._instance.tunnel_peer())
-
-    def target_host(self) -> str:
-        """Get target host IP address.
-
-        Returns:
-            Target IP address.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.target_host())
-            192.168.1.100
-        """
-        return str(self._instance.target_host())
-
-    def session_host(self) -> str:
-        """Get session host IP address.
-
-        Returns:
-            Session host IP address.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.session_host())
-            192.168.1.100
-        """
-        return str(self._instance.session_host())
-
-    def session_port(self) -> int:
-        """Get session port number.
-
-        Returns:
-            Session port number.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.session_port())
-            4444
-        """
-        return int(self._instance.session_port())
-
-    def via_exploit(self) -> str:
-        """Get exploit that created this session.
-
-        Returns:
-            Exploit module name.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.via_exploit())
-            exploit/unix/ftp/vsftpd_234_backdoor
-        """
-        return str(self._instance.via_exploit())
-
-    def via_payload(self) -> str:
-        """Get payload that created this session.
-
-        Returns:
-            Payload module name.
-
-        Example:
-            >>> session = sm.get(1)
-            >>> print(session.via_payload())
-            cmd/unix/reverse
-        """
-        return str(self._instance.via_payload())
+        raise NotImplementedError("Session.read() requires daemon support (not yet implemented)")
 
     def __repr__(self) -> str:
         """Return string representation of Session.
@@ -334,6 +234,4 @@ class Session:
         Returns:
             String representation.
         """
-        session_type = self.session_type()
-        alive = "alive" if self.alive() else "dead"
-        return f"<Session type={session_type} status={alive}>"
+        return f"<Session id={self._session_id}>"
