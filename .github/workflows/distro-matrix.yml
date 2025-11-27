@@ -43,7 +43,8 @@ jobs:
         run: |
           cd ~/metasploit-framework
           sudo gem install bundler
-          sudo bundle install
+          # Use single-threaded install to avoid race conditions
+          sudo bundle install --jobs 1
 
       - name: Setup PostgreSQL
         run: |
@@ -218,7 +219,10 @@ jobs:
               echo 'Installing MSF dependencies...'
               cd /tmp/metasploit-framework
               gem install bundler
-              bundle install
+
+              # Use single-threaded install to avoid race conditions
+              # See: https://github.com/bundler/bundler/issues/6698
+              bundle install --jobs 1
 
               # Setup PostgreSQL
               echo 'Setting up PostgreSQL...'
