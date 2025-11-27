@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  debian:
+    image: debian:bookworm
+    container_name: test-debian
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: sleep infinity
+
+  kali:
+    image: kalilinux/kali-rolling:latest
+    container_name: test-kali
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: sleep infinity
+
+  ubuntu:
+    image: ubuntu:24.04
+    container_name: test-ubuntu
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: sleep infinity
+
+  fedora:
+    image: fedora:latest
+    container_name: test-fedora
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: sleep infinity
+
+  arch:
+    image: archlinux:latest
+    container_name: test-arch
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: sleep infinity
+
+  parrot:
+    image: parrotsec/security:latest
+    container_name: test-parrot
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["/bin/bash", "-c", "sleep infinity"]

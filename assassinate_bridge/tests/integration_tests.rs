@@ -6,8 +6,13 @@
 // and modern Rust (post-1.66.1) doesn't provide a way to force tests on the same thread.
 
 use magnus::{value::ReprValue, TryConvert};
+use std::env;
 
-const MSF_PATH: &str = "/home/aus/PycharmProjects/assassinate/metasploit-framework";
+// Get MSF path from environment variable or use default
+// CI/CD uses /tmp/metasploit-framework, local dev may use different path
+fn get_msf_path() -> String {
+    env::var("MSF_ROOT").unwrap_or_else(|_| "/tmp/metasploit-framework".to_string())
+}
 
 // Re-export functions we need for testing
 use assassinate_bridge::ruby_bridge;
@@ -23,7 +28,8 @@ fn test_all_metasploit_integration() {
 
     // Test 02: Metasploit loading
     println!("\n=== Test 02: Metasploit loading ===");
-    let result = ruby_bridge::init_metasploit(MSF_PATH);
+    let msf_path = get_msf_path();
+    let result = ruby_bridge::init_metasploit(&msf_path);
     assert!(
         result.is_ok(),
         "Failed to load Metasploit: {:?}",
