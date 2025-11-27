@@ -5,7 +5,7 @@
 </p>
 
 [![Rust](https://img.shields.io/badge/rust-1.91+-FF8400)](https://www.rust-lang.org)
-[![Python Version](https://img.shields.io/badge/python-3.8+-FF8400)](https://www.python.org)
+[![Python Version](https://img.shields.io/badge/python-3.10--3.13-FF8400)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-GPLv3-FF8400.svg)](https://github.com/ausmaster/assassinate/blob/main/LICENSE)
 [![Tests](https://github.com/ausmaster/assassinate/actions/workflows/ci.yml/badge.svg?branch=redesign)](https://github.com/ausmaster/assassinate/actions?query=workflow%3A"Assassinate+Rust+FFI+Bridge+CI")
 [![Discord](https://img.shields.io/discord/859164869970362439)](https://discord.com/invite/PZqkgxu5SA)
@@ -118,7 +118,7 @@ Assassinate has been tested and validated on the following Linux distributions:
 
 - **Rust:** 1.91+ with `rustfmt` and `clippy`
 - **Ruby:** 3.1+ (system Ruby or rbenv)
-- **Python:** 3.8+ with development headers
+- **Python:** 3.10+ with development headers (tested through 3.13)
 - **Metasploit Framework:** 6.4+
 - **PostgreSQL:** Required for full MSF functionality
 - **System Dependencies:**

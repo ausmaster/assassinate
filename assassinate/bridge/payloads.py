@@ -105,7 +105,9 @@ class PayloadGenerator:
             ... )
         """
         return bytes(
-            self._instance.generate_encoded(payload_name, encoder, iterations, options)
+            self._instance.generate_encoded(
+                payload_name, encoder, iterations, options
+            )
         )
 
     def list_payloads(self) -> list[str]:
@@ -159,7 +161,9 @@ class PayloadGenerator:
             ...     f.write(exe)
         """
         return bytes(
-            self._instance.generate_executable(payload_name, platform, arch, options)
+            self._instance.generate_executable(
+                payload_name, platform, arch, options
+            )
         )
 
     def __repr__(self) -> str:
