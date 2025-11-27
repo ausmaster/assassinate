@@ -16,10 +16,7 @@ pub struct Framework {
 
 #[cfg_attr(feature = "python-bindings", pymethods)]
 impl Framework {
-    #[cfg(feature = "python-bindings")]
-    #[new]
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (options=None))]
+    /// Create a new Framework instance
     pub fn new(options: Option<HashMap<String, String>>) -> Result<Self> {
         let opts_json = options.and_then(|o| serde_json::to_value(o).ok());
 
@@ -35,8 +32,6 @@ impl Framework {
     }
 
     /// List all module reference names for a given type
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (module_type))]
     pub fn list_modules(&self, module_type: &str) -> Result<Vec<String>> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
@@ -57,8 +52,6 @@ impl Framework {
     }
 
     /// Create a module instance by name
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (module_name))]
     pub fn create_module(&self, module_name: &str) -> Result<Module> {
         let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
 
@@ -104,8 +97,6 @@ impl Framework {
     }
 
     /// Search for modules
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (query))]
     pub fn search(&self, query: &str) -> Result<Vec<String>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let query_val = ruby.str_new(query).as_value();
