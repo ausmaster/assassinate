@@ -220,9 +220,16 @@ jobs:
               cd /tmp/metasploit-framework
               gem install bundler
 
+              # Fix PATH for Arch Linux gem executables
+              # See: https://wiki.archlinux.org/title/Ruby
+              if command -v pacman &> /dev/null; then
+                export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
+              fi
+
               # Use single-threaded install to avoid race conditions
+              # Timeout increased to 600s due to slow gem downloads
               # See: https://github.com/bundler/bundler/issues/6698
-              bundle install --jobs 1
+              timeout 600 bundle install --jobs 1 || bundle install --jobs 1
 
               # Setup PostgreSQL
               echo 'Setting up PostgreSQL...'
