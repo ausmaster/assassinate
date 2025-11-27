@@ -226,6 +226,11 @@ jobs:
                 export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
               fi
 
+              # Workaround for Kali: xmlrpc gem fails during bundle install
+              # Install it separately first to avoid Bundler::GemNotFound error
+              # See: https://github.com/beefproject/beef/issues/2687
+              gem install xmlrpc
+
               # Use single-threaded install to avoid race conditions
               # Retry network errors (e.g., xmlrpc gem not found)
               # No timeout - let GitHub Actions job timeout handle it (360min default)
