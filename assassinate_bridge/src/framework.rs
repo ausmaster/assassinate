@@ -132,6 +132,24 @@ impl Framework {
         Ok(JobManager { ruby_jobs: jobs_val })
     }
 
+    /// Get framework threads configuration
+    pub fn threads(&self) -> Result<i64> {
+        let threads_val = call_method(self.ruby_framework, "threads", &[])?;
+
+        // Convert to i64
+        let threads: i64 = TryConvert::try_convert(threads_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert threads: {}", e))
+        })?;
+
+        Ok(threads)
+    }
+
+    /// Check if framework has threads configured
+    pub fn threads_enabled(&self) -> Result<bool> {
+        let threads_val = call_method(self.ruby_framework, "threads?", &[])?;
+        crate::ruby_bridge::value_to_bool(threads_val)
+    }
+
     #[cfg(feature = "python-bindings")]
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
@@ -451,6 +469,48 @@ impl Module {
         }
     }
 
+    /// Get module rank (e.g., "excellent", "great", "good", "normal", "average", "low", "manual")
+    pub fn rank(&self) -> Result<String> {
+        let rank_val = call_method(self.ruby_module, "rank", &[])?;
+        value_to_string(rank_val)
+    }
+
+    /// Check if module requires privileged access
+    pub fn privileged(&self) -> Result<bool> {
+        let priv_val = call_method(self.ruby_module, "privileged", &[])?;
+        crate::ruby_bridge::value_to_bool(priv_val)
+    }
+
+    /// Get module license
+    pub fn license(&self) -> Result<String> {
+        let license_val = call_method(self.ruby_module, "license", &[])?;
+        value_to_string(license_val)
+    }
+
+    /// Get module aliases
+    pub fn aliases(&self) -> Result<Vec<String>> {
+        let aliases_val = call_method(self.ruby_module, "aliases", &[])?;
+
+        // Convert to array of strings
+        let aliases: Vec<String> = TryConvert::try_convert(aliases_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert aliases: {}", e))
+        })?;
+
+        Ok(aliases)
+    }
+
+    /// Get module notes
+    pub fn notes(&self) -> Result<HashMap<String, String>> {
+        let notes_val = call_method(self.ruby_module, "notes", &[])?;
+
+        // Convert Ruby hash to Rust HashMap
+        let notes: HashMap<String, String> = TryConvert::try_convert(notes_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert notes: {}", e))
+        })?;
+
+        Ok(notes)
+    }
+
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
@@ -585,6 +645,23 @@ impl SessionManager {
                 session_id,
             }))
         }
+    }
+
+    /// Kill a session by ID
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (session_id))]
+    pub fn kill(&self, session_id: i64) -> Result<bool> {
+        let id_val = crate::ruby_bridge::get_ruby()?
+            .eval::<Value>(&format!("{}", session_id))
+            .map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
+            })?;
+
+        // Call delete method on sessions hash
+        let result_val = call_method(self.ruby_sessions, "delete", &[id_val])?;
+
+        // If delete returns nil, session didn't exist
+        Ok(!is_nil(result_val))
     }
 
     #[cfg(feature = "python-bindings")]
@@ -809,6 +886,120 @@ impl DbManager {
         // Get host ID
         let id: i64 = TryConvert::try_convert(host_val).unwrap_or(0);
         Ok(id)
+    }
+
+    /// Report a service
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (**opts))]
+    pub fn report_service(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        })?;
+
+        if let Some(opts_map) = opts {
+            for (key, value) in opts_map {
+                let key_val = ruby.str_new(&key).as_value();
+                let value_val = ruby.str_new(&value).as_value();
+                call_method(opts_val, "[]=", &[key_val, value_val])?;
+            }
+        }
+
+        let service_val = call_method(self.ruby_db, "report_service", &[opts_val])?;
+
+        // Get service ID
+        let id: i64 = TryConvert::try_convert(service_val).unwrap_or(0);
+        Ok(id)
+    }
+
+    /// Report a vulnerability
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (**opts))]
+    pub fn report_vuln(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        })?;
+
+        if let Some(opts_map) = opts {
+            for (key, value) in opts_map {
+                let key_val = ruby.str_new(&key).as_value();
+                let value_val = ruby.str_new(&value).as_value();
+                call_method(opts_val, "[]=", &[key_val, value_val])?;
+            }
+        }
+
+        let vuln_val = call_method(self.ruby_db, "report_vuln", &[opts_val])?;
+
+        // Get vuln ID
+        let id: i64 = TryConvert::try_convert(vuln_val).unwrap_or(0);
+        Ok(id)
+    }
+
+    /// Report a credential
+    #[cfg(feature = "python-bindings")]
+    #[pyo3(signature = (**opts))]
+    pub fn report_cred(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        })?;
+
+        if let Some(opts_map) = opts {
+            for (key, value) in opts_map {
+                let key_val = ruby.str_new(&key).as_value();
+                let value_val = ruby.str_new(&value).as_value();
+                call_method(opts_val, "[]=", &[key_val, value_val])?;
+            }
+        }
+
+        let cred_val = call_method(self.ruby_db, "report_cred", &[opts_val])?;
+
+        // Get cred ID
+        let id: i64 = TryConvert::try_convert(cred_val).unwrap_or(0);
+        Ok(id)
+    }
+
+    /// Get all vulnerabilities
+    pub fn vulns(&self) -> Result<Vec<String>> {
+        let vulns_val = call_method(self.ruby_db, "vulns", &[])?;
+
+        // Convert to array of strings
+        let vulns: Vec<String> = TryConvert::try_convert(vulns_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert vulns: {}", e))
+        })?;
+
+        Ok(vulns)
+    }
+
+    /// Get all credentials
+    pub fn creds(&self) -> Result<Vec<String>> {
+        let creds_val = call_method(self.ruby_db, "creds", &[])?;
+
+        // Convert to array of strings
+        let creds: Vec<String> = TryConvert::try_convert(creds_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert creds: {}", e))
+        })?;
+
+        Ok(creds)
+    }
+
+    /// Get all loot
+    pub fn loot(&self) -> Result<Vec<String>> {
+        let loot_val = call_method(self.ruby_db, "loot", &[])?;
+
+        // Convert to array of strings
+        let loot: Vec<String> = TryConvert::try_convert(loot_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert loot: {}", e))
+        })?;
+
+        Ok(loot)
     }
 
     #[cfg(feature = "python-bindings")]

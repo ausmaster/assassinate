@@ -59,6 +59,24 @@ class SessionManager:
         instance = self._instance.get(session_id)
         return Session(instance) if instance is not None else None
 
+    def kill(self, session_id: int) -> bool:
+        """Kill a session by ID.
+
+        Args:
+            session_id: Session ID to terminate.
+
+        Returns:
+            True if session was killed, False if not found.
+
+        Example:
+            >>> sm = fw.sessions()
+            >>> if sm.kill(1):
+            ...     print("Session 1 terminated")
+            ... else:
+            ...     print("Session 1 not found")
+        """
+        return bool(self._instance.kill(session_id))
+
     def __repr__(self) -> str:
         """Return string representation of SessionManager.
 

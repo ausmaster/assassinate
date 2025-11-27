@@ -344,6 +344,73 @@ class Module:
         result = self._instance.disclosure_date()
         return str(result) if result is not None else None
 
+    def rank(self) -> str:
+        """Get module rank.
+
+        Returns:
+            Rank string (e.g., "excellent", "great", "good", "normal", "average", "low", "manual").
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> rank = mod.rank()
+            >>> print(rank)
+            excellent
+        """
+        return str(self._instance.rank())
+
+    def privileged(self) -> bool:
+        """Check if module requires privileged access.
+
+        Returns:
+            True if module requires elevated privileges, False otherwise.
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> is_priv = mod.privileged()
+            >>> print(f"Requires privileges: {is_priv}")
+        """
+        return bool(self._instance.privileged())
+
+    def license(self) -> str:
+        """Get module license.
+
+        Returns:
+            License string (typically "MSF_LICENSE" or similar).
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> lic = mod.license()
+            >>> print(lic)
+        """
+        return str(self._instance.license())
+
+    def aliases(self) -> list[str]:
+        """Get module aliases.
+
+        Returns:
+            List of module alias names.
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> aliases = mod.aliases()
+            >>> print(f"Aliases: {aliases}")
+        """
+        return list(self._instance.aliases())
+
+    def notes(self) -> dict[str, str]:
+        """Get module notes.
+
+        Returns:
+            Dictionary of note keys to values (reliability, stability, side effects, etc.).
+
+        Example:
+            >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> notes = mod.notes()
+            >>> for key, value in notes.items():
+            ...     print(f"{key}: {value}")
+        """
+        return dict(self._instance.notes())
+
     def __repr__(self) -> str:
         """Return string representation of Module.
 

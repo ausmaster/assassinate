@@ -251,6 +251,32 @@ class Framework:
 
         return JobManager(self._instance.jobs())
 
+    def threads(self) -> int:
+        """Get framework threads configuration.
+
+        Returns:
+            Number of threads configured for the framework.
+
+        Example:
+            >>> fw = Framework()
+            >>> num_threads = fw.threads()
+            >>> print(f"Framework threads: {num_threads}")
+        """
+        return int(self._instance.threads())
+
+    def threads_enabled(self) -> bool:
+        """Check if framework has threads configured.
+
+        Returns:
+            True if threads are enabled, False otherwise.
+
+        Example:
+            >>> fw = Framework()
+            >>> if fw.threads_enabled():
+            ...     print("Threading is enabled")
+        """
+        return bool(self._instance.threads_enabled())
+
     def __repr__(self) -> str:
         """Return string representation of Framework.
 

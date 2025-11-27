@@ -322,5 +322,145 @@ fn test_all_metasploit_integration() {
     assert!(!ruby_bridge::is_nil(opts), "Options is nil");
     println!("✓ Module options accessible");
 
+    // Test 16: Module rank and privileged
+    println!("\n=== Test 16: Module rank and privileged ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+    let rank = ruby_bridge::call_method(module, "rank", &[]).expect("Failed to get rank");
+    let rank_str = ruby_bridge::value_to_string(rank).expect("Failed to convert rank");
+    println!("  Rank: {}", rank_str);
+    assert!(!rank_str.is_empty());
+    let privileged = ruby_bridge::call_method(module, "privileged", &[]).expect("Failed to get privileged");
+    let priv_bool = ruby_bridge::value_to_bool(privileged).expect("Failed to convert privileged");
+    println!("  Privileged: {}", priv_bool);
+    println!("✓ Module rank and privileged accessible");
+
+    // Test 17: Module license and aliases
+    println!("\n=== Test 17: Module license and aliases ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+    let license = ruby_bridge::call_method(module, "license", &[]).expect("Failed to get license");
+    let license_str = ruby_bridge::value_to_string(license).expect("Failed to convert license");
+    println!("  License: {}", license_str);
+    let aliases = ruby_bridge::call_method(module, "aliases", &[]).expect("Failed to get aliases");
+    let aliases_vec: Vec<String> = TryConvert::try_convert(aliases).unwrap_or_else(|_| Vec::new());
+    println!("  Aliases count: {}", aliases_vec.len());
+    println!("✓ Module license and aliases accessible");
+
+    // Test 18: Framework threads
+    println!("\n=== Test 18: Framework threads ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let threads = ruby_bridge::call_method(framework, "threads", &[]);
+    assert!(threads.is_ok(), "Failed to get threads: {:?}", threads.err());
+    let threads_val = threads.unwrap();
+    let threads_i64: i64 = TryConvert::try_convert(threads_val).expect("Failed to convert threads");
+    println!("  Threads: {}", threads_i64);
+    let threads_enabled = ruby_bridge::call_method(framework, "threads?", &[]).expect("Failed to get threads?");
+    let enabled_bool = ruby_bridge::value_to_bool(threads_enabled).expect("Failed to convert threads?");
+    println!("  Threads enabled: {}", enabled_bool);
+    println!("✓ Framework threads accessible");
+
+    // Test 19: Framework search
+    println!("\n=== Test 19: Framework search ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
+    let query = ruby.str_new("vsftpd").as_value();
+    let results = ruby_bridge::call_method(framework, "search", &[query]);
+    assert!(results.is_ok(), "Failed to search: {:?}", results.err());
+    let results_val = results.unwrap();
+    let results_vec: Vec<String> = TryConvert::try_convert(results_val).unwrap_or_else(|_| Vec::new());
+    println!("  Search results count: {}", results_vec.len());
+    assert!(!results_vec.is_empty(), "Expected search results for 'vsftpd'");
+    println!("✓ Framework search works");
+
+    // Test 20: Framework jobs
+    println!("\n=== Test 20: Framework jobs ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let jobs = ruby_bridge::call_method(framework, "jobs", &[]);
+    assert!(jobs.is_ok(), "Failed to get jobs: {:?}", jobs.err());
+    let jobs_mgr = jobs.unwrap();
+    assert!(!ruby_bridge::is_nil(jobs_mgr), "Jobs manager is nil");
+    let job_list = ruby_bridge::call_method(jobs_mgr, "keys", &[]).expect("Failed to get job keys");
+    let job_ids: Vec<String> = TryConvert::try_convert(job_list).unwrap_or_else(|_| Vec::new());
+    println!("  Active jobs: {}", job_ids.len());
+    println!("✓ Jobs manager accessible");
+
+    // Test 21: Framework database
+    println!("\n=== Test 21: Framework database ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let db = ruby_bridge::call_method(framework, "db", &[]);
+    assert!(db.is_ok(), "Failed to get db: {:?}", db.err());
+    let db_mgr = db.unwrap();
+    assert!(!ruby_bridge::is_nil(db_mgr), "Database manager is nil");
+    let hosts = ruby_bridge::call_method(db_mgr, "hosts", &[]).expect("Failed to get hosts");
+    let hosts_vec: Vec<String> = TryConvert::try_convert(hosts).unwrap_or_else(|_| Vec::new());
+    println!("  Hosts in database: {}", hosts_vec.len());
+    println!("✓ Database manager accessible");
+
+    // Test 22: DataStore delete, keys, clear
+    println!("\n=== Test 22: DataStore delete, keys, clear ===");
+    let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
+    let modules =
+        ruby_bridge::call_method(framework, "modules", &[]).expect("Failed to get modules");
+    let ruby = ruby_bridge::get_ruby().expect("Failed to get Ruby");
+    let module_name = ruby
+        .str_new("exploit/unix/ftp/vsftpd_234_backdoor")
+        .as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+    let datastore =
+        ruby_bridge::call_method(module, "datastore", &[]).expect("Failed to get datastore");
+    // Set some values
+    ruby_bridge::call_method(
+        datastore,
+        "[]=",
+        &[
+            ruby.str_new("RHOSTS").as_value(),
+            ruby.str_new("192.168.1.100").as_value(),
+        ],
+    )
+    .expect("Failed to set RHOSTS");
+    ruby_bridge::call_method(
+        datastore,
+        "[]=",
+        &[
+            ruby.str_new("RPORT").as_value(),
+            ruby.str_new("21").as_value(),
+        ],
+    )
+    .expect("Failed to set RPORT");
+    // Get keys
+    let keys = ruby_bridge::call_method(datastore, "keys", &[]).expect("Failed to get keys");
+    let keys_vec: Vec<String> = TryConvert::try_convert(keys).expect("Failed to convert keys");
+    println!("  Keys count: {}", keys_vec.len());
+    assert!(keys_vec.len() >= 2, "Expected at least 2 keys");
+    // Delete one key
+    ruby_bridge::call_method(datastore, "delete", &[ruby.str_new("RHOSTS").as_value()])
+        .expect("Failed to delete RHOSTS");
+    let value = ruby_bridge::call_method(datastore, "[]", &[ruby.str_new("RHOSTS").as_value()])
+        .expect("Failed to get RHOSTS");
+    assert!(ruby_bridge::is_nil(value), "RHOSTS should be deleted");
+    println!("  Deleted RHOSTS successfully");
+    // Clear all
+    ruby_bridge::call_method(datastore, "clear", &[]).expect("Failed to clear datastore");
+    let keys_after = ruby_bridge::call_method(datastore, "keys", &[]).expect("Failed to get keys");
+    let keys_after_vec: Vec<String> = TryConvert::try_convert(keys_after).expect("Failed to convert keys");
+    println!("  Keys after clear: {}", keys_after_vec.len());
+    println!("✓ DataStore delete, keys, clear work");
+
     println!("\n=== ALL TESTS PASSED! ===");
 }
