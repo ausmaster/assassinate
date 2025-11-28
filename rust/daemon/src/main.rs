@@ -560,6 +560,210 @@ impl Daemon {
                 Ok(serde_json::json!({ "success": success }))
             }
 
+            // SessionManager operations
+            "session_get" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                let session_val = sessions.get_raw(session_id)?;
+
+                if let Some(sess_val) = session_val {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    // Return session metadata
+                    Ok(serde_json::json!({
+                        "session_id": session_id,
+                        "type": session.session_type()?,
+                        "info": session.info()?,
+                        "desc": session.desc()?,
+                        "alive": session.alive()?,
+                    }))
+                } else {
+                    Ok(serde_json::json!({ "session": null }))
+                }
+            }
+
+            "session_kill" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                let success = sessions.kill_raw(session_id)?;
+                Ok(serde_json::json!({ "success": success }))
+            }
+
+            "session_info" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let info = session.info()?;
+                    Ok(serde_json::json!({ "info": info }))
+                } else {
+                    Ok(serde_json::json!({ "info": null }))
+                }
+            }
+
+            "session_type" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let session_type = session.session_type()?;
+                    Ok(serde_json::json!({ "type": session_type }))
+                } else {
+                    Ok(serde_json::json!({ "type": null }))
+                }
+            }
+
+            "session_alive" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let alive = session.alive()?;
+                    Ok(serde_json::json!({ "alive": alive }))
+                } else {
+                    Ok(serde_json::json!({ "alive": false }))
+                }
+            }
+
+            "session_read" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let length = _args.get(1).and_then(|v| v.as_u64()).map(|v| v as usize);
+
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let data = session.read_raw(length)?;
+                    Ok(serde_json::json!({ "data": data }))
+                } else {
+                    anyhow::bail!("Session not found")
+                }
+            }
+
+            "session_write" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let data = _args.get(1).and_then(|v| v.as_str()).context("Missing data")?;
+
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let bytes_written = session.write_raw(data)?;
+                    Ok(serde_json::json!({ "bytes_written": bytes_written }))
+                } else {
+                    anyhow::bail!("Session not found")
+                }
+            }
+
+            "session_execute" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let command = _args.get(1).and_then(|v| v.as_str()).context("Missing command")?;
+
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let output = session.execute_raw(command)?;
+                    Ok(serde_json::json!({ "output": output }))
+                } else {
+                    anyhow::bail!("Session not found")
+                }
+            }
+
+            "session_run_cmd" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let command = _args.get(1).and_then(|v| v.as_str()).context("Missing command")?;
+
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let output = session.run_cmd_raw(command)?;
+                    Ok(serde_json::json!({ "output": output }))
+                } else {
+                    anyhow::bail!("Session not found")
+                }
+            }
+
+            "session_desc" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let desc = session.desc()?;
+                    Ok(serde_json::json!({ "desc": desc }))
+                } else {
+                    Ok(serde_json::json!({ "desc": null }))
+                }
+            }
+
+            "session_host" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let host = session.session_host()?;
+                    Ok(serde_json::json!({ "host": host }))
+                } else {
+                    Ok(serde_json::json!({ "host": null }))
+                }
+            }
+
+            "session_port" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let port = session.session_port()?;
+                    Ok(serde_json::json!({ "port": port }))
+                } else {
+                    Ok(serde_json::json!({ "port": null }))
+                }
+            }
+
+            "session_tunnel_peer" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let tunnel_peer = session.tunnel_peer()?;
+                    Ok(serde_json::json!({ "tunnel_peer": tunnel_peer }))
+                } else {
+                    Ok(serde_json::json!({ "tunnel_peer": null }))
+                }
+            }
+
+            "session_target_host" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let target_host = session.target_host()?;
+                    Ok(serde_json::json!({ "target_host": target_host }))
+                } else {
+                    Ok(serde_json::json!({ "target_host": null }))
+                }
+            }
+
+            "session_via_exploit" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let via_exploit = session.via_exploit()?;
+                    Ok(serde_json::json!({ "via_exploit": via_exploit }))
+                } else {
+                    Ok(serde_json::json!({ "via_exploit": null }))
+                }
+            }
+
+            "session_via_payload" => {
+                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let sessions = self.framework.sessions()?;
+                if let Some(sess_val) = sessions.get_raw(session_id)? {
+                    let session = bridge::Session::from_raw(sess_val, session_id);
+                    let via_payload = session.via_payload()?;
+                    Ok(serde_json::json!({ "via_payload": via_payload }))
+                } else {
+                    Ok(serde_json::json!({ "via_payload": null }))
+                }
+            }
+
             "module_exploit" => {
                 let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
                 let payload = _args.get(1).and_then(|v| v.as_str()).context("Missing payload")?;

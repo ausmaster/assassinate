@@ -583,3 +583,200 @@ class MsfClient:
         """
         result = await self._call("job_kill", job_id)
         return result["success"]
+
+    # SessionManager operations
+    async def session_get(self, session_id: int) -> dict[str, Any] | None:
+        """Get session details by ID.
+
+        Args:
+            session_id: Session ID to retrieve
+
+        Returns:
+            Session details dict or None if not found
+        """
+        result = await self._call("session_get", session_id)
+        return result if result.get("session") is not None else result
+
+    async def session_kill(self, session_id: int) -> bool:
+        """Kill a session by ID.
+
+        Args:
+            session_id: Session ID to kill
+
+        Returns:
+            True if session was successfully killed
+        """
+        result = await self._call("session_kill", session_id)
+        return result["success"]
+
+    async def session_info(self, session_id: int) -> str | None:
+        """Get session info string.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Info string or None if session not found
+        """
+        result = await self._call("session_info", session_id)
+        return result["info"]
+
+    async def session_type(self, session_id: int) -> str | None:
+        """Get session type (shell, meterpreter, etc).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Session type string or None
+        """
+        result = await self._call("session_type", session_id)
+        return result["type"]
+
+    async def session_alive(self, session_id: int) -> bool:
+        """Check if session is alive.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if session is alive
+        """
+        result = await self._call("session_alive", session_id)
+        return result["alive"]
+
+    async def session_read(self, session_id: int, length: int | None = None) -> str:
+        """Read data from session.
+
+        Args:
+            session_id: Session ID
+            length: Number of bytes to read (None = all available)
+
+        Returns:
+            Data read from session
+        """
+        result = await self._call("session_read", session_id, length)
+        return result["data"]
+
+    async def session_write(self, session_id: int, data: str) -> int:
+        """Write data to session.
+
+        Args:
+            session_id: Session ID
+            data: Data to write
+
+        Returns:
+            Number of bytes written
+        """
+        result = await self._call("session_write", session_id, data)
+        return result["bytes_written"]
+
+    async def session_execute(self, session_id: int, command: str) -> str:
+        """Execute shell command in session.
+
+        Args:
+            session_id: Session ID
+            command: Command to execute
+
+        Returns:
+            Command output
+        """
+        result = await self._call("session_execute", session_id, command)
+        return result["output"]
+
+    async def session_run_cmd(self, session_id: int, command: str) -> str:
+        """Run meterpreter command in session.
+
+        Args:
+            session_id: Session ID
+            command: Meterpreter command to run
+
+        Returns:
+            Command output
+        """
+        result = await self._call("session_run_cmd", session_id, command)
+        return result["output"]
+
+    async def session_desc(self, session_id: int) -> str | None:
+        """Get session description.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Description string or None
+        """
+        result = await self._call("session_desc", session_id)
+        return result["desc"]
+
+    async def session_host(self, session_id: int) -> str | None:
+        """Get session host.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Host string or None
+        """
+        result = await self._call("session_host", session_id)
+        return result["host"]
+
+    async def session_port(self, session_id: int) -> int | None:
+        """Get session port.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Port number or None
+        """
+        result = await self._call("session_port", session_id)
+        return result["port"]
+
+    async def session_tunnel_peer(self, session_id: int) -> str | None:
+        """Get tunnel peer (remote address).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Tunnel peer string or None
+        """
+        result = await self._call("session_tunnel_peer", session_id)
+        return result["tunnel_peer"]
+
+    async def session_target_host(self, session_id: int) -> str | None:
+        """Get target host.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Target host string or None
+        """
+        result = await self._call("session_target_host", session_id)
+        return result["target_host"]
+
+    async def session_via_exploit(self, session_id: int) -> str | None:
+        """Get exploit that created this session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Exploit name or None
+        """
+        result = await self._call("session_via_exploit", session_id)
+        return result["via_exploit"]
+
+    async def session_via_payload(self, session_id: int) -> str | None:
+        """Get payload that created this session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Payload name or None
+        """
+        result = await self._call("session_via_payload", session_id)
+        return result["via_payload"]

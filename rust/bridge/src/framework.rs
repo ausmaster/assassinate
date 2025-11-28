@@ -730,6 +730,39 @@ impl SessionManager {
         Ok(!is_nil(result_val))
     }
 
+    /// Get a session by ID (raw version without PyO3)
+    pub fn get_raw(&self, session_id: i64) -> Result<Option<Value>> {
+        let id_val = crate::ruby_bridge::get_ruby()?
+            .eval::<Value>(&format!("{}", session_id))
+            .map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
+            })?;
+
+        let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
+
+        // Check if nil
+        if is_nil(session_val) {
+            Ok(None)
+        } else {
+            Ok(Some(session_val))
+        }
+    }
+
+    /// Kill a session by ID (raw version without PyO3)
+    pub fn kill_raw(&self, session_id: i64) -> Result<bool> {
+        let id_val = crate::ruby_bridge::get_ruby()?
+            .eval::<Value>(&format!("{}", session_id))
+            .map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
+            })?;
+
+        // Call delete method on sessions hash
+        let result_val = call_method(self.ruby_sessions, "delete", &[id_val])?;
+
+        // If delete returns nil, session didn't exist
+        Ok(!is_nil(result_val))
+    }
+
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<SessionManager count={}>", self.list()?.len()))
@@ -881,6 +914,76 @@ impl Session {
     pub fn via_payload(&self) -> Result<String> {
         let payload_val = call_method(self.ruby_session, "via_payload", &[])?;
         value_to_string(payload_val)
+    }
+
+    /// Create Session from raw Ruby value (for daemon use)
+    pub fn from_raw(session_val: Value, session_id: i64) -> Self {
+        Session {
+            ruby_session: session_val,
+            session_id,
+        }
+    }
+
+    /// Write data to the session (raw version without PyO3)
+    pub fn write_raw(&self, data: &str) -> Result<usize> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let data_val = ruby.str_new(data).as_value();
+
+        let result = call_method(self.ruby_session, "write", &[data_val])?;
+
+        // Try to convert to integer (bytes written)
+        let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
+
+        Ok(bytes_written as usize)
+    }
+
+    /// Read data from the session (raw version without PyO3)
+    pub fn read_raw(&self, length: Option<usize>) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        let result = if let Some(len) = length {
+            let len_val = ruby
+                .eval::<Value>(&format!("{}", len))
+                .map_err(|e| AssassinateError::ConversionError(e.to_string()))?;
+            call_method(self.ruby_session, "read", &[len_val])?
+        } else {
+            call_method(self.ruby_session, "read", &[])?
+        };
+
+        if is_nil(result) {
+            Ok(String::new())
+        } else {
+            Ok(value_to_string(result)?)
+        }
+    }
+
+    /// Execute a command in the session (raw version without PyO3)
+    pub fn execute_raw(&self, command: &str) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Write command
+        self.write_raw(&format!("{}\n", command))?;
+
+        // Give it time to execute
+        ruby.eval::<Value>("sleep 0.5")
+            .map_err(|e| AssassinateError::RubyError(e.to_string()))?;
+
+        // Read response
+        self.read_raw(None)
+    }
+
+    /// Run a Meterpreter command (raw version without PyO3)
+    pub fn run_cmd_raw(&self, command: &str) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let cmd_val = ruby.str_new(command).as_value();
+
+        let result = call_method(self.ruby_session, "run_cmd", &[cmd_val])?;
+
+        if is_nil(result) {
+            Ok(String::new())
+        } else {
+            Ok(value_to_string(result)?)
+        }
     }
 
     #[cfg(feature = "python-bindings")]
