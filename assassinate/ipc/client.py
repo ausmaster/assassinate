@@ -205,16 +205,17 @@ class MsfClient:
         """
         return await self._call("module_info", module_id)
 
-    async def module_options(self, module_id: str) -> dict[str, Any]:
+    async def module_options(self, module_id: str) -> str:
         """Get module options schema.
-        
+
         Args:
             module_id: Module ID
-            
+
         Returns:
-            Dictionary of options
+            String representation of options
         """
-        return await self._call("module_options", module_id)
+        result = await self._call("module_options", module_id)
+        return result["options"]
 
     async def module_set_option(self, module_id: str, key: str, value: str) -> None:
         """Set a module option.
