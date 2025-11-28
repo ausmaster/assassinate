@@ -1,0 +1,664 @@
+use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use bridge::{Framework, Module};
+use ipc::{protocol, IpcError, RingBuffer, DEFAULT_BUFFER_SIZE, DEFAULT_SHM_NAME};
+use clap::Parser;
+use futures::stream::StreamExt;
+use parking_lot::Mutex;
+use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook_tokio::Signals;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
+use tracing::{error, info, warn};
+
+/// Assassinate Daemon - High-performance IPC bridge to Metasploit Framework
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to Metasploit Framework installation
+    #[arg(short, long)]
+    msf_root: Option<PathBuf>,
+
+    /// Shared memory name for IPC
+    #[arg(short, long, default_value = DEFAULT_SHM_NAME)]
+    shm_name: String,
+
+    /// Ring buffer size in bytes (must be power of 2)
+    #[arg(short, long, default_value_t = DEFAULT_BUFFER_SIZE)]
+    buffer_size: usize,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(short, long, default_value = "info")]
+    log_level: String,
+}
+
+/// Main daemon structure
+struct Daemon {
+    framework: Framework,
+    request_buffer: RingBuffer,  // Python writes, Daemon reads
+    response_buffer: RingBuffer, // Daemon writes, Python reads
+    shutdown: Arc<AtomicBool>,
+    request_count: AtomicU64,
+    error_count: AtomicU64,
+    // Module instance storage
+    modules: Arc<Mutex<HashMap<String, Module>>>,
+    next_module_id: AtomicU64,
+}
+
+/// Helper function to parse options from JSON Value to HashMap
+fn parse_options(value: Option<&serde_json::Value>) -> Option<HashMap<String, String>> {
+    value.and_then(|v| v.as_object()).map(|obj| {
+        obj.iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect()
+    })
+}
+
+impl Daemon {
+    /// Create a new daemon instance
+    fn new(
+        framework: Framework,
+        request_buffer: RingBuffer,
+        response_buffer: RingBuffer,
+        shutdown: Arc<AtomicBool>,
+    ) -> Self {
+        Self {
+            framework,
+            request_buffer,
+            response_buffer,
+            shutdown,
+            request_count: AtomicU64::new(0),
+            error_count: AtomicU64::new(0),
+            modules: Arc::new(Mutex::new(HashMap::new())),
+            next_module_id: AtomicU64::new(1),
+        }
+    }
+
+    /// Main event loop - processes IPC requests
+    async fn run(&self) -> Result<()> {
+        info!("Daemon started - waiting for requests");
+        let mut last_stats_log = Instant::now();
+        let stats_interval = Duration::from_secs(60);
+
+        while !self.shutdown.load(Ordering::Relaxed) {
+            match self.request_buffer.try_read() {
+                Ok(data) => {
+                    self.request_count.fetch_add(1, Ordering::Relaxed);
+
+                    match self.process_request(data).await {
+                        Ok(()) => {}
+                        Err(e) => {
+                            self.error_count.fetch_add(1, Ordering::Relaxed);
+                            error!("Failed to process request: {:#}", e);
+                        }
+                    }
+                }
+                Err(IpcError::RingBufferEmpty) => {
+                    // No data available - yield and sleep briefly
+                    tokio::task::yield_now().await;
+                    sleep(Duration::from_micros(10)).await;
+                }
+                Err(e) => {
+                    self.error_count.fetch_add(1, Ordering::Relaxed);
+                    error!("Ring buffer read error: {:#}", e);
+                    sleep(Duration::from_millis(10)).await;
+                }
+            }
+
+            // Periodically log statistics
+            if last_stats_log.elapsed() >= stats_interval {
+                self.log_statistics();
+                last_stats_log = Instant::now();
+            }
+        }
+
+        info!("Daemon shutting down gracefully");
+        Ok(())
+    }
+
+    /// Process a single IPC request
+    async fn process_request(&self, data: &[u8]) -> Result<()> {
+        let (call_id, method, args) =
+            protocol::deserialize_call(data).context("Failed to deserialize request")?;
+
+        let response = match self.dispatch_call(&method, args).await {
+            Ok(result) => protocol::serialize_response(call_id, result)?,
+            Err(e) => {
+                let error_msg = format!("{:#}", e);
+                protocol::serialize_error(call_id, "CallFailed", &error_msg)?
+            }
+        };
+
+        self.response_buffer
+            .try_write(&response)
+            .context("Failed to write response to ring buffer")?;
+
+        Ok(())
+    }
+
+    /// Dispatch method call to MSF framework
+    async fn dispatch_call(
+        &self,
+        method: &str,
+        _args: Vec<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        match method {
+            "framework_version" => {
+                let version = self
+                    .framework
+                    .version()
+                    .context("Failed to get framework version")?;
+                Ok(serde_json::json!({ "version": version }))
+            }
+
+            "list_modules" => {
+                let module_type = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing or invalid module_type argument")?;
+
+                let modules = self
+                    .framework
+                    .list_modules(module_type)
+                    .context("Failed to list modules")?;
+
+                Ok(serde_json::json!({ "modules": modules }))
+            }
+
+            "search" => {
+                let query = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing or invalid search query")?;
+
+                let results = self
+                    .framework
+                    .search(query)
+                    .context("Failed to search modules")?;
+
+                Ok(serde_json::json!({ "results": results }))
+            }
+
+            "get_module_info" => {
+                let module_name = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing or invalid module_name argument")?;
+
+                let module = self
+                    .framework
+                    .create_module(module_name)
+                    .context("Failed to create module")?;
+
+                Ok(serde_json::json!({
+                    "name": module.name()?,
+                    "fullname": module.fullname()?,
+                    "type": module.module_type()?,
+                    "rank": module.rank()?,
+                    "disclosure_date": module.disclosure_date()?,
+                    "description": module.description()?,
+                }))
+            }
+
+            "threads" => {
+                let threads = self
+                    .framework
+                    .threads()
+                    .context("Failed to get thread count")?;
+                Ok(serde_json::json!({ "threads": threads }))
+            }
+
+            "list_sessions" => {
+                let session_manager = self
+                    .framework
+                    .sessions()
+                    .context("Failed to get session manager")?;
+
+                let session_ids = session_manager
+                    .list()
+                    .context("Failed to list sessions")?;
+
+                Ok(serde_json::json!({ "session_ids": session_ids }))
+            }
+
+            "create_module" => {
+                let module_path = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing or invalid module_path argument")?;
+
+                // Create the module
+                let module = self
+                    .framework
+                    .create_module(module_path)
+                    .context("Failed to create module")?;
+
+                // Generate unique ID and store module
+                let module_id = self.next_module_id.fetch_add(1, Ordering::SeqCst).to_string();
+                self.modules.lock().insert(module_id.clone(), module);
+
+                Ok(serde_json::json!({ "module_id": module_id }))
+            }
+
+            "module_info" => {
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing or invalid module_id argument")?;
+
+                let modules = self.modules.lock();
+                let module = modules
+                    .get(module_id)
+                    .context("Module not found")?;
+
+                Ok(serde_json::json!({
+                    "name": module.name()?,
+                    "fullname": module.fullname()?,
+                    "type": module.module_type()?,
+                    "description": module.description()?,
+                    "rank": module.rank()?,
+                    "disclosure_date": module.disclosure_date().ok(),
+                    "author": module.author().ok(),
+                    "references": module.references().ok(),
+                    "platform": module.platform().ok(),
+                    "arch": module.arch().ok(),
+                    "privileged": module.privileged().ok(),
+                    "license": module.license().ok(),
+                }))
+            }
+
+            "module_set_option" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let key = _args.get(1).and_then(|v| v.as_str()).context("Missing key")?;
+                let value = _args.get(2).and_then(|v| v.as_str()).context("Missing value")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let datastore = module.datastore()?;
+                datastore.set(key, value)?;
+
+                Ok(serde_json::json!({}))
+            }
+
+            "module_get_option" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let key = _args.get(1).and_then(|v| v.as_str()).context("Missing key")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let datastore = module.datastore()?;
+                let value = datastore.get(key)?;
+
+                Ok(serde_json::json!({ "value": value }))
+            }
+
+            "module_validate" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let valid = module.validate()?;
+
+                Ok(serde_json::json!({ "valid": valid }))
+            }
+
+            "module_compatible_payloads" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let payloads = module.compatible_payloads()?;
+
+                Ok(serde_json::json!({ "payloads": payloads }))
+            }
+
+            "module_has_check" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let has_check = module.has_check()?;
+
+                Ok(serde_json::json!({ "has_check": has_check }))
+            }
+
+            "module_check" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let check_result = module.check()?;
+
+                Ok(serde_json::json!({ "check_result": check_result }))
+            }
+
+            "module_options" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let options = module.options()?;
+
+                Ok(serde_json::json!({ "options": options }))
+            }
+
+            "module_targets" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let targets = module.targets()?;
+
+                Ok(serde_json::json!({ "targets": targets }))
+            }
+
+            "module_aliases" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let aliases = module.aliases()?;
+
+                Ok(serde_json::json!({ "aliases": aliases }))
+            }
+
+            "module_notes" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let notes = module.notes()?;
+
+                Ok(serde_json::json!({ "notes": notes }))
+            }
+
+            // DataStore operations - Framework level
+            "framework_get_option" => {
+                let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
+                let datastore = self.framework.datastore()?;
+                let value = datastore.get(key)?;
+                Ok(serde_json::json!({ "value": value }))
+            }
+
+            "framework_set_option" => {
+                let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
+                let value = _args.get(1).and_then(|v| v.as_str()).context("Missing value")?;
+                let datastore = self.framework.datastore()?;
+                datastore.set(key, value)?;
+                Ok(serde_json::json!({}))
+            }
+
+            "framework_datastore_to_dict" => {
+                let datastore = self.framework.datastore()?;
+                let dict = datastore.to_dict()?;
+                Ok(serde_json::json!({ "datastore": dict }))
+            }
+
+            "framework_delete_option" => {
+                let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
+                let datastore = self.framework.datastore()?;
+                datastore.delete(key)?;
+                Ok(serde_json::json!({}))
+            }
+
+            "framework_clear_datastore" => {
+                let datastore = self.framework.datastore()?;
+                datastore.clear()?;
+                Ok(serde_json::json!({}))
+            }
+
+            // DataStore operations - Module level
+            "module_datastore_to_dict" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let datastore = module.datastore()?;
+                let dict = datastore.to_dict()?;
+                Ok(serde_json::json!({ "datastore": dict }))
+            }
+
+            "module_delete_option" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let key = _args.get(1).and_then(|v| v.as_str()).context("Missing key")?;
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let datastore = module.datastore()?;
+                datastore.delete(key)?;
+                Ok(serde_json::json!({}))
+            }
+
+            "module_clear_datastore" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let datastore = module.datastore()?;
+                datastore.clear()?;
+                Ok(serde_json::json!({}))
+            }
+
+            // PayloadGenerator operations
+            "payload_generate" => {
+                let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
+                let options = parse_options(_args.get(1));
+
+                let pg = bridge::PayloadGenerator::new(&self.framework)?;
+                let payload_bytes = pg.generate(payload_name, options)?;
+                let payload_b64 = BASE64.encode(&payload_bytes);
+
+                Ok(serde_json::json!({ "payload": payload_b64 }))
+            }
+
+            "payload_generate_encoded" => {
+                let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
+                let encoder = _args.get(1).and_then(|v| v.as_str());
+                let iterations = _args.get(2).and_then(|v| v.as_i64()).map(|i| i as i32);
+                let options = parse_options(_args.get(3));
+
+                let pg = bridge::PayloadGenerator::new(&self.framework)?;
+                let payload_bytes = pg.generate_encoded(payload_name, encoder, iterations, options)?;
+                let payload_b64 = BASE64.encode(&payload_bytes);
+
+                Ok(serde_json::json!({ "payload": payload_b64 }))
+            }
+
+            "payload_list_payloads" => {
+                let pg = bridge::PayloadGenerator::new(&self.framework)?;
+                let payloads = pg.list_payloads()?;
+                Ok(serde_json::json!({ "payloads": payloads }))
+            }
+
+            "payload_generate_executable" => {
+                let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
+                let platform = _args.get(1).and_then(|v| v.as_str()).context("Missing platform")?;
+                let arch = _args.get(2).and_then(|v| v.as_str()).context("Missing arch")?;
+                let options = parse_options(_args.get(3));
+
+                let pg = bridge::PayloadGenerator::new(&self.framework)?;
+                let exe_bytes = pg.generate_executable(payload_name, platform, arch, options)?;
+                let exe_b64 = BASE64.encode(&exe_bytes);
+
+                Ok(serde_json::json!({ "executable": exe_b64 }))
+            }
+
+            // DbManager operations
+            "db_hosts" => {
+                let db = self.framework.db()?;
+                let hosts = db.hosts()?;
+                Ok(serde_json::json!({ "hosts": hosts }))
+            }
+
+            "db_services" => {
+                let db = self.framework.db()?;
+                let services = db.services()?;
+                Ok(serde_json::json!({ "services": services }))
+            }
+
+            "db_report_host" => {
+                let db = self.framework.db()?;
+                let host_id = db.report_host_raw(parse_options(_args.get(0)))?;
+                Ok(serde_json::json!({ "host_id": host_id }))
+            }
+
+            "db_report_service" => {
+                let db = self.framework.db()?;
+                let service_id = db.report_service_raw(parse_options(_args.get(0)))?;
+                Ok(serde_json::json!({ "service_id": service_id }))
+            }
+
+            "db_report_vuln" => {
+                let db = self.framework.db()?;
+                let vuln_id = db.report_vuln_raw(parse_options(_args.get(0)))?;
+                Ok(serde_json::json!({ "vuln_id": vuln_id }))
+            }
+
+            "db_report_cred" => {
+                let db = self.framework.db()?;
+                let cred_id = db.report_cred_raw(parse_options(_args.get(0)))?;
+                Ok(serde_json::json!({ "cred_id": cred_id }))
+            }
+
+            "db_vulns" => {
+                let db = self.framework.db()?;
+                let vulns = db.vulns()?;
+                Ok(serde_json::json!({ "vulns": vulns }))
+            }
+
+            "db_creds" => {
+                let db = self.framework.db()?;
+                let creds = db.creds()?;
+                Ok(serde_json::json!({ "creds": creds }))
+            }
+
+            "db_loot" => {
+                let db = self.framework.db()?;
+                let loot = db.loot()?;
+                Ok(serde_json::json!({ "loot": loot }))
+            }
+
+            "module_exploit" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let payload = _args.get(1).and_then(|v| v.as_str()).context("Missing payload")?;
+                let options = parse_options(_args.get(2));
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let session_id = module.exploit(payload, options)?;
+
+                Ok(serde_json::json!({ "session_id": session_id }))
+            }
+
+            "module_run" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let options = parse_options(_args.get(1));
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let success = module.run(options)?;
+
+                Ok(serde_json::json!({ "success": success }))
+            }
+
+            _ => {
+                warn!("Unknown method called: {}", method);
+                anyhow::bail!("Unknown method: {}", method)
+            }
+        }
+    }
+
+    /// Log daemon statistics
+    fn log_statistics(&self) {
+        let requests = self.request_count.load(Ordering::Relaxed);
+        let errors = self.error_count.load(Ordering::Relaxed);
+        let req_util = self.request_buffer.utilization();
+        let resp_util = self.response_buffer.utilization();
+
+        info!(
+            "Stats: {} requests, {} errors, req: {:.1}%, resp: {:.1}%",
+            requests,
+            errors,
+            req_util * 100.0,
+            resp_util * 100.0
+        );
+    }
+}
+
+/// Setup signal handling for graceful shutdown
+async fn handle_signals(mut signals: Signals, shutdown: Arc<AtomicBool>) {
+    while let Some(signal) = signals.next().await {
+        match signal {
+            SIGTERM | SIGINT => {
+                info!("Received shutdown signal, setting shutdown flag");
+                shutdown.store(true, Ordering::Relaxed);
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Parse CLI arguments
+    let args = Args::parse();
+
+    // Initialize logging
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&args.log_level));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .init();
+
+    info!("Assassinate Daemon starting...");
+    info!("Shared memory: {}", args.shm_name);
+    info!("Buffer size: {} bytes", args.buffer_size);
+
+    // Initialize Metasploit Framework
+    info!("Initializing Metasploit Framework...");
+    let msf_root = args
+        .msf_root
+        .as_ref()
+        .and_then(|p| p.to_str())
+        .unwrap_or("/usr/share/metasploit-framework");
+    bridge::init_metasploit(msf_root)
+        .context("Failed to initialize Metasploit Ruby environment")?;
+
+    let framework = Framework::new(None).context("Failed to create MSF framework instance")?;
+    info!("MSF Framework initialized: {}", framework.version()?);
+
+    // Create ring buffers for bidirectional IPC
+    info!("Creating IPC ring buffers...");
+    let request_buffer_name = format!("{}_req", args.shm_name);
+    let response_buffer_name = format!("{}_resp", args.shm_name);
+
+    let request_buffer = RingBuffer::create(&request_buffer_name, args.buffer_size)
+        .context("Failed to create request ring buffer")?;
+    let response_buffer = RingBuffer::create(&response_buffer_name, args.buffer_size)
+        .context("Failed to create response ring buffer")?;
+    info!("Ring buffers created successfully");
+
+    // Setup signal handling
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let signals = Signals::new([SIGTERM, SIGINT]).context("Failed to setup signal handling")?;
+    let signals_handle = signals.handle();
+
+    let shutdown_clone = Arc::clone(&shutdown);
+    tokio::spawn(async move {
+        handle_signals(signals, shutdown_clone).await;
+    });
+
+    // Create and run daemon
+    let daemon = Daemon::new(framework, request_buffer, response_buffer, shutdown);
+    let result = daemon.run().await;
+
+    // Cleanup
+    signals_handle.close();
+    info!("Daemon stopped");
+
+    result
+}

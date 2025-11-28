@@ -26,13 +26,35 @@ if TYPE_CHECKING:
 _client: MsfClient | None = None
 
 
-def _get_client() -> MsfClient:
-    """Get or create the global IPC client."""
+async def _get_client_async() -> MsfClient:
+    """Get or create the global IPC client (async version)."""
     global _client
     if _client is None:
         _client = MsfClient()
-        # Connect synchronously
-        asyncio.run(_client.connect())
+        await _client.connect()
+    return _client
+
+
+def _get_client() -> MsfClient:
+    """Get or create the global IPC client (sync wrapper)."""
+    global _client
+    if _client is None:
+        _client = MsfClient()
+        # Try to connect
+        try:
+            loop = asyncio.get_running_loop()
+            # If there's a running loop, we're in async context - just return unconnected client
+            # The user should call initialize_async() instead
+            raise RuntimeError(
+                "Cannot call initialize() from async context. "
+                "Use 'await initialize_async()' instead."
+            )
+        except RuntimeError as e:
+            if "no running event loop" in str(e):
+                # No running loop - safe to use asyncio.run()
+                asyncio.run(_client.connect())
+            else:
+                raise
     return _client
 
 
@@ -54,10 +76,33 @@ def _run_async(coro):
 
 
 def initialize(msf_path: str | None = None) -> None:
-    """Initialize connection to the Metasploit Framework daemon.
+    """Initialize connection to the Metasploit Framework daemon (sync version).
 
     Note: With IPC architecture, this just establishes the connection to the daemon.
           The daemon itself must be started separately with the MSF path.
+
+          DO NOT call from async context - use initialize_async() instead.
+
+    Args:
+        msf_path: Deprecated - MSF path is configured in the daemon.
+                  Kept for API compatibility.
+
+    Raises:
+        RuntimeError: If connection to daemon fails or called from async context.
+
+    Example:
+        >>> initialize()  # Connect to running daemon
+    """
+    _get_client()
+
+
+async def initialize_async(msf_path: str | None = None) -> None:
+    """Initialize connection to the Metasploit Framework daemon (async version).
+
+    Note: With IPC architecture, this just establishes the connection to the daemon.
+          The daemon itself must be started separately with the MSF path.
+
+          Use this from async context instead of initialize().
 
     Args:
         msf_path: Deprecated - MSF path is configured in the daemon.
@@ -67,9 +112,9 @@ def initialize(msf_path: str | None = None) -> None:
         RuntimeError: If connection to daemon fails.
 
     Example:
-        >>> initialize()  # Connect to running daemon
+        >>> await initialize_async()  # Connect to running daemon
     """
-    _get_client()
+    await _get_client_async()
 
 
 def get_version() -> str:
@@ -171,14 +216,17 @@ class Framework:
         Example:
             >>> fw = Framework()
             >>> mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
-            >>> print(mod.name())
+            >>> # Note: Module methods are async in IPC version
+            >>> name = asyncio.run(mod.name())
+            >>> print(name)
             vsftpd_234_backdoor
         """
         # Import here to avoid circular dependency
         from assassinate.bridge.modules import Module
 
-        module_info = _run_async(self._client.get_module_info(module_name))
-        return Module(module_name, module_info, self._client)
+        # Create module via IPC and get its ID
+        module_id = _run_async(self._client.create_module(module_name))
+        return Module(module_id, self._client)
 
     def datastore(self) -> DataStore:
         """Get framework global datastore.

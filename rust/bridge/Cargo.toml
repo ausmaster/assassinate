@@ -1,0 +1,33 @@
+[package]
+name = "bridge"
+version = "0.1.0"
+edition = "2021"
+authors = ["Austin Stark <austin.stark@blacklanternsecurity.com>"]
+description = "Rust FFI bridge to Metasploit Framework via Magnus (Ruby embedding)"
+license = "GPL-3.0"
+
+[lib]
+name = "bridge"
+crate-type = ["rlib"]
+
+[dependencies]
+# Magnus for Ruby FFI with embed feature for proper VM initialization
+magnus = { version = "0.7", features = ["embed"] }
+rb-sys = "0.9"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+serial_test = "3.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true

@@ -1,11 +1,14 @@
-"""MSF DataStore implementation.
+"""MSF DataStore implementation via IPC.
 
 Provides key-value configuration storage for modules and framework settings.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from assassinate.ipc.client import MsfClient
 
 
 class DataStore:
@@ -17,23 +20,25 @@ class DataStore:
     Note:
         Keys are case-insensitive: "RHOSTS", "rhosts", "RHosts" all access
         the same value.
+        All methods are async since they use IPC.
     """
 
-    _instance: Any  # The underlying PyO3 DataStore instance
-
-    def __init__(self, instance: Any) -> None:
+    def __init__(self, client: MsfClient, module_id: str | None = None) -> None:
         """Initialize DataStore wrapper.
 
         Args:
-            instance: PyO3 DataStore instance.
+            client: Connected MsfClient instance.
+            module_id: Optional module ID for module-specific datastore.
+                      If None, uses framework global datastore.
 
         Note:
             This is called internally. Users should get DataStore instances
             via Framework.datastore() or Module.datastore().
         """
-        self._instance = instance
+        self._client = client
+        self._module_id = module_id
 
-    def get(self, key: str) -> str | None:
+    async def get(self, key: str) -> str | None:
         """Get value by key.
 
         Args:
@@ -44,14 +49,18 @@ class DataStore:
 
         Example:
             >>> ds = mod.datastore()
-            >>> ds.set("RHOSTS", "192.168.1.100")
-            >>> print(ds.get("rhosts"))  # Case-insensitive
+            >>> await ds.set("RHOSTS", "192.168.1.100")
+            >>> print(await ds.get("rhosts"))  # Case-insensitive
             192.168.1.100
         """
-        result = self._instance.get(key)
-        return str(result) if result is not None else None
+        if self._module_id:
+            # Module-specific datastore
+            return await self._client.module_get_option(self._module_id, key)
+        else:
+            # Framework global datastore
+            return await self._client.framework_get_option(key)
 
-    def set(self, key: str, value: str) -> None:
+    async def set(self, key: str, value: str) -> None:
         """Set value by key.
 
         Args:
@@ -60,12 +69,17 @@ class DataStore:
 
         Example:
             >>> ds = mod.datastore()
-            >>> ds.set("RHOSTS", "192.168.1.100")
-            >>> ds.set("rport", "21")  # Case-insensitive
+            >>> await ds.set("RHOSTS", "192.168.1.100")
+            >>> await ds.set("rport", "21")  # Case-insensitive
         """
-        self._instance.set(key, value)
+        if self._module_id:
+            # Module-specific datastore
+            await self._client.module_set_option(self._module_id, key, value)
+        else:
+            # Framework global datastore
+            await self._client.framework_set_option(key, value)
 
-    def to_dict(self) -> dict[str, str]:
+    async def to_dict(self) -> dict[str, str]:
         """Convert datastore to a dictionary.
 
         Returns:
@@ -73,14 +87,17 @@ class DataStore:
 
         Example:
             >>> ds = mod.datastore()
-            >>> ds.set("RHOSTS", "192.168.1.100")
-            >>> ds.set("RPORT", "21")
-            >>> print(ds.to_dict())
+            >>> await ds.set("RHOSTS", "192.168.1.100")
+            >>> await ds.set("RPORT", "21")
+            >>> print(await ds.to_dict())
             {'RHOSTS': '192.168.1.100', 'RPORT': '21'}
         """
-        return dict(self._instance.to_dict())
+        if self._module_id:
+            return await self._client.module_datastore_to_dict(self._module_id)
+        else:
+            return await self._client.framework_datastore_to_dict()
 
-    def delete(self, key: str) -> None:
+    async def delete(self, key: str) -> None:
         """Delete a key from the datastore.
 
         Args:
@@ -88,14 +105,17 @@ class DataStore:
 
         Example:
             >>> ds = mod.datastore()
-            >>> ds.set("RHOSTS", "192.168.1.100")
-            >>> ds.delete("RHOSTS")
-            >>> print(ds.get("RHOSTS"))
+            >>> await ds.set("RHOSTS", "192.168.1.100")
+            >>> await ds.delete("RHOSTS")
+            >>> print(await ds.get("RHOSTS"))
             None
         """
-        self._instance.delete(key)
+        if self._module_id:
+            await self._client.module_delete_option(self._module_id, key)
+        else:
+            await self._client.framework_delete_option(key)
 
-    def keys(self) -> list[str]:
+    async def keys(self) -> list[str]:
         """Get all keys in the datastore.
 
         Returns:
@@ -103,30 +123,38 @@ class DataStore:
 
         Example:
             >>> ds = mod.datastore()
-            >>> ds.set("RHOSTS", "192.168.1.100")
-            >>> ds.set("RPORT", "21")
-            >>> print(ds.keys())
+            >>> await ds.set("RHOSTS", "192.168.1.100")
+            >>> await ds.set("RPORT", "21")
+            >>> print(await ds.keys())
             ['RHOSTS', 'RPORT']
         """
-        return list(self._instance.keys())
+        data = await self.to_dict()
+        return list(data.keys())
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         """Clear all values from the datastore.
 
         Example:
             >>> ds = mod.datastore()
-            >>> ds.set("RHOSTS", "192.168.1.100")
-            >>> ds.clear()
-            >>> print(ds.to_dict())
+            >>> await ds.set("RHOSTS", "192.168.1.100")
+            >>> await ds.clear()
+            >>> print(await ds.to_dict())
             {}
         """
-        self._instance.clear()
+        if self._module_id:
+            await self._client.module_clear_datastore(self._module_id)
+        else:
+            await self._client.framework_clear_datastore()
 
     def __repr__(self) -> str:
         """Return string representation of DataStore.
 
         Returns:
             String representation showing stored values.
+
+        Note:
+            This is a sync method and cannot fetch data.
+            Use await ds.to_dict() to see current values.
         """
-        data = self.to_dict()
-        return f"<DataStore {data}>"
+        scope = "module" if self._module_id else "framework"
+        return f"<DataStore scope={scope}>"

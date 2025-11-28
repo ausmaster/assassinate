@@ -112,7 +112,9 @@ thumbs.db
 *.sublime-project
 *.sublime-workspace
 /metasploit-framework/
-assassinate_bridge/target/
+# Rust build artifacts
+rust/*/target/
+rust/*/Cargo.lock
 metasploit-framework.old/
 BUILD_SUCCESS.md
 FULL_IMPLEMENTATION_PLAN.md
