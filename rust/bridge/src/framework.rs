@@ -142,6 +142,15 @@ impl Framework {
         Ok(JobManager { ruby_jobs: jobs_val })
     }
 
+    /// Get plugin manager
+    pub fn plugins(&self) -> Result<PluginManager> {
+        let plugins_val = call_method(self.ruby_framework, "plugins", &[])?;
+
+        Ok(PluginManager {
+            ruby_plugins: plugins_val,
+        })
+    }
+
     /// Get framework threads configuration
     pub fn threads(&self) -> Result<i64> {
         let threads_val = call_method(self.ruby_framework, "threads", &[])?;
@@ -1010,6 +1019,11 @@ impl DbManager {
     pub fn hosts(&self) -> Result<Vec<String>> {
         let hosts_val = call_method(self.ruby_db, "hosts", &[])?;
 
+        // Check if nil (database might be empty or not configured)
+        if is_nil(hosts_val) {
+            return Ok(Vec::new());
+        }
+
         // Convert to array of strings (host IPs)
         let hosts: Vec<String> = TryConvert::try_convert(hosts_val).map_err(|e: magnus::Error| {
             AssassinateError::ConversionError(format!("Failed to convert hosts: {}", e))
@@ -1021,6 +1035,11 @@ impl DbManager {
     /// Get all services
     pub fn services(&self) -> Result<Vec<String>> {
         let services_val = call_method(self.ruby_db, "services", &[])?;
+
+        // Check if nil (database might be empty or not configured)
+        if is_nil(services_val) {
+            return Ok(Vec::new());
+        }
 
         // Convert to array of strings
         let services: Vec<String> =
@@ -1137,7 +1156,18 @@ impl DbManager {
 
     /// Get all vulnerabilities
     pub fn vulns(&self) -> Result<Vec<String>> {
-        let vulns_val = call_method(self.ruby_db, "vulns", &[])?;
+        // MSF vulns() expects a workspace parameter, use empty hash for default workspace
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        })?;
+
+        let vulns_val = call_method(self.ruby_db, "vulns", &[opts_val])?;
+
+        // Check if nil (database might be empty or not configured)
+        if is_nil(vulns_val) {
+            return Ok(Vec::new());
+        }
 
         // Convert to array of strings
         let vulns: Vec<String> = TryConvert::try_convert(vulns_val).map_err(|e: magnus::Error| {
@@ -1151,6 +1181,11 @@ impl DbManager {
     pub fn creds(&self) -> Result<Vec<String>> {
         let creds_val = call_method(self.ruby_db, "creds", &[])?;
 
+        // Check if nil (database might be empty or not configured)
+        if is_nil(creds_val) {
+            return Ok(Vec::new());
+        }
+
         // Convert to array of strings
         let creds: Vec<String> = TryConvert::try_convert(creds_val).map_err(|e: magnus::Error| {
             AssassinateError::ConversionError(format!("Failed to convert creds: {}", e))
@@ -1162,6 +1197,11 @@ impl DbManager {
     /// Get all loot
     pub fn loot(&self) -> Result<Vec<String>> {
         let loot_val = call_method(self.ruby_db, "loot", &[])?;
+
+        // Check if nil (database might be empty or not configured)
+        if is_nil(loot_val) {
+            return Ok(Vec::new());
+        }
 
         // Convert to array of strings
         let loot: Vec<String> = TryConvert::try_convert(loot_val).map_err(|e: magnus::Error| {
@@ -1296,6 +1336,98 @@ impl JobManager {
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<JobManager jobs={}>", self.list()?.len()))
+    }
+}
+
+/// Plugin manager
+#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
+#[derive(Clone)]
+pub struct PluginManager {
+    pub(crate) ruby_plugins: Value,
+}
+
+#[cfg_attr(feature = "python-bindings", pymethods)]
+impl PluginManager {
+    /// List loaded plugins
+    pub fn list(&self) -> Result<Vec<String>> {
+        // PluginManager is an array of plugin instances
+        // Call to_a to convert to array
+        let plugins_array: magnus::RArray = TryConvert::try_convert(self.ruby_plugins)
+            .map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert plugins to array: {}", e))
+            })?;
+
+        let mut plugin_names = Vec::new();
+        for plugin_val in plugins_array.into_iter() {
+            // Get plugin name
+            let name_val = call_method(plugin_val, "name", &[])?;
+            let name = value_to_string(name_val)?;
+            plugin_names.push(name);
+        }
+
+        Ok(plugin_names)
+    }
+
+    /// List loaded plugins (raw version without PyO3)
+    pub fn list_raw(&self) -> Result<Vec<String>> {
+        self.list()
+    }
+
+    /// Load a plugin from path
+    pub fn load_raw(&self, path: &str, options: Option<HashMap<String, String>>) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        })?;
+
+        if let Some(opts_map) = options {
+            for (key, value) in opts_map {
+                let key_val = ruby.str_new(&key).as_value();
+                let value_val = ruby.str_new(&value).as_value();
+                call_method(opts_val, "[]=", &[key_val, value_val])?;
+            }
+        }
+
+        // Load the plugin
+        let path_val = ruby.str_new(path).as_value();
+        let plugin_instance = call_method(self.ruby_plugins, "load", &[path_val, opts_val])?;
+
+        // Get plugin name
+        let name_val = call_method(plugin_instance, "name", &[])?;
+        let name = value_to_string(name_val)?;
+
+        Ok(name)
+    }
+
+    /// Unload a plugin by name
+    pub fn unload_raw(&self, plugin_name: &str) -> Result<bool> {
+        // PluginManager is an array, so we need to find the plugin by name
+        let plugins_array: magnus::RArray = TryConvert::try_convert(self.ruby_plugins)
+            .map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert plugins to array: {}", e))
+            })?;
+
+        // Find plugin instance by name
+        for plugin_val in plugins_array.into_iter() {
+            let name_val = call_method(plugin_val, "name", &[])?;
+            let name = value_to_string(name_val)?;
+
+            if name == plugin_name {
+                // Found it, unload it
+                call_method(self.ruby_plugins, "unload", &[plugin_val])?;
+                return Ok(true);
+            }
+        }
+
+        // Plugin not found
+        Ok(false)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub fn __repr__(&self) -> Result<String> {
+        Ok(format!("<PluginManager plugins={}>", self.list()?.len()))
     }
 }
 

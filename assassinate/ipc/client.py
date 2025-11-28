@@ -584,6 +584,41 @@ class MsfClient:
         result = await self._call("job_kill", job_id)
         return result["success"]
 
+    # PluginManager operations
+    async def plugins_list(self) -> list[str]:
+        """List loaded plugins.
+
+        Returns:
+            List of loaded plugin names
+        """
+        result = await self._call("plugins_list")
+        return result["plugins"]
+
+    async def plugins_load(self, path: str, options: dict[str, str] | None = None) -> str:
+        """Load a plugin from path.
+
+        Args:
+            path: Path to plugin file
+            options: Optional plugin options
+
+        Returns:
+            Name of the loaded plugin
+        """
+        result = await self._call("plugins_load", path, options or {})
+        return result["plugin_name"]
+
+    async def plugins_unload(self, plugin_name: str) -> bool:
+        """Unload a plugin by name.
+
+        Args:
+            plugin_name: Name of plugin to unload
+
+        Returns:
+            True if plugin was successfully unloaded
+        """
+        result = await self._call("plugins_unload", plugin_name)
+        return result["success"]
+
     # SessionManager operations
     async def session_get(self, session_id: int) -> dict[str, Any] | None:
         """Get session details by ID.

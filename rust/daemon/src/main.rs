@@ -560,6 +560,29 @@ impl Daemon {
                 Ok(serde_json::json!({ "success": success }))
             }
 
+            // PluginManager operations
+            "plugins_list" => {
+                let plugins = self.framework.plugins()?;
+                let plugin_names = plugins.list_raw()?;
+                Ok(serde_json::json!({ "plugins": plugin_names }))
+            }
+
+            "plugins_load" => {
+                let path = _args.get(0).and_then(|v| v.as_str()).context("Missing path")?;
+                let options = parse_options(_args.get(1));
+
+                let plugins = self.framework.plugins()?;
+                let plugin_name = plugins.load_raw(path, options)?;
+                Ok(serde_json::json!({ "plugin_name": plugin_name }))
+            }
+
+            "plugins_unload" => {
+                let plugin_name = _args.get(0).and_then(|v| v.as_str()).context("Missing plugin_name")?;
+                let plugins = self.framework.plugins()?;
+                let success = plugins.unload_raw(plugin_name)?;
+                Ok(serde_json::json!({ "success": success }))
+            }
+
             // SessionManager operations
             "session_get" => {
                 let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
