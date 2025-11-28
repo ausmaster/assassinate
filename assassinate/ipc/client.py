@@ -314,18 +314,6 @@ class MsfClient:
         result = await self._call("module_has_check", module_id)
         return result["has_check"]
 
-    async def module_options(self, module_id: str) -> str:
-        """Get module options schema.
-
-        Args:
-            module_id: Module ID
-
-        Returns:
-            String representation of options
-        """
-        result = await self._call("module_options", module_id)
-        return result["options"]
-
     async def module_targets(self, module_id: str) -> list[str]:
         """Get exploit targets.
 
@@ -560,3 +548,37 @@ class MsfClient:
         """
         result = await self._call("db_loot")
         return result["loot"]
+
+    # JobManager operations
+    async def job_list(self) -> list[str]:
+        """List all active job IDs.
+
+        Returns:
+            List of job IDs
+        """
+        result = await self._call("job_list")
+        return result["job_ids"]
+
+    async def job_get(self, job_id: str) -> str | None:
+        """Get job information by ID.
+
+        Args:
+            job_id: Job ID to retrieve
+
+        Returns:
+            Job information string or None if not found
+        """
+        result = await self._call("job_get", job_id)
+        return result["job_info"]
+
+    async def job_kill(self, job_id: str) -> bool:
+        """Kill a running job.
+
+        Args:
+            job_id: Job ID to kill
+
+        Returns:
+            True if job was successfully killed
+        """
+        result = await self._call("job_kill", job_id)
+        return result["success"]

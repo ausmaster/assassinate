@@ -539,6 +539,27 @@ impl Daemon {
                 Ok(serde_json::json!({ "loot": loot }))
             }
 
+            // JobManager operations
+            "job_list" => {
+                let jobs = self.framework.jobs()?;
+                let job_ids = jobs.list()?;
+                Ok(serde_json::json!({ "job_ids": job_ids }))
+            }
+
+            "job_get" => {
+                let job_id = _args.get(0).and_then(|v| v.as_str()).context("Missing job_id")?;
+                let jobs = self.framework.jobs()?;
+                let job_info = jobs.get_raw(job_id)?;
+                Ok(serde_json::json!({ "job_info": job_info }))
+            }
+
+            "job_kill" => {
+                let job_id = _args.get(0).and_then(|v| v.as_str()).context("Missing job_id")?;
+                let jobs = self.framework.jobs()?;
+                let success = jobs.kill_raw(job_id)?;
+                Ok(serde_json::json!({ "success": success }))
+            }
+
             "module_exploit" => {
                 let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
                 let payload = _args.get(1).and_then(|v| v.as_str()).context("Missing payload")?;

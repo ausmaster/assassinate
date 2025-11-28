@@ -1165,6 +1165,31 @@ impl JobManager {
         }
     }
 
+    /// Get job by ID (raw version without PyO3)
+    pub fn get_raw(&self, job_id: &str) -> Result<Option<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.str_new(job_id).as_value();
+
+        let job_val = call_method(self.ruby_jobs, "[]", &[id_val])?;
+
+        if is_nil(job_val) {
+            Ok(None)
+        } else {
+            Ok(Some(value_to_string(job_val)?))
+        }
+    }
+
+    /// Kill a job by ID (raw version without PyO3)
+    pub fn kill_raw(&self, job_id: &str) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.str_new(job_id).as_value();
+
+        match call_method(self.ruby_jobs, "stop", &[id_val]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
     #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<JobManager jobs={}>", self.list()?.len()))
