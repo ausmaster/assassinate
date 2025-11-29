@@ -1152,9 +1152,30 @@ impl DbManager {
             }
         }
 
-        // MSF requires :workspace for report_cred - get the default workspace
-        // Use default_workspace which always returns a valid workspace (creating if needed)
-        let workspace = call_method(self.ruby_db, "default_workspace", &[])?;
+        // MSF requires :workspace for report_cred - find or create the default workspace
+        // The default workspace is named "default" per MSF::DBManager::Workspace::DEFAULT_WORKSPACE_NAME
+        let workspace = call_method(
+            self.ruby_db,
+            "find_workspace",
+            &[ruby.str_new("default").as_value()],
+        )?;
+
+        // If workspace doesn't exist, create it
+        let workspace = if is_nil(workspace) {
+            let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+            })?;
+            let name_sym = StaticSymbol::new("name");
+            call_method(
+                add_opts,
+                "[]=",
+                &[name_sym.as_value(), ruby.str_new("default").as_value()],
+            )?;
+            call_method(self.ruby_db, "add_workspace", &[add_opts])?
+        } else {
+            workspace
+        };
+
         let workspace_sym = StaticSymbol::new("workspace");
         call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace])?;
 
