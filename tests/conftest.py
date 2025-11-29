@@ -69,4 +69,5 @@ async def test_module(client):
     # Use vsftpd backdoor - well-known, simple exploit
     module_id = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
     yield module_id
-    # Cleanup is automatic - module is stored in daemon
+    # Cleanup module to prevent memory leak
+    await client.delete_module(module_id)

@@ -47,8 +47,8 @@ pub use error::{IpcError, Result};
 pub use ring_buffer::RingBuffer;
 pub use shm::SharedMemory;
 
-/// Default ring buffer size (64 MB)
-pub const DEFAULT_BUFFER_SIZE: usize = 64 * 1024 * 1024;
+/// Default ring buffer size (8 MB - optimized from 64MB)
+pub const DEFAULT_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 
 /// Default shared memory name
 pub const DEFAULT_SHM_NAME: &str = "/assassinate_msf_ipc";

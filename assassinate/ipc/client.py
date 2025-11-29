@@ -23,7 +23,7 @@ class MsfClient:
     """
 
     DEFAULT_SHM_NAME = "/assassinate_msf_ipc"
-    DEFAULT_BUFFER_SIZE = 64 * 1024 * 1024  # 64 MB
+    DEFAULT_BUFFER_SIZE = 8 * 1024 * 1024  # 8 MB (optimized from 64MB)
 
     def __init__(self, shm_name: str = DEFAULT_SHM_NAME, buffer_size: int = DEFAULT_BUFFER_SIZE):
         """Initialize the IPC client.
@@ -38,6 +38,8 @@ class MsfClient:
         self.response_buffer: RingBuffer | None = None  # Client reads responses
         self.next_call_id = 1
         self._pending_calls: dict[int, asyncio.Future] = {}
+        self._response_reader_task: asyncio.Task | None = None
+        self._shutdown = False
 
     async def connect(self) -> None:
         """Connect to the daemon's shared memory."""
@@ -47,8 +49,24 @@ class MsfClient:
         self.request_buffer = RingBuffer(request_name, self.buffer_size)
         self.response_buffer = RingBuffer(response_name, self.buffer_size)
 
+        # Start background response reader task
+        self._shutdown = False
+        self._response_reader_task = asyncio.create_task(self._response_reader())
+
     async def disconnect(self) -> None:
         """Disconnect from shared memory."""
+        # Signal shutdown and wait for response reader to finish
+        self._shutdown = True
+        if self._response_reader_task:
+            try:
+                await asyncio.wait_for(self._response_reader_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                self._response_reader_task.cancel()
+                try:
+                    await self._response_reader_task
+                except asyncio.CancelledError:
+                    pass
+
         if self.request_buffer:
             self.request_buffer.close()
             self.request_buffer = None
@@ -64,6 +82,40 @@ class MsfClient:
     async def __aexit__(self, *args) -> None:
         """Async context manager exit."""
         await self.disconnect()
+
+    async def _response_reader(self) -> None:
+        """Background task that reads responses and routes them to waiting calls.
+
+        This ensures responses are never lost, even if they arrive out of order.
+        """
+        while not self._shutdown:
+            try:
+                # Try to read a response from the buffer
+                if not self.response_buffer:
+                    await asyncio.sleep(0.001)
+                    continue
+
+                response_bytes = self.response_buffer.try_read()
+                response_call_id, result, error = deserialize_response(response_bytes)
+
+                # Find the pending call for this response
+                future = self._pending_calls.pop(response_call_id, None)
+                if future and not future.cancelled():
+                    if error:
+                        future.set_exception(RemoteError(error["code"], error["message"]))
+                    else:
+                        future.set_result(result)
+                # If no pending call found, the response is silently dropped
+                # (this could happen if a call timed out)
+
+            except BufferEmptyError:
+                # No data available - sleep briefly
+                await asyncio.sleep(0.001)  # 1ms
+            except Exception as e:
+                # Log unexpected errors but keep running
+                import sys
+                print(f"Error in response reader: {e}", file=sys.stderr)
+                await asyncio.sleep(0.01)
 
     async def _call(self, method: str, *args: Any, timeout: float = 5.0) -> Any:
         """Make an RPC call to the daemon.
@@ -87,35 +139,29 @@ class MsfClient:
         call_id = self.next_call_id
         self.next_call_id += 1
 
-        # Serialize and send request
-        request_bytes = serialize_call(call_id, method, list(args))
-        self.request_buffer.try_write(request_bytes)
+        # Create a future for this call
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending_calls[call_id] = future
 
-        # Wait for response with timeout
-        start_time = asyncio.get_event_loop().time()
-        while True:
-            try:
-                # Try to read response
-                response_bytes = self.response_buffer.try_read()
-                response_call_id, result, error = deserialize_response(response_bytes)
+        try:
+            # Serialize and send request
+            request_bytes = serialize_call(call_id, method, list(args))
+            self.request_buffer.try_write(request_bytes)
 
-                # Check if this is our response
-                if response_call_id == call_id:
-                    if error:
-                        raise RemoteError(error["code"], error["message"])
-                    return result
+            # Wait for response with timeout
+            # The response_reader task will set the result or exception
+            result = await asyncio.wait_for(future, timeout=timeout)
+            return result
 
-                # Not our response - put it back? For now just skip
-                # In a real implementation we'd need a queue of responses
-
-            except BufferEmptyError:
-                # No data yet - check timeout
-                elapsed = asyncio.get_event_loop().time() - start_time
-                if elapsed > timeout:
-                    raise TimeoutError(f"Call to {method} timed out after {timeout}s")
-
-                # Sleep briefly and retry
-                await asyncio.sleep(0.001)  # 1ms
+        except asyncio.TimeoutError:
+            # Cleanup pending call on timeout
+            self._pending_calls.pop(call_id, None)
+            raise TimeoutError(f"Call to {method} timed out after {timeout}s")
+        except Exception:
+            # Cleanup on any other error
+            self._pending_calls.pop(call_id, None)
+            raise
 
     # MSF API Methods
 
@@ -350,6 +396,18 @@ class MsfClient:
         """
         result = await self._call("module_notes", module_id)
         return result["notes"]
+
+    async def delete_module(self, module_id: str) -> bool:
+        """Delete a module instance to free memory.
+
+        Args:
+            module_id: Module ID to delete
+
+        Returns:
+            True if module was deleted, False if it didn't exist
+        """
+        result = await self._call("delete_module", module_id)
+        return result["deleted"]
 
     # DataStore operations
     async def framework_get_option(self, key: str) -> str | None:

@@ -84,9 +84,16 @@ impl Daemon {
         let mut last_stats_log = Instant::now();
         let stats_interval = Duration::from_secs(60);
 
+        // Adaptive backoff for efficient polling
+        let mut backoff_micros = 1u64;
+        const MIN_BACKOFF_MICROS: u64 = 1;
+        const MAX_BACKOFF_MICROS: u64 = 100;
+
         while !self.shutdown.load(Ordering::Relaxed) {
             match self.request_buffer.try_read() {
                 Ok(data) => {
+                    // Reset backoff on successful read
+                    backoff_micros = MIN_BACKOFF_MICROS;
                     self.request_count.fetch_add(1, Ordering::Relaxed);
 
                     match self.process_request(data).await {
@@ -98,9 +105,12 @@ impl Daemon {
                     }
                 }
                 Err(IpcError::RingBufferEmpty) => {
-                    // No data available - yield and sleep briefly
+                    // No data available - use adaptive backoff
                     tokio::task::yield_now().await;
-                    sleep(Duration::from_micros(10)).await;
+                    sleep(Duration::from_micros(backoff_micros)).await;
+
+                    // Exponential backoff: double the wait time up to maximum
+                    backoff_micros = (backoff_micros * 2).min(MAX_BACKOFF_MICROS);
                 }
                 Err(e) => {
                     self.error_count.fetch_add(1, Ordering::Relaxed);
@@ -808,6 +818,15 @@ impl Daemon {
                 let success = module.run(options)?;
 
                 Ok(serde_json::json!({ "success": success }))
+            }
+
+            "delete_module" => {
+                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+
+                let mut modules = self.modules.lock();
+                let existed = modules.remove(module_id).is_some();
+
+                Ok(serde_json::json!({ "deleted": existed }))
             }
 
             _ => {
