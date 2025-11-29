@@ -48,8 +48,9 @@ from assassinate import bridge
 # Can be overridden by calling setup_logging() with custom parameters
 from assassinate.logging import setup_logging
 
-# Setup default logging based on environment variable
+# Setup default logging based on environment variables
 log_level = os.getenv("ASSASSINATE_LOG_LEVEL", "WARNING")
-setup_logging(level=log_level, structured=True)
+log_file = os.getenv("ASSASSINATE_LOG_FILE", None)
+setup_logging(level=log_level, log_file=log_file, structured=True)
 
 # Note: High-level API will be added here in future versions
