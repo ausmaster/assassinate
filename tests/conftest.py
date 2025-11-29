@@ -48,6 +48,20 @@ def daemon_process():
         ["rm", "-f", "/dev/shm/assassinate_msf_ipc*"], stderr=subprocess.DEVNULL
     )
 
+    # Build environment with LD_LIBRARY_PATH if needed (for rbenv Ruby)
+    env = os.environ.copy()
+    # Check if using rbenv and add library path
+    rbenv_root = Path.home() / ".rbenv"
+    if rbenv_root.exists():
+        # Find the Ruby version being used
+        ruby_version_file = Path(__file__).parent.parent / ".ruby-version"
+        if ruby_version_file.exists():
+            ruby_version = ruby_version_file.read_text().strip()
+            ruby_lib_path = rbenv_root / "versions" / ruby_version / "lib"
+            if ruby_lib_path.exists():
+                existing_ld_path = env.get("LD_LIBRARY_PATH", "")
+                env["LD_LIBRARY_PATH"] = f"{ruby_lib_path}:{existing_ld_path}" if existing_ld_path else str(ruby_lib_path)
+
     # Start daemon
     proc = subprocess.Popen(
         [
@@ -59,6 +73,7 @@ def daemon_process():
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=env,
     )
 
     # Wait for daemon to start

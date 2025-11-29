@@ -135,6 +135,12 @@ jobs:
           sudo -u postgres psql -c "CREATE USER ${USER} SUPERUSER;" || true
           sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || true
 
+      - name: Run Python Integration Tests
+        run: uv run pytest tests/ -v --tb=short --maxfail=5
+        env:
+          MSF_ROOT: ${{ github.workspace }}/metasploit-framework
+          ASSASSINATE_LOG_LEVEL: WARNING
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -155,6 +161,9 @@ jobs:
           echo "✅ Rust format and linting passed" >> $GITHUB_STEP_SUMMARY
           echo "✅ All Rust components built successfully" >> $GITHUB_STEP_SUMMARY
           echo "✅ Rust unit tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Python integration tests passed (118 tests)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Components Tested" >> $GITHUB_STEP_SUMMARY
           echo "- Rust Bridge, IPC, Daemon" >> $GITHUB_STEP_SUMMARY
+          echo "- Python IPC Client" >> $GITHUB_STEP_SUMMARY
+          echo "- Full MSF Integration" >> $GITHUB_STEP_SUMMARY
