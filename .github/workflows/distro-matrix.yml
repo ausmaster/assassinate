@@ -96,6 +96,12 @@ jobs:
           ls -lh rust/bridge/target/release/libbridge.*
           ls -lh rust/daemon/target/release/daemon
 
+      - name: Run Rust Unit Tests
+        working-directory: rust/bridge
+        run: cargo test --release --lib
+        env:
+          MSF_ROOT: ${{ github.workspace }}/metasploit-framework
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
@@ -270,6 +276,12 @@ jobs:
               echo 'Components built:'
               ls -lh /workspace/rust/bridge/target/release/libbridge.*
               ls -lh /workspace/rust/daemon/target/release/daemon
+
+              # Run Rust unit tests
+              echo 'Running Rust unit tests...'
+              cd /workspace/rust/bridge
+              export MSF_ROOT=/tmp/metasploit-framework
+              cargo test --release --lib
 
               # Install uv (Python package manager)
               echo 'Installing uv...'
