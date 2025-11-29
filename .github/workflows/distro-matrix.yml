@@ -157,8 +157,9 @@ jobs:
             -w /workspace \
             ${{ matrix.image }} \
             bash -c "
-              set -e
+              # Workaround for Parrot bash environment issue
               echo '=== Testing ${{ matrix.distro }} - Installation and Bridge Tests ==='
+              set -e
 
               # Update package lists based on distro
               if command -v apt-get &> /dev/null; then
