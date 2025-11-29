@@ -1152,16 +1152,24 @@ impl DbManager {
             }
         }
 
-        // MSF requires :workspace for report_cred - find or create the default workspace
-        // The default workspace is named "default" per MSF::DBManager::Workspace::DEFAULT_WORKSPACE_NAME
-        let workspace = call_method(
+        // MSF requires :workspace for report_cred
+        // Per Msf::Util::DBManager.process_opts_workspace, workspace can be:
+        // - A String (workspace name)
+        // - An Mdm::Workspace object
+        // - A Hash with :name key
+        // Use ASSASSINATE_WORKSPACE env var or default to "default"
+        let workspace_name =
+            std::env::var("ASSASSINATE_WORKSPACE").unwrap_or_else(|_| "default".to_string());
+
+        // Ensure workspace exists by finding or creating it
+        let workspace_obj = call_method(
             self.ruby_db,
             "find_workspace",
-            &[ruby.str_new("default").as_value()],
+            &[ruby.str_new(&workspace_name).as_value()],
         )?;
 
         // If workspace doesn't exist, create it
-        let workspace = if is_nil(workspace) {
+        if is_nil(workspace_obj) {
             let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
                 AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
             })?;
@@ -1169,15 +1177,24 @@ impl DbManager {
             call_method(
                 add_opts,
                 "[]=",
-                &[name_sym.as_value(), ruby.str_new("default").as_value()],
+                &[
+                    name_sym.as_value(),
+                    ruby.str_new(&workspace_name).as_value(),
+                ],
             )?;
-            call_method(self.ruby_db, "add_workspace", &[add_opts])?
-        } else {
-            workspace
-        };
+            call_method(self.ruby_db, "add_workspace", &[add_opts])?;
+        }
 
+        // Now pass the workspace name to report_cred
         let workspace_sym = StaticSymbol::new("workspace");
-        call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace])?;
+        call_method(
+            opts_val,
+            "[]=",
+            &[
+                workspace_sym.as_value(),
+                ruby.str_new(&workspace_name).as_value(),
+            ],
+        )?;
 
         let cred_val = call_method(self.ruby_db, "report_cred", &[opts_val])?;
 
