@@ -220,32 +220,42 @@ jobs:
               rustc --version
               cargo --version
 
-              # Clone Metasploit Framework
-              echo 'Cloning Metasploit Framework...'
-              git clone --depth 1 https://github.com/rapid7/metasploit-framework.git /tmp/metasploit-framework
+              # Setup Metasploit Framework based on distro
+              # Kali and Parrot use package manager (real-world usage)
+              # Others clone from GitHub
+              if [[ '${{ matrix.distro }}' == 'Kali' ]] || [[ '${{ matrix.distro }}' == 'Parrot' ]]; then
+                echo 'Installing Metasploit Framework from package manager...'
+                apt-get install -y metasploit-framework
+                export MSF_ROOT=/usr/share/metasploit-framework
+                echo 'Using package MSF at /usr/share/metasploit-framework'
+              else
+                echo 'Cloning Metasploit Framework from GitHub...'
+                git clone --depth 1 https://github.com/rapid7/metasploit-framework.git /tmp/metasploit-framework
+                export MSF_ROOT=/tmp/metasploit-framework
 
-              # Install MSF Ruby dependencies
-              echo 'Installing MSF dependencies...'
-              cd /tmp/metasploit-framework
-              gem install bundler
+                # Install MSF Ruby dependencies for cloned version
+                echo 'Installing MSF dependencies...'
+                cd /tmp/metasploit-framework
+                gem install bundler
 
-              # Fix PATH for Arch Linux gem executables
-              # See: https://wiki.archlinux.org/title/Ruby
-              if command -v pacman &> /dev/null; then
-                export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
+                # Fix PATH for Arch Linux gem executables
+                # See: https://wiki.archlinux.org/title/Ruby
+                if command -v pacman &> /dev/null; then
+                  export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
+                fi
+
+                # Workaround for Kali: xmlrpc gem fails during bundle install
+                # Install it separately first to avoid Bundler::GemNotFound error
+                # See: https://github.com/beefproject/beef/issues/2687
+                gem install xmlrpc
+
+                # Use single-threaded install to avoid race conditions
+                # Retry network errors (e.g., xmlrpc gem not found)
+                # No timeout - let GitHub Actions job timeout handle it (360min default)
+                # Bundle install for MSF can take 10-15 minutes depending on network
+                # See: https://github.com/bundler/bundler/issues/6698
+                bundle install --jobs 1 --retry 3
               fi
-
-              # Workaround for Kali: xmlrpc gem fails during bundle install
-              # Install it separately first to avoid Bundler::GemNotFound error
-              # See: https://github.com/beefproject/beef/issues/2687
-              gem install xmlrpc
-
-              # Use single-threaded install to avoid race conditions
-              # Retry network errors (e.g., xmlrpc gem not found)
-              # No timeout - let GitHub Actions job timeout handle it (360min default)
-              # Bundle install for MSF can take 10-15 minutes depending on network
-              # See: https://github.com/bundler/bundler/issues/6698
-              bundle install --jobs 1 --retry 3
 
               # Setup PostgreSQL
               echo 'Setting up PostgreSQL...'
@@ -280,7 +290,6 @@ jobs:
               # Run Rust unit tests
               echo 'Running Rust unit tests...'
               cd /workspace/rust/bridge
-              export MSF_ROOT=/tmp/metasploit-framework
               cargo test --release --lib
 
               # Install uv (Python package manager)
@@ -295,8 +304,7 @@ jobs:
 
               # Setup PostgreSQL database
               echo 'Setting up MSF database...'
-              export MSF_ROOT=/tmp/metasploit-framework
-              cd /tmp/metasploit-framework
+              cd \$MSF_ROOT
               cat > config/database.yml <<EOF
               development: &pgsql
                 adapter: postgresql
@@ -315,6 +323,7 @@ jobs:
 
               # Run Python integration test suite
               echo 'Running Python integration tests (118 tests)...'
+              echo \"Using MSF_ROOT: \$MSF_ROOT\"
               cd /workspace
               export ASSASSINATE_LOG_LEVEL=WARNING
               uv run pytest tests/ -v --tb=short --maxfail=5
