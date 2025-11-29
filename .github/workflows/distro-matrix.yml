@@ -85,30 +85,33 @@ jobs:
           export RAILS_ENV=test
           bundle exec rake db:migrate
 
-      - name: Build Rust Bridge
-        working-directory: rust/bridge
-        run: cargo build --release
-
-      - name: Verify Rust Bridge Build
+      - name: Build All Rust Components
         run: |
-          cd rust/bridge
-          ls -lh target/release/libbridge.*
+          cd rust/ipc && cargo build --release
+          cd ../bridge && cargo build --release
+          cd ../daemon && cargo build --release
 
-      - name: Run Rust Bridge Tests
-        working-directory: rust/bridge
+      - name: Verify Rust Build
         run: |
-          export MSF_ROOT="$HOME/metasploit-framework"
-          cargo test --release --lib
+          ls -lh rust/bridge/target/release/libbridge.*
+          ls -lh rust/daemon/target/release/daemon
 
-      - name: Run MSF Framework Test Suite
-        run: |
-          cd $HOME/metasploit-framework
-          export MSF_ROOT="$HOME/metasploit-framework"
-          bundle exec rspec spec/lib/msf/core/ \
-            --exclude-pattern "**/opt_address_local_spec.rb" \
-            --format progress \
-            --format documentation \
-            --out test_results.txt
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install Python Dependencies
+        run: uv sync --all-extras
+
+      - name: Run Python Integration Tests
+        run: uv run pytest tests/ -v --tb=short --maxfail=5
+        env:
+          MSF_ROOT: ${{ github.workspace }}/metasploit-framework
+          ASSASSINATE_LOG_LEVEL: WARNING
 
   distro-install-validation:
     name: ${{ matrix.distro }} Validation Test
@@ -257,19 +260,52 @@ jobs:
                 sleep 5
               fi
 
-              # Build and test Rust bridge
-              echo 'Building Rust bridge...'
-              cd /workspace/rust/bridge
-              cargo build --release
+              # Build all Rust components
+              echo 'Building all Rust components...'
+              cd /workspace/rust/ipc && cargo build --release
+              cd /workspace/rust/bridge && cargo build --release
+              cd /workspace/rust/daemon && cargo build --release
 
-              # Verify bridge library exists
-              echo 'Bridge library built:'
-              ls -lh target/release/libbridge.*
+              # Verify all components built
+              echo 'Components built:'
+              ls -lh /workspace/rust/bridge/target/release/libbridge.*
+              ls -lh /workspace/rust/daemon/target/release/daemon
 
-              # Run Rust bridge tests with MSF
-              echo 'Running Rust bridge tests...'
+              # Install uv (Python package manager)
+              echo 'Installing uv...'
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              source \$HOME/.local/bin/env
+
+              # Install Python dependencies
+              echo 'Installing Python dependencies...'
+              cd /workspace
+              uv sync --all-extras
+
+              # Setup PostgreSQL database
+              echo 'Setting up MSF database...'
               export MSF_ROOT=/tmp/metasploit-framework
-              cargo test --release -- --test-threads=1
+              cd /tmp/metasploit-framework
+              cat > config/database.yml <<EOF
+              development: &pgsql
+                adapter: postgresql
+                database: msf_test
+                username: postgres
+                password:
+                host: localhost
+                port: 5432
+                pool: 200
+                timeout: 5
+              production: &production
+                <<: *pgsql
+              test:
+                <<: *pgsql
+              EOF
+
+              # Run Python integration test suite
+              echo 'Running Python integration tests (118 tests)...'
+              cd /workspace
+              export ASSASSINATE_LOG_LEVEL=WARNING
+              uv run pytest tests/ -v --tb=short --maxfail=5
 
               echo '=== ${{ matrix.distro }} validation completed successfully ==='
             "
