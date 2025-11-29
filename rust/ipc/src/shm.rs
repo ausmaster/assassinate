@@ -1,7 +1,6 @@
 /// Shared memory management for ultra-low-latency IPC
 ///
 /// Uses memfd_create (Linux) for tmpfs-backed shared memory with zero syscall overhead.
-
 use crate::error::{IpcError, Result};
 use std::os::unix::io::AsRawFd;
 use std::ptr;
@@ -86,7 +85,7 @@ impl SharedMemory {
 
         let shmem = ShmemConf::new()
             .size(size)
-            .os_id(name)  // Use OS-level shared memory ID (POSIX shm_open)
+            .os_id(name) // Use OS-level shared memory ID (POSIX shm_open)
             .create()
             .map_err(|e| IpcError::SharedMemory(format!("shm_open failed: {}", e)))?;
 
@@ -105,7 +104,7 @@ impl SharedMemory {
         use shared_memory::ShmemConf;
 
         let shmem = ShmemConf::new()
-            .os_id(name)  // Use OS-level shared memory ID (POSIX shm_open)
+            .os_id(name) // Use OS-level shared memory ID (POSIX shm_open)
             .open()
             .map_err(|e| IpcError::SharedMemory(format!("shm_open failed: {}", e)))?;
 

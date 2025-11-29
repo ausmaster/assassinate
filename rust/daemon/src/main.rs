@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use bridge::{Framework, Module};
-use ipc::{protocol, IpcError, RingBuffer, DEFAULT_BUFFER_SIZE, DEFAULT_SHM_NAME};
 use clap::Parser;
 use futures::stream::StreamExt;
+use ipc::{protocol, IpcError, RingBuffer, DEFAULT_BUFFER_SIZE, DEFAULT_SHM_NAME};
 use parking_lot::Mutex;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook_tokio::Signals;
@@ -275,9 +275,7 @@ impl Daemon {
                     .sessions()
                     .context("Failed to get session manager")?;
 
-                let session_ids = session_manager
-                    .list()
-                    .context("Failed to list sessions")?;
+                let session_ids = session_manager.list().context("Failed to list sessions")?;
 
                 Ok(serde_json::json!({ "session_ids": session_ids }))
             }
@@ -296,7 +294,10 @@ impl Daemon {
                     .context("Failed to create module")?;
 
                 // Generate unique ID and store module
-                let module_id = self.next_module_id.fetch_add(1, Ordering::SeqCst).to_string();
+                let module_id = self
+                    .next_module_id
+                    .fetch_add(1, Ordering::SeqCst)
+                    .to_string();
                 self.modules.lock().insert(module_id.clone(), module);
 
                 Ok(serde_json::json!({ "module_id": module_id }))
@@ -310,9 +311,7 @@ impl Daemon {
                     .context("Missing or invalid module_id argument")?;
 
                 let modules = self.modules.lock();
-                let module = modules
-                    .get(module_id)
-                    .context("Module not found")?;
+                let module = modules.get(module_id).context("Module not found")?;
 
                 Ok(serde_json::json!({
                     "name": module.name()?,
@@ -331,9 +330,18 @@ impl Daemon {
             }
 
             "module_set_option" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
-                let key = _args.get(1).and_then(|v| v.as_str()).context("Missing key")?;
-                let value = _args.get(2).and_then(|v| v.as_str()).context("Missing value")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
+                let key = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing key")?;
+                let value = _args
+                    .get(2)
+                    .and_then(|v| v.as_str())
+                    .context("Missing value")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -344,8 +352,14 @@ impl Daemon {
             }
 
             "module_get_option" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
-                let key = _args.get(1).and_then(|v| v.as_str()).context("Missing key")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
+                let key = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing key")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -356,7 +370,10 @@ impl Daemon {
             }
 
             "module_validate" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -366,7 +383,10 @@ impl Daemon {
             }
 
             "module_compatible_payloads" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -376,7 +396,10 @@ impl Daemon {
             }
 
             "module_has_check" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -386,7 +409,10 @@ impl Daemon {
             }
 
             "module_check" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -396,7 +422,10 @@ impl Daemon {
             }
 
             "module_options" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -406,7 +435,10 @@ impl Daemon {
             }
 
             "module_targets" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -416,7 +448,10 @@ impl Daemon {
             }
 
             "module_aliases" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -426,7 +461,10 @@ impl Daemon {
             }
 
             "module_notes" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
@@ -437,15 +475,24 @@ impl Daemon {
 
             // === Framework-level DataStore Operations ===
             "framework_get_option" => {
-                let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
+                let key = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing key")?;
                 let datastore = self.framework.datastore()?;
                 let value = datastore.get(key)?;
                 Ok(serde_json::json!({ "value": value }))
             }
 
             "framework_set_option" => {
-                let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
-                let value = _args.get(1).and_then(|v| v.as_str()).context("Missing value")?;
+                let key = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing key")?;
+                let value = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing value")?;
                 let datastore = self.framework.datastore()?;
                 datastore.set(key, value)?;
                 Ok(serde_json::json!({}))
@@ -458,7 +505,10 @@ impl Daemon {
             }
 
             "framework_delete_option" => {
-                let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
+                let key = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing key")?;
                 let datastore = self.framework.datastore()?;
                 datastore.delete(key)?;
                 Ok(serde_json::json!({}))
@@ -472,7 +522,10 @@ impl Daemon {
 
             // === Module-level DataStore Operations ===
             "module_datastore_to_dict" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
                 let datastore = module.datastore()?;
@@ -481,8 +534,14 @@ impl Daemon {
             }
 
             "module_delete_option" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
-                let key = _args.get(1).and_then(|v| v.as_str()).context("Missing key")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
+                let key = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing key")?;
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
                 let datastore = module.datastore()?;
@@ -491,7 +550,10 @@ impl Daemon {
             }
 
             "module_clear_datastore" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
                 let modules = self.modules.lock();
                 let module = modules.get(module_id).context("Module not found")?;
                 let datastore = module.datastore()?;
@@ -501,7 +563,10 @@ impl Daemon {
 
             // === PayloadGenerator Operations ===
             "payload_generate" => {
-                let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
+                let payload_name = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing payload_name")?;
                 let options = parse_options(_args.get(1));
 
                 let pg = bridge::PayloadGenerator::new(&self.framework)?;
@@ -512,13 +577,17 @@ impl Daemon {
             }
 
             "payload_generate_encoded" => {
-                let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
+                let payload_name = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing payload_name")?;
                 let encoder = _args.get(1).and_then(|v| v.as_str());
                 let iterations = _args.get(2).and_then(|v| v.as_i64()).map(|i| i as i32);
                 let options = parse_options(_args.get(3));
 
                 let pg = bridge::PayloadGenerator::new(&self.framework)?;
-                let payload_bytes = pg.generate_encoded(payload_name, encoder, iterations, options)?;
+                let payload_bytes =
+                    pg.generate_encoded(payload_name, encoder, iterations, options)?;
                 let payload_b64 = BASE64.encode(&payload_bytes);
 
                 Ok(serde_json::json!({ "payload": payload_b64 }))
@@ -531,9 +600,18 @@ impl Daemon {
             }
 
             "payload_generate_executable" => {
-                let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
-                let platform = _args.get(1).and_then(|v| v.as_str()).context("Missing platform")?;
-                let arch = _args.get(2).and_then(|v| v.as_str()).context("Missing arch")?;
+                let payload_name = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing payload_name")?;
+                let platform = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing platform")?;
+                let arch = _args
+                    .get(2)
+                    .and_then(|v| v.as_str())
+                    .context("Missing arch")?;
                 let options = parse_options(_args.get(3));
 
                 let pg = bridge::PayloadGenerator::new(&self.framework)?;
@@ -606,14 +684,20 @@ impl Daemon {
             }
 
             "job_get" => {
-                let job_id = _args.get(0).and_then(|v| v.as_str()).context("Missing job_id")?;
+                let job_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing job_id")?;
                 let jobs = self.framework.jobs()?;
                 let job_info = jobs.get_raw(job_id)?;
                 Ok(serde_json::json!({ "job_info": job_info }))
             }
 
             "job_kill" => {
-                let job_id = _args.get(0).and_then(|v| v.as_str()).context("Missing job_id")?;
+                let job_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing job_id")?;
                 let jobs = self.framework.jobs()?;
                 let success = jobs.kill_raw(job_id)?;
                 Ok(serde_json::json!({ "success": success }))
@@ -627,7 +711,10 @@ impl Daemon {
             }
 
             "plugins_load" => {
-                let path = _args.get(0).and_then(|v| v.as_str()).context("Missing path")?;
+                let path = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing path")?;
                 let options = parse_options(_args.get(1));
 
                 let plugins = self.framework.plugins()?;
@@ -636,7 +723,10 @@ impl Daemon {
             }
 
             "plugins_unload" => {
-                let plugin_name = _args.get(0).and_then(|v| v.as_str()).context("Missing plugin_name")?;
+                let plugin_name = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing plugin_name")?;
                 let plugins = self.framework.plugins()?;
                 let success = plugins.unload_raw(plugin_name)?;
                 Ok(serde_json::json!({ "success": success }))
@@ -644,7 +734,10 @@ impl Daemon {
 
             // === Session Manager Operations ===
             "session_get" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 let session_val = sessions.get_raw(session_id)?;
 
@@ -664,14 +757,20 @@ impl Daemon {
             }
 
             "session_kill" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 let success = sessions.kill_raw(session_id)?;
                 Ok(serde_json::json!({ "success": success }))
             }
 
             "session_info" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -683,7 +782,10 @@ impl Daemon {
             }
 
             "session_type" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -695,7 +797,10 @@ impl Daemon {
             }
 
             "session_alive" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -707,7 +812,10 @@ impl Daemon {
             }
 
             "session_read" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let length = _args.get(1).and_then(|v| v.as_u64()).map(|v| v as usize);
 
                 let sessions = self.framework.sessions()?;
@@ -721,8 +829,14 @@ impl Daemon {
             }
 
             "session_write" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
-                let data = _args.get(1).and_then(|v| v.as_str()).context("Missing data")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
+                let data = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing data")?;
 
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
@@ -735,8 +849,14 @@ impl Daemon {
             }
 
             "session_execute" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
-                let command = _args.get(1).and_then(|v| v.as_str()).context("Missing command")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
+                let command = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing command")?;
 
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
@@ -749,8 +869,14 @@ impl Daemon {
             }
 
             "session_run_cmd" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
-                let command = _args.get(1).and_then(|v| v.as_str()).context("Missing command")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
+                let command = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing command")?;
 
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
@@ -763,7 +889,10 @@ impl Daemon {
             }
 
             "session_desc" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -775,7 +904,10 @@ impl Daemon {
             }
 
             "session_host" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -787,7 +919,10 @@ impl Daemon {
             }
 
             "session_port" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -799,7 +934,10 @@ impl Daemon {
             }
 
             "session_tunnel_peer" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -811,7 +949,10 @@ impl Daemon {
             }
 
             "session_target_host" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -823,7 +964,10 @@ impl Daemon {
             }
 
             "session_via_exploit" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -835,7 +979,10 @@ impl Daemon {
             }
 
             "session_via_payload" => {
-                let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
+                let session_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
                 if let Some(sess_val) = sessions.get_raw(session_id)? {
                     let session = bridge::Session::from_raw(sess_val, session_id);
@@ -848,8 +995,14 @@ impl Daemon {
 
             // === Module Execution ===
             "module_exploit" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
-                let payload = _args.get(1).and_then(|v| v.as_str()).context("Missing payload")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
+                let payload = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing payload")?;
                 let options = parse_options(_args.get(2));
 
                 let modules = self.modules.lock();
@@ -860,7 +1013,10 @@ impl Daemon {
             }
 
             "module_run" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
                 let options = parse_options(_args.get(1));
 
                 let modules = self.modules.lock();
@@ -871,7 +1027,10 @@ impl Daemon {
             }
 
             "delete_module" => {
-                let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
 
                 let mut modules = self.modules.lock();
                 let existed = modules.remove(module_id).is_some();

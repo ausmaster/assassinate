@@ -72,7 +72,7 @@ jobs:
         run: uv python install 3.13
 
       - name: Install Dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Run Ruff Format Check
         run: uv run ruff format --check .
@@ -202,7 +202,7 @@ jobs:
           cd ../daemon && cargo build --release
 
       - name: Install Python Dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Run Python Test Suite
         run: uv run pytest tests/ -v --tb=short --maxfail=5

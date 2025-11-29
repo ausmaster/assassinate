@@ -337,7 +337,8 @@ fn test_all_metasploit_integration() {
     let rank_str = ruby_bridge::value_to_string(rank).expect("Failed to convert rank");
     println!("  Rank: {}", rank_str);
     assert!(!rank_str.is_empty());
-    let privileged = ruby_bridge::call_method(module, "privileged", &[]).expect("Failed to get privileged");
+    let privileged =
+        ruby_bridge::call_method(module, "privileged", &[]).expect("Failed to get privileged");
     let priv_bool = ruby_bridge::value_to_bool(privileged).expect("Failed to convert privileged");
     println!("  Privileged: {}", priv_bool);
     println!("✓ Module rank and privileged accessible");
@@ -365,12 +366,18 @@ fn test_all_metasploit_integration() {
     println!("\n=== Test 18: Framework threads ===");
     let framework = ruby_bridge::create_framework(None).expect("Failed to create framework");
     let threads = ruby_bridge::call_method(framework, "threads", &[]);
-    assert!(threads.is_ok(), "Failed to get threads: {:?}", threads.err());
+    assert!(
+        threads.is_ok(),
+        "Failed to get threads: {:?}",
+        threads.err()
+    );
     let threads_val = threads.unwrap();
     let threads_i64: i64 = TryConvert::try_convert(threads_val).expect("Failed to convert threads");
     println!("  Threads: {}", threads_i64);
-    let threads_enabled = ruby_bridge::call_method(framework, "threads?", &[]).expect("Failed to get threads?");
-    let enabled_bool = ruby_bridge::value_to_bool(threads_enabled).expect("Failed to convert threads?");
+    let threads_enabled =
+        ruby_bridge::call_method(framework, "threads?", &[]).expect("Failed to get threads?");
+    let enabled_bool =
+        ruby_bridge::value_to_bool(threads_enabled).expect("Failed to convert threads?");
     println!("  Threads enabled: {}", enabled_bool);
     println!("✓ Framework threads accessible");
 
@@ -382,9 +389,13 @@ fn test_all_metasploit_integration() {
     let results = ruby_bridge::call_method(framework, "search", &[query]);
     assert!(results.is_ok(), "Failed to search: {:?}", results.err());
     let results_val = results.unwrap();
-    let results_vec: Vec<String> = TryConvert::try_convert(results_val).unwrap_or_else(|_| Vec::new());
+    let results_vec: Vec<String> =
+        TryConvert::try_convert(results_val).unwrap_or_else(|_| Vec::new());
     println!("  Search results count: {}", results_vec.len());
-    assert!(!results_vec.is_empty(), "Expected search results for 'vsftpd'");
+    assert!(
+        !results_vec.is_empty(),
+        "Expected search results for 'vsftpd'"
+    );
     println!("✓ Framework search works");
 
     // Test 20: Framework jobs
@@ -458,7 +469,8 @@ fn test_all_metasploit_integration() {
     // Clear all
     ruby_bridge::call_method(datastore, "clear", &[]).expect("Failed to clear datastore");
     let keys_after = ruby_bridge::call_method(datastore, "keys", &[]).expect("Failed to get keys");
-    let keys_after_vec: Vec<String> = TryConvert::try_convert(keys_after).expect("Failed to convert keys");
+    let keys_after_vec: Vec<String> =
+        TryConvert::try_convert(keys_after).expect("Failed to convert keys");
     println!("  Keys after clear: {}", keys_after_vec.len());
     println!("✓ DataStore delete, keys, clear work");
 

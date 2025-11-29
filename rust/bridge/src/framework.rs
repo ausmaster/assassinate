@@ -115,15 +115,21 @@ impl Framework {
         let results_val = call_method(self.ruby_framework, "search", &[query_val])?;
 
         // Search returns an array of metadata objects - extract fullname from each
-        let results_array: magnus::RArray = TryConvert::try_convert(results_val)
-            .map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert search results to array: {}", e))
+        let results_array: magnus::RArray =
+            TryConvert::try_convert(results_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert search results to array: {}",
+                    e
+                ))
             })?;
 
         let mut results = Vec::new();
         for item in results_array.each() {
             let metadata_obj = item.map_err(|e| {
-                AssassinateError::ConversionError(format!("Failed to iterate search results: {}", e))
+                AssassinateError::ConversionError(format!(
+                    "Failed to iterate search results: {}",
+                    e
+                ))
             })?;
 
             // Extract fullname from metadata object
@@ -139,7 +145,9 @@ impl Framework {
     pub fn jobs(&self) -> Result<JobManager> {
         let jobs_val = call_method(self.ruby_framework, "jobs", &[])?;
 
-        Ok(JobManager { ruby_jobs: jobs_val })
+        Ok(JobManager {
+            ruby_jobs: jobs_val,
+        })
     }
 
     /// Get plugin manager
@@ -164,9 +172,13 @@ impl Framework {
         // Try to call max_threads method
         match call_method(threads_val, "max_threads", &[]) {
             Ok(max_threads_val) => {
-                let threads: i64 = TryConvert::try_convert(max_threads_val).map_err(|e: magnus::Error| {
-                    AssassinateError::ConversionError(format!("Failed to convert max_threads: {}", e))
-                })?;
+                let threads: i64 =
+                    TryConvert::try_convert(max_threads_val).map_err(|e: magnus::Error| {
+                        AssassinateError::ConversionError(format!(
+                            "Failed to convert max_threads: {}",
+                            e
+                        ))
+                    })?;
                 Ok(threads)
             }
             Err(_) => {
@@ -402,9 +414,10 @@ impl Module {
         let author_val = call_method(self.ruby_module, "author", &[])?;
 
         // author is an array of Author objects, convert to strings
-        let authors: Vec<String> = TryConvert::try_convert(author_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert authors: {}", e))
-        })?;
+        let authors: Vec<String> =
+            TryConvert::try_convert(author_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert authors: {}", e))
+            })?;
 
         Ok(authors)
     }
@@ -455,9 +468,10 @@ impl Module {
         }
 
         // Try to convert to array of strings
-        let archs: Vec<String> = TryConvert::try_convert(arch_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert architectures: {}", e))
-        })?;
+        let archs: Vec<String> =
+            TryConvert::try_convert(arch_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert architectures: {}", e))
+            })?;
 
         Ok(archs)
     }
@@ -477,9 +491,12 @@ impl Module {
                 }
 
                 // Targets is an array of Target objects - extract name from each
-                let targets_array: magnus::RArray = TryConvert::try_convert(targets_val)
-                    .map_err(|e: magnus::Error| {
-                        AssassinateError::ConversionError(format!("Failed to convert targets to array: {}", e))
+                let targets_array: magnus::RArray =
+                    TryConvert::try_convert(targets_val).map_err(|e: magnus::Error| {
+                        AssassinateError::ConversionError(format!(
+                            "Failed to convert targets to array: {}",
+                            e
+                        ))
                     })?;
 
                 let mut target_names = Vec::new();
@@ -530,9 +547,10 @@ impl Module {
         let aliases_val = call_method(self.ruby_module, "aliases", &[])?;
 
         // Convert to array of strings
-        let aliases: Vec<String> = TryConvert::try_convert(aliases_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert aliases: {}", e))
-        })?;
+        let aliases: Vec<String> =
+            TryConvert::try_convert(aliases_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert aliases: {}", e))
+            })?;
 
         Ok(aliases)
     }
@@ -552,20 +570,20 @@ impl Module {
         let json_str = value_to_string(json_str_val)?;
 
         // Parse JSON into HashMap<String, serde_json::Value> then convert to HashMap<String, String>
-        let notes_json: serde_json::Value = serde_json::from_str(&json_str)
-            .map_err(|e| AssassinateError::ConversionError(format!("Failed to parse notes JSON: {}", e)))?;
+        let notes_json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            AssassinateError::ConversionError(format!("Failed to parse notes JSON: {}", e))
+        })?;
 
         let mut notes = HashMap::new();
         if let Some(obj) = notes_json.as_object() {
             for (key, value) in obj {
                 let value_str = match value {
                     serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Array(arr) => {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    }
+                    serde_json::Value::Array(arr) => arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     _ => value.to_string(),
                 };
                 notes.insert(key.clone(), value_str);
@@ -626,9 +644,13 @@ impl DataStore {
         let json = crate::ruby_bridge::hash_to_json(hash_val)?;
 
         // Convert to HashMap<String, Value> first to handle nulls
-        let raw_dict: HashMap<String, serde_json::Value> = serde_json::from_value(json).map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to convert datastore to dict: {}", e))
-        })?;
+        let raw_dict: HashMap<String, serde_json::Value> =
+            serde_json::from_value(json).map_err(|e| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert datastore to dict: {}",
+                    e
+                ))
+            })?;
 
         // Convert values to strings, treating null as empty string
         let dict: HashMap<String, String> = raw_dict
@@ -1025,9 +1047,10 @@ impl DbManager {
         }
 
         // Convert to array of strings (host IPs)
-        let hosts: Vec<String> = TryConvert::try_convert(hosts_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert hosts: {}", e))
-        })?;
+        let hosts: Vec<String> =
+            TryConvert::try_convert(hosts_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert hosts: {}", e))
+            })?;
 
         Ok(hosts)
     }
@@ -1170,9 +1193,10 @@ impl DbManager {
         }
 
         // Convert to array of strings
-        let vulns: Vec<String> = TryConvert::try_convert(vulns_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert vulns: {}", e))
-        })?;
+        let vulns: Vec<String> =
+            TryConvert::try_convert(vulns_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert vulns: {}", e))
+            })?;
 
         Ok(vulns)
     }
@@ -1187,9 +1211,10 @@ impl DbManager {
         }
 
         // Convert to array of strings
-        let creds: Vec<String> = TryConvert::try_convert(creds_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert creds: {}", e))
-        })?;
+        let creds: Vec<String> =
+            TryConvert::try_convert(creds_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert creds: {}", e))
+            })?;
 
         Ok(creds)
     }
@@ -1212,7 +1237,11 @@ impl DbManager {
     }
 
     /// Helper function to report to database (reduces code duplication)
-    fn report_to_db(&self, method_name: &str, opts: Option<HashMap<String, String>>) -> Result<i64> {
+    fn report_to_db(
+        &self,
+        method_name: &str,
+        opts: Option<HashMap<String, String>>,
+    ) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash
@@ -1272,9 +1301,10 @@ impl JobManager {
     pub fn list(&self) -> Result<Vec<String>> {
         let keys_val = call_method(self.ruby_jobs, "keys", &[])?;
 
-        let job_ids: Vec<String> = TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert job IDs: {}", e))
-        })?;
+        let job_ids: Vec<String> =
+            TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to convert job IDs: {}", e))
+            })?;
 
         Ok(job_ids)
     }
@@ -1352,9 +1382,12 @@ impl PluginManager {
     pub fn list(&self) -> Result<Vec<String>> {
         // PluginManager is an array of plugin instances
         // Call to_a to convert to array
-        let plugins_array: magnus::RArray = TryConvert::try_convert(self.ruby_plugins)
-            .map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert plugins to array: {}", e))
+        let plugins_array: magnus::RArray =
+            TryConvert::try_convert(self.ruby_plugins).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert plugins to array: {}",
+                    e
+                ))
             })?;
 
         let mut plugin_names = Vec::new();
@@ -1404,9 +1437,12 @@ impl PluginManager {
     /// Unload a plugin by name
     pub fn unload_raw(&self, plugin_name: &str) -> Result<bool> {
         // PluginManager is an array, so we need to find the plugin by name
-        let plugins_array: magnus::RArray = TryConvert::try_convert(self.ruby_plugins)
-            .map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert plugins to array: {}", e))
+        let plugins_array: magnus::RArray =
+            TryConvert::try_convert(self.ruby_plugins).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert plugins to array: {}",
+                    e
+                ))
             })?;
 
         // Find plugin instance by name
@@ -1487,9 +1523,13 @@ impl PayloadGenerator {
         }
 
         // Convert Ruby binary string to bytes (don't use value_to_string - binary data isn't UTF-8)
-        let rstring: magnus::RString = TryConvert::try_convert(generated).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert payload to RString: {}", e))
-        })?;
+        let rstring: magnus::RString =
+            TryConvert::try_convert(generated).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert payload to RString: {}",
+                    e
+                ))
+            })?;
         let bytes = unsafe { rstring.as_slice() }.to_vec();
         Ok(bytes)
     }
@@ -1555,9 +1595,13 @@ impl PayloadGenerator {
         }
 
         // Convert Ruby binary string to bytes (don't use value_to_string - binary data isn't UTF-8)
-        let rstring: magnus::RString = TryConvert::try_convert(generated).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert payload to RString: {}", e))
-        })?;
+        let rstring: magnus::RString =
+            TryConvert::try_convert(generated).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert payload to RString: {}",
+                    e
+                ))
+            })?;
         let bytes = unsafe { rstring.as_slice() }.to_vec();
         Ok(bytes)
     }
@@ -1642,25 +1686,40 @@ impl PayloadGenerator {
         let payload_platform = call_method(payload, "platform", &[])?;
 
         // Get Msf::Util::EXE module
-        let exe_module: Value = ruby.eval("Msf::Util::EXE")
-            .map_err(|e| AssassinateError::RubyError(format!("Failed to get Msf::Util::EXE: {}", e)))?;
+        let exe_module: Value = ruby.eval("Msf::Util::EXE").map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to get Msf::Util::EXE: {}", e))
+        })?;
 
         // Call to_executable with the payload's own arch/platform
         // These are already in the correct format (arrays of constants)
-        let exe: Value = exe_module.funcall("to_executable",
-            (self.ruby_framework, payload_arch, payload_platform, raw_payload, opts))
+        let exe: Value = exe_module
+            .funcall(
+                "to_executable",
+                (
+                    self.ruby_framework,
+                    payload_arch,
+                    payload_platform,
+                    raw_payload,
+                    opts,
+                ),
+            )
             .map_err(|e| AssassinateError::RubyError(format!("to_executable failed: {}", e)))?;
 
         if is_nil(exe) {
-            return Err(AssassinateError::PayloadError(
-                format!("to_executable returned nil for arch={}, platform={}", arch, platform)
-            ));
+            return Err(AssassinateError::PayloadError(format!(
+                "to_executable returned nil for arch={}, platform={}",
+                arch, platform
+            )));
         }
 
         // Convert Ruby binary string to bytes
-        let rstring: magnus::RString = TryConvert::try_convert(exe).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert executable to RString: {}. Value type: {:?}", e, exe))
-        })?;
+        let rstring: magnus::RString =
+            TryConvert::try_convert(exe).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert executable to RString: {}. Value type: {:?}",
+                    e, exe
+                ))
+            })?;
         let bytes = unsafe { rstring.as_slice() }.to_vec();
         Ok(bytes)
     }

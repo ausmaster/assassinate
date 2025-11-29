@@ -2,7 +2,6 @@
 ///
 /// Ultra-low-latency message queue using atomic operations and zero-copy reads.
 /// Target: <100ns overhead per operation.
-
 use crate::error::{IpcError, Result};
 use crate::shm::SharedMemory;
 use std::sync::atomic::{AtomicUsize, Ordering};

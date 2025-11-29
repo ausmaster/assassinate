@@ -2,7 +2,6 @@
 ///
 /// Using MessagePack for high-performance binary serialization.
 /// ~5-10x faster than JSON with smaller message sizes.
-
 use crate::error::{IpcError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -32,11 +31,7 @@ struct Message {
 }
 
 /// Serialize an MSF call to bytes using MessagePack
-pub fn serialize_call(
-    call_id: u64,
-    method: &str,
-    args: Vec<serde_json::Value>,
-) -> Result<Vec<u8>> {
+pub fn serialize_call(call_id: u64, method: &str, args: Vec<serde_json::Value>) -> Result<Vec<u8>> {
     let message = Message {
         call_id,
         request: Some(Request {

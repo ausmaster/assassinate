@@ -1,5 +1,4 @@
 /// Error types for IPC layer
-
 use thiserror::Error;
 
 #[derive(Error, Debug)]
