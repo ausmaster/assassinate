@@ -27,19 +27,23 @@ class TestDbHosts:
     async def test_report_host_basic(self, client):
         """Test reporting a basic host."""
         # Report a test host
-        result = await client.db_report_host({
-            "host": "192.168.1.100",
-        })
+        result = await client.db_report_host(
+            {
+                "host": "192.168.1.100",
+            }
+        )
         # Should return host ID or success indicator
         assert result is not None
 
     async def test_report_host_with_details(self, client):
         """Test reporting a host with additional details."""
-        result = await client.db_report_host({
-            "host": "192.168.1.101",
-            "name": "test-host",
-            "os_name": "Linux",
-        })
+        result = await client.db_report_host(
+            {
+                "host": "192.168.1.101",
+                "name": "test-host",
+                "os_name": "Linux",
+            }
+        )
         assert result is not None
 
 
@@ -66,24 +70,28 @@ class TestDbServices:
         await client.db_report_host({"host": "192.168.1.102"})
 
         # Then report a service on that host
-        result = await client.db_report_service({
-            "host": "192.168.1.102",
-            "port": "22",
-            "proto": "tcp",
-        })
+        result = await client.db_report_service(
+            {
+                "host": "192.168.1.102",
+                "port": "22",
+                "proto": "tcp",
+            }
+        )
         assert result is not None
 
     async def test_report_service_with_details(self, client):
         """Test reporting a service with additional details."""
         await client.db_report_host({"host": "192.168.1.103"})
 
-        result = await client.db_report_service({
-            "host": "192.168.1.103",
-            "port": "80",
-            "proto": "tcp",
-            "name": "http",
-            "info": "Apache 2.4",
-        })
+        result = await client.db_report_service(
+            {
+                "host": "192.168.1.103",
+                "port": "80",
+                "proto": "tcp",
+                "name": "http",
+                "info": "Apache 2.4",
+            }
+        )
         assert result is not None
 
 
@@ -110,22 +118,26 @@ class TestDbVulns:
         await client.db_report_host({"host": "192.168.1.104"})
 
         # Report a vulnerability
-        result = await client.db_report_vuln({
-            "host": "192.168.1.104",
-            "name": "test_vulnerability",
-        })
+        result = await client.db_report_vuln(
+            {
+                "host": "192.168.1.104",
+                "name": "test_vulnerability",
+            }
+        )
         assert result is not None
 
     async def test_report_vuln_with_details(self, client):
         """Test reporting a vulnerability with additional details."""
         await client.db_report_host({"host": "192.168.1.105"})
 
-        result = await client.db_report_vuln({
-            "host": "192.168.1.105",
-            "name": "CVE-2023-12345",
-            "info": "Test vulnerability",
-            "refs": "CVE-2023-12345",
-        })
+        result = await client.db_report_vuln(
+            {
+                "host": "192.168.1.105",
+                "name": "CVE-2023-12345",
+                "info": "Test vulnerability",
+                "refs": "CVE-2023-12345",
+            }
+        )
         assert result is not None
 
 
@@ -152,24 +164,28 @@ class TestDbCreds:
         await client.db_report_host({"host": "192.168.1.106"})
 
         # Report a credential
-        result = await client.db_report_cred({
-            "host": "192.168.1.106",
-            "user": "testuser",
-            "pass": "testpass",
-        })
+        result = await client.db_report_cred(
+            {
+                "host": "192.168.1.106",
+                "user": "testuser",
+                "pass": "testpass",
+            }
+        )
         assert result is not None
 
     async def test_report_cred_with_details(self, client):
         """Test reporting a credential with additional details."""
         await client.db_report_host({"host": "192.168.1.107"})
 
-        result = await client.db_report_cred({
-            "host": "192.168.1.107",
-            "port": "22",
-            "user": "admin",
-            "pass": "password123",
-            "service_name": "ssh",
-        })
+        result = await client.db_report_cred(
+            {
+                "host": "192.168.1.107",
+                "port": "22",
+                "user": "admin",
+                "pass": "password123",
+                "service_name": "ssh",
+            }
+        )
         assert result is not None
 
 
@@ -198,31 +214,39 @@ class TestDbWorkflow:
     async def test_report_and_retrieve_workflow(self, client):
         """Test complete workflow of reporting and retrieving data."""
         # Report a host
-        await client.db_report_host({
-            "host": "192.168.1.200",
-            "name": "workflow-test",
-        })
+        await client.db_report_host(
+            {
+                "host": "192.168.1.200",
+                "name": "workflow-test",
+            }
+        )
 
         # Report a service on that host
-        await client.db_report_service({
-            "host": "192.168.1.200",
-            "port": "443",
-            "proto": "tcp",
-            "name": "https",
-        })
+        await client.db_report_service(
+            {
+                "host": "192.168.1.200",
+                "port": "443",
+                "proto": "tcp",
+                "name": "https",
+            }
+        )
 
         # Report a vulnerability
-        await client.db_report_vuln({
-            "host": "192.168.1.200",
-            "name": "test_workflow_vuln",
-        })
+        await client.db_report_vuln(
+            {
+                "host": "192.168.1.200",
+                "name": "test_workflow_vuln",
+            }
+        )
 
         # Report a credential
-        await client.db_report_cred({
-            "host": "192.168.1.200",
-            "user": "workflow_user",
-            "pass": "workflow_pass",
-        })
+        await client.db_report_cred(
+            {
+                "host": "192.168.1.200",
+                "user": "workflow_user",
+                "pass": "workflow_pass",
+            }
+        )
 
         # Verify we can retrieve the data
         hosts = await client.db_hosts()
@@ -261,23 +285,29 @@ class TestDbWorkflow:
         await client.db_report_host({"host": host_ip})
 
         # Report same host again (should update, not duplicate)
-        await client.db_report_host({
-            "host": host_ip,
-            "name": "updated-name",
-        })
+        await client.db_report_host(
+            {
+                "host": host_ip,
+                "name": "updated-name",
+            }
+        )
 
         # Report multiple services on same host
-        await client.db_report_service({
-            "host": host_ip,
-            "port": "80",
-            "proto": "tcp",
-        })
+        await client.db_report_service(
+            {
+                "host": host_ip,
+                "port": "80",
+                "proto": "tcp",
+            }
+        )
 
-        await client.db_report_service({
-            "host": host_ip,
-            "port": "443",
-            "proto": "tcp",
-        })
+        await client.db_report_service(
+            {
+                "host": host_ip,
+                "port": "443",
+                "proto": "tcp",
+            }
+        )
 
         # Should not crash or error
         hosts = await client.db_hosts()

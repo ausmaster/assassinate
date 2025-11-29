@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
 from assassinate.ipc.errors import BufferEmptyError, RemoteError, TimeoutError
@@ -29,7 +28,11 @@ class MsfClient:
     DEFAULT_SHM_NAME = "/assassinate_msf_ipc"
     DEFAULT_BUFFER_SIZE = 8 * 1024 * 1024  # 8 MB (optimized from 64MB)
 
-    def __init__(self, shm_name: str = DEFAULT_SHM_NAME, buffer_size: int = DEFAULT_BUFFER_SIZE):
+    def __init__(
+        self,
+        shm_name: str = DEFAULT_SHM_NAME,
+        buffer_size: int = DEFAULT_BUFFER_SIZE,
+    ):
         """Initialize the IPC client.
 
         Args:
@@ -47,7 +50,10 @@ class MsfClient:
 
     async def connect(self) -> None:
         """Connect to the daemon's shared memory."""
-        logger.info(f"Connecting to daemon: shm={self.shm_name}, buffer_size={self.buffer_size}")
+        logger.info(
+            f"Connecting to daemon: shm={self.shm_name}, "
+            f"buffer_size={self.buffer_size}"
+        )
 
         try:
             # Connect to both ring buffers (names must match daemon)
@@ -62,7 +68,9 @@ class MsfClient:
 
             # Start background response reader task
             self._shutdown = False
-            self._response_reader_task = asyncio.create_task(self._response_reader())
+            self._response_reader_task = asyncio.create_task(
+                self._response_reader()
+            )
 
             logger.info("Successfully connected to daemon")
         except Exception as e:
@@ -106,7 +114,7 @@ class MsfClient:
         await self.disconnect()
 
     async def _response_reader(self) -> None:
-        """Background task that reads responses and routes them to waiting calls.
+        """Background task that reads responses and routes to calls.
 
         This ensures responses are never lost, even if they arrive out of order.
         """
@@ -120,19 +128,31 @@ class MsfClient:
                     continue
 
                 response_bytes = self.response_buffer.try_read()
-                response_call_id, result, error = deserialize_response(response_bytes)
+                response_call_id, result, error = deserialize_response(
+                    response_bytes
+                )
 
                 # Find the pending call for this response
                 future = self._pending_calls.pop(response_call_id, None)
                 if future and not future.cancelled():
                     if error:
-                        logger.debug(f"Call {response_call_id} returned error: {error['code']}")
-                        future.set_exception(RemoteError(error["code"], error["message"]))
+                        logger.debug(
+                            f"Call {response_call_id} returned error: "
+                            f"{error['code']}"
+                        )
+                        future.set_exception(
+                            RemoteError(error["code"], error["message"])
+                        )
                     else:
-                        logger.debug(f"Call {response_call_id} completed successfully")
+                        logger.debug(
+                            f"Call {response_call_id} completed successfully"
+                        )
                         future.set_result(result)
                 elif not future:
-                    logger.warning(f"Received response for unknown call_id={response_call_id} (possibly timed out)")
+                    logger.warning(
+                        f"Received response for unknown "
+                        f"call_id={response_call_id} (possibly timed out)"
+                    )
                 # If no pending call found, the response is silently dropped
                 # (this could happen if a call timed out)
 
@@ -199,7 +219,9 @@ class MsfClient:
             logger.error(f"Call {method} timed out after {timeout}s")
             raise TimeoutError(f"Call to {method} timed out after {timeout}s")
         except RemoteError as e:
-            logger.error(f"Call {method} failed on daemon: {e.code} - {e.message}")
+            logger.error(
+                f"Call {method} failed on daemon: {e.code} - {e.message}"
+            )
             raise
         except Exception as e:
             # Cleanup on any other error
@@ -224,7 +246,8 @@ class MsfClient:
         """List all modules of a given type.
 
         Args:
-            module_type: Type of modules to list (exploit, auxiliary, post, etc.)
+            module_type: Type of modules to list (exploit, auxiliary,
+                post, etc.)
 
         Returns:
             List of module names
@@ -277,10 +300,11 @@ class MsfClient:
 
     async def create_module(self, module_path: str) -> str:
         """Create a module instance.
-        
+
         Args:
-            module_path: Full module path (e.g., "exploit/unix/ftp/vsftpd_234_backdoor")
-            
+            module_path: Full module path (e.g.,
+                "exploit/unix/ftp/vsftpd_backdoor")
+
         Returns:
             Module ID (handle for subsequent operations)
         """
@@ -289,12 +313,13 @@ class MsfClient:
 
     async def module_info(self, module_id: str) -> dict[str, Any]:
         """Get module metadata.
-        
+
         Args:
             module_id: Module ID from create_module
-            
+
         Returns:
-            Dictionary with name, fullname, type, description, etc.
+            Dictionary with name, fullname, type, description,
+            etc.
         """
         return await self._call("module_info", module_id)
 
@@ -310,9 +335,11 @@ class MsfClient:
         result = await self._call("module_options", module_id)
         return result["options"]
 
-    async def module_set_option(self, module_id: str, key: str, value: str) -> None:
+    async def module_set_option(
+        self, module_id: str, key: str, value: str
+    ) -> None:
         """Set a module option.
-        
+
         Args:
             module_id: Module ID
             key: Option name
@@ -322,11 +349,11 @@ class MsfClient:
 
     async def module_get_option(self, module_id: str, key: str) -> str | None:
         """Get a module option value.
-        
+
         Args:
             module_id: Module ID
             key: Option name
-            
+
         Returns:
             Option value or None
         """
@@ -335,10 +362,10 @@ class MsfClient:
 
     async def module_validate(self, module_id: str) -> bool:
         """Validate module configuration.
-        
+
         Args:
             module_id: Module ID
-            
+
         Returns:
             True if valid
         """
@@ -357,7 +384,12 @@ class MsfClient:
         result = await self._call("module_compatible_payloads", module_id)
         return result["payloads"]
 
-    async def module_exploit(self, module_id: str, payload: str, options: dict[str, str] | None = None) -> int | None:
+    async def module_exploit(
+        self,
+        module_id: str,
+        payload: str,
+        options: dict[str, str] | None = None,
+    ) -> int | None:
         """Execute an exploit module.
 
         Args:
@@ -371,7 +403,9 @@ class MsfClient:
         result = await self._call("module_exploit", module_id, payload, options)
         return result.get("session_id")
 
-    async def module_run(self, module_id: str, options: dict[str, str] | None = None) -> bool:
+    async def module_run(
+        self, module_id: str, options: dict[str, str] | None = None
+    ) -> bool:
         """Execute an auxiliary module.
 
         Args:
@@ -493,11 +527,14 @@ class MsfClient:
         await self._call("module_clear_datastore", module_id)
 
     # PayloadGenerator operations
-    async def payload_generate(self, payload_name: str, options: dict[str, str] | None = None) -> bytes:
+    async def payload_generate(
+        self, payload_name: str, options: dict[str, str] | None = None
+    ) -> bytes:
         """Generate a payload.
 
         Args:
-            payload_name: Name of the payload (e.g., "linux/x86/shell_reverse_tcp")
+            payload_name: Name of the payload (e.g.,
+                "linux/x86/shell_reverse_tcp")
             options: Payload options/configuration
 
         Returns:
@@ -506,6 +543,7 @@ class MsfClient:
         result = await self._call("payload_generate", payload_name, options)
         # Result is base64-encoded bytes
         import base64
+
         return base64.b64decode(result["payload"])
 
     async def payload_generate_encoded(
@@ -513,7 +551,7 @@ class MsfClient:
         payload_name: str,
         encoder: str | None = None,
         iterations: int | None = 1,
-        options: dict[str, str] | None = None
+        options: dict[str, str] | None = None,
     ) -> bytes:
         """Generate an encoded payload.
 
@@ -526,8 +564,15 @@ class MsfClient:
         Returns:
             Encoded payload bytes
         """
-        result = await self._call("payload_generate_encoded", payload_name, encoder, iterations, options)
+        result = await self._call(
+            "payload_generate_encoded",
+            payload_name,
+            encoder,
+            iterations,
+            options,
+        )
         import base64
+
         return base64.b64decode(result["payload"])
 
     async def payload_list_payloads(self) -> list[str]:
@@ -544,7 +589,7 @@ class MsfClient:
         payload_name: str,
         platform: str,
         arch: str,
-        options: dict[str, str] | None = None
+        options: dict[str, str] | None = None,
     ) -> bytes:
         """Generate a standalone executable payload.
 
@@ -557,8 +602,11 @@ class MsfClient:
         Returns:
             Executable payload bytes
         """
-        result = await self._call("payload_generate_executable", payload_name, platform, arch, options)
+        result = await self._call(
+            "payload_generate_executable", payload_name, platform, arch, options
+        )
         import base64
+
         return base64.b64decode(result["executable"])
 
     # DbManager operations
@@ -620,7 +668,8 @@ class MsfClient:
         """Report a credential to the database.
 
         Args:
-            options: Credential options (origin_type, address, port, username, etc.)
+            options: Credential options (origin_type, address, port,
+                username, etc.)
 
         Returns:
             Credential ID
@@ -699,7 +748,9 @@ class MsfClient:
         result = await self._call("plugins_list")
         return result["plugins"]
 
-    async def plugins_load(self, path: str, options: dict[str, str] | None = None) -> str:
+    async def plugins_load(
+        self, path: str, options: dict[str, str] | None = None
+    ) -> str:
         """Load a plugin from path.
 
         Args:
@@ -785,7 +836,9 @@ class MsfClient:
         result = await self._call("session_alive", session_id)
         return result["alive"]
 
-    async def session_read(self, session_id: int, length: int | None = None) -> str:
+    async def session_read(
+        self, session_id: int, length: int | None = None
+    ) -> str:
         """Read data from session.
 
         Args:

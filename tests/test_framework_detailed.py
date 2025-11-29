@@ -1,7 +1,8 @@
 """Detailed framework tests modeled after MSF framework_spec.rb."""
 
-import pytest
 import re
+
+import pytest
 
 
 @pytest.mark.integration
@@ -22,8 +23,10 @@ class TestFrameworkVersion:
         # MSF versions typically follow: Major.Minor.Point-Release
         # e.g., "6.4.100-dev" or "6.3.25" or "6.4.100-dev-e670167"
         # Allow alphanumeric characters and dashes in release suffix
-        pattern = r'^\d+\.\d+\.\d+(-.+)?$'
-        assert re.match(pattern, version_str), f"Version {version_str} doesn't match expected format"
+        pattern = r"^\d+\.\d+\.\d+(-.+)?$"
+        assert re.match(pattern, version_str), (
+            f"Version {version_str} doesn't match expected format"
+        )
 
     async def test_version_components(self, client):
         """Test that version can be split into major/minor/point components."""
@@ -31,7 +34,7 @@ class TestFrameworkVersion:
         version_str = version["version"]
 
         # Split on . and -
-        parts = re.split(r'[.-]', version_str)
+        parts = re.split(r"[.-]", version_str)
         assert len(parts) >= 3, "Version should have at least major.minor.point"
 
         major, minor, point = parts[0:3]
@@ -55,7 +58,9 @@ class TestFrameworkModuleManager:
     async def test_list_auxiliary_not_empty(self, client):
         """Test that framework has auxiliary modules loaded."""
         auxiliary = await client.list_modules("auxiliary")
-        assert len(auxiliary) > 0, "Framework should have auxiliary modules loaded"
+        assert len(auxiliary) > 0, (
+            "Framework should have auxiliary modules loaded"
+        )
 
     async def test_list_payloads_not_empty(self, client):
         """Test that framework has payloads loaded."""

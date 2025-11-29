@@ -1,6 +1,7 @@
 """Structured logging configuration for Assassinate.
 
-Provides consistent logging across all modules with context and performance tracking.
+Provides consistent logging across all modules with context and
+performance tracking.
 """
 
 from __future__ import annotations
@@ -12,7 +13,9 @@ from contextvars import ContextVar
 from typing import Any
 
 # Context variable for tracking current call ID
-current_call_id: ContextVar[int | None] = ContextVar("current_call_id", default=None)
+current_call_id: ContextVar[int | None] = ContextVar(
+    "current_call_id", default=None
+)
 
 
 class ContextFormatter(logging.Formatter):
@@ -54,7 +57,9 @@ def setup_logging(
 
     if structured:
         # Structured format with context
-        fmt = "%(asctime)s [%(levelname)8s] [%(call_id)s] %(name)s - %(message)s"
+        fmt = (
+            "%(asctime)s [%(levelname)8s] [%(call_id)s] %(name)s - %(message)s"
+        )
         datefmt = "%Y-%m-%d %H:%M:%S"
     else:
         # Simple format
@@ -108,10 +113,14 @@ class PerformanceLogger:
             # Operation failed
             ctx = " ".join(f"{k}={v}" for k, v in self.context.items())
             self.logger.error(
-                f"{self.operation} failed in {elapsed:.2f}ms {ctx} error={exc_type.__name__}: {exc_val}".strip()
+                f"{self.operation} failed in {elapsed:.2f}ms {ctx} "
+                f"error={exc_type.__name__}: {exc_val}".strip()
             )
         else:
             # Operation succeeded
             if self.logger.isEnabledFor(logging.DEBUG):
                 ctx = " ".join(f"{k}={v}" for k, v in self.context.items())
-                self.logger.debug(f"{self.operation} completed in {elapsed:.2f}ms {ctx}".strip())
+                self.logger.debug(
+                    f"{self.operation} completed in {elapsed:.2f}ms "
+                    f"{ctx}".strip()
+                )

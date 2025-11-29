@@ -10,7 +10,7 @@ Note: This module now uses IPC to communicate with the MSF daemon.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from assassinate.ipc import MsfClient
 
@@ -42,9 +42,9 @@ def _get_client() -> MsfClient:
         _client = MsfClient()
         # Try to connect
         try:
-            loop = asyncio.get_running_loop()
-            # If there's a running loop, we're in async context - just return unconnected client
-            # The user should call initialize_async() instead
+            asyncio.get_running_loop()
+            # If there's a running loop, we're in async context
+            # Return unconnected client - user should call initialize_async()
             raise RuntimeError(
                 "Cannot call initialize() from async context. "
                 "Use 'await initialize_async()' instead."
@@ -63,8 +63,10 @@ def _run_async(coro):
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If event loop is already running, we need to use a different approach
+            # If event loop is already running, we need to use a
+            # different approach
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 future = pool.submit(asyncio.run, coro)
                 return future.result()
@@ -76,19 +78,24 @@ def _run_async(coro):
 
 
 def initialize(msf_path: str | None = None) -> None:
-    """Initialize connection to the Metasploit Framework daemon (sync version).
+    """Initialize connection to the Metasploit Framework daemon.
 
-    Note: With IPC architecture, this just establishes the connection to the daemon.
-          The daemon itself must be started separately with the MSF path.
+    Sync version.
 
-          DO NOT call from async context - use initialize_async() instead.
+    Note: With IPC architecture, this just establishes the connection
+          to the daemon. The daemon itself must be started separately
+          with the MSF path.
+
+          DO NOT call from async context - use initialize_async()
+          instead.
 
     Args:
         msf_path: Deprecated - MSF path is configured in the daemon.
                   Kept for API compatibility.
 
     Raises:
-        RuntimeError: If connection to daemon fails or called from async context.
+        RuntimeError: If connection to daemon fails or called from
+                      async context.
 
     Example:
         >>> initialize()  # Connect to running daemon
@@ -97,10 +104,13 @@ def initialize(msf_path: str | None = None) -> None:
 
 
 async def initialize_async(msf_path: str | None = None) -> None:
-    """Initialize connection to the Metasploit Framework daemon (async version).
+    """Initialize connection to the Metasploit Framework daemon.
 
-    Note: With IPC architecture, this just establishes the connection to the daemon.
-          The daemon itself must be started separately with the MSF path.
+    Async version.
+
+    Note: With IPC architecture, this just establishes the connection
+          to the daemon. The daemon itself must be started separately
+          with the MSF path.
 
           Use this from async context instead of initialize().
 
@@ -124,7 +134,8 @@ def get_version() -> str:
         MSF version (e.g., "6.4.28-dev").
 
     Raises:
-        RuntimeError: If MSF is not initialized or version cannot be determined.
+        RuntimeError: If MSF is not initialized or version cannot be
+                      determined.
 
     Example:
         >>> version = get_version()
@@ -139,8 +150,9 @@ def get_version() -> str:
 class Framework:
     """Metasploit Framework instance.
 
-    Provides access to modules, sessions, datastores, and payload generation.
-    This is the main entry point for interacting with MSF via IPC.
+    Provides access to modules, sessions, datastores, and payload
+    generation. This is the main entry point for interacting with MSF
+    via IPC.
 
     Note:
         Requires initialize() to be called first to connect to the daemon.
@@ -186,7 +198,8 @@ class Framework:
                 "exploit", "auxiliary", "payload", "encoder", "nop", "post".
 
         Returns:
-            List of module names (e.g., ["exploit/unix/ftp/vsftpd_234_backdoor"]).
+            List of module names (e.g.,
+            ["exploit/unix/ftp/vsftpd_backdoor"]).
 
         Raises:
             ValueError: If module_type is invalid.
@@ -204,7 +217,8 @@ class Framework:
         """Create a module instance by name.
 
         Args:
-            module_name: Full module name (e.g., "exploit/unix/ftp/vsftpd_234_backdoor").
+            module_name: Full module name (e.g.,
+                "exploit/unix/ftp/vsftpd_backdoor").
 
         Returns:
             Module instance.

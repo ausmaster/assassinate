@@ -9,7 +9,9 @@ class TestModuleCreation:
 
     async def test_create_exploit_module(self, client):
         """Test creating an exploit module."""
-        module_id = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+        module_id = await client.create_module(
+            "exploit/unix/ftp/vsftpd_234_backdoor"
+        )
         assert isinstance(module_id, str)
         assert len(module_id) > 0
 
@@ -21,7 +23,9 @@ class TestModuleCreation:
 
     async def test_create_payload_module(self, client):
         """Test creating a payload module."""
-        module_id = await client.create_module("payload/linux/x86/shell_reverse_tcp")
+        module_id = await client.create_module(
+            "payload/linux/x86/shell_reverse_tcp"
+        )
         assert isinstance(module_id, str)
         assert len(module_id) > 0
 
@@ -32,8 +36,12 @@ class TestModuleCreation:
 
     async def test_multiple_instances_independent(self, client):
         """Test that multiple instances are independent."""
-        module_id1 = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
-        module_id2 = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+        module_id1 = await client.create_module(
+            "exploit/unix/ftp/vsftpd_234_backdoor"
+        )
+        module_id2 = await client.create_module(
+            "exploit/unix/ftp/vsftpd_234_backdoor"
+        )
 
         # Different IDs
         assert module_id1 != module_id2
@@ -145,7 +153,9 @@ class TestModuleOptions:
 
     async def test_get_nonexistent_option(self, test_module, client):
         """Test getting a nonexistent option."""
-        value = await client.module_get_option(test_module, "NONEXISTENT_OPTION")
+        value = await client.module_get_option(
+            test_module, "NONEXISTENT_OPTION"
+        )
         # Should return None or empty
         assert value is None or value == ""
 
@@ -170,7 +180,9 @@ class TestModuleValidation:
 
     async def test_validation_without_required_options(self, client):
         """Test validation fails without required options."""
-        module_id = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+        module_id = await client.create_module(
+            "exploit/unix/ftp/vsftpd_234_backdoor"
+        )
         # Don't set RHOSTS - validation should fail
         try:
             valid = await client.module_validate(module_id)
@@ -199,7 +211,9 @@ class TestModuleCapabilities:
     async def test_check_method_for_module_with_check(self, client):
         """Test check method on a module that supports it."""
         # Some modules support check, others don't
-        module_id = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+        module_id = await client.create_module(
+            "exploit/unix/ftp/vsftpd_234_backdoor"
+        )
         has_check = await client.module_has_check(module_id)
 
         if has_check:

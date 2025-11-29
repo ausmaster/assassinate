@@ -1,6 +1,7 @@
 """MSF Database management.
 
-Provides access to database operations for hosts, services, vulnerabilities, etc.
+Provides access to database operations for hosts, services,
+vulnerabilities, etc.
 """
 
 from __future__ import annotations
@@ -100,7 +101,8 @@ class DbManager:
         """Report a vulnerability to the database.
 
         Args:
-            **opts: Vulnerability options (host, name, refs, info, etc.).
+            **opts: Vulnerability options (host, name, refs, info,
+                    etc.).
 
         Returns:
             Vulnerability ID.
@@ -121,7 +123,8 @@ class DbManager:
         """Report a credential to the database.
 
         Args:
-            **opts: Credential options (origin_type, address, port, username, etc.).
+            **opts: Credential options (origin_type, address, port,
+                    username, etc.).
 
         Returns:
             Credential ID.

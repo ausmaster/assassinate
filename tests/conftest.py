@@ -1,6 +1,5 @@
 """Pytest fixtures and configuration."""
 
-import asyncio
 import subprocess
 import time
 from pathlib import Path
@@ -13,18 +12,29 @@ from assassinate.ipc import MsfClient
 @pytest.fixture(scope="session")
 def daemon_process():
     """Start daemon for testing session."""
-    daemon_path = Path(__file__).parent.parent / "rust" / "daemon" / "target" / "release" / "daemon"
+    daemon_path = (
+        Path(__file__).parent.parent
+        / "rust"
+        / "daemon"
+        / "target"
+        / "release"
+        / "daemon"
+    )
     msf_root = Path(__file__).parent.parent / "metasploit-framework"
 
     if not daemon_path.exists():
         pytest.skip("Daemon not built - run: cargo build --release -p daemon")
 
     # Kill any existing daemon
-    subprocess.run(["pkill", "-f", "daemon.*msf-root"], stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["pkill", "-f", "daemon.*msf-root"], stderr=subprocess.DEVNULL
+    )
     time.sleep(1)
 
     # Clean up shared memory
-    subprocess.run(["rm", "-f", "/dev/shm/assassinate_msf_ipc*"], stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["rm", "-f", "/dev/shm/assassinate_msf_ipc*"], stderr=subprocess.DEVNULL
+    )
 
     # Start daemon
     proc = subprocess.Popen(
@@ -67,7 +77,9 @@ async def client(daemon_process):
 async def test_module(client):
     """Create a test module for testing."""
     # Use vsftpd backdoor - well-known, simple exploit
-    module_id = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+    module_id = await client.create_module(
+        "exploit/unix/ftp/vsftpd_234_backdoor"
+    )
     yield module_id
     # Cleanup module to prevent memory leak
     await client.delete_module(module_id)

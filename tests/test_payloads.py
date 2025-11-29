@@ -32,7 +32,7 @@ class TestPayloadGeneration:
         """Test generating a simple payload."""
         payload = await client.payload_generate(
             "linux/x86/shell_reverse_tcp",
-            {"LHOST": "127.0.0.1", "LPORT": "4444"}
+            {"LHOST": "127.0.0.1", "LPORT": "4444"},
         )
 
         assert isinstance(payload, bytes)
@@ -41,10 +41,13 @@ class TestPayloadGeneration:
     async def test_generate_without_options(self, client):
         """Test that generation works with default options.
 
-        MSF doesn't error on missing required options - it uses defaults or placeholders.
+        MSF doesn't error on missing required options - it uses
+        defaults or placeholders.
         """
         # Should succeed even without LHOST/LPORT - MSF uses defaults
-        payload = await client.payload_generate("linux/x86/shell_reverse_tcp", None)
+        payload = await client.payload_generate(
+            "linux/x86/shell_reverse_tcp", None
+        )
         assert isinstance(payload, bytes)
         assert len(payload) > 0
 
@@ -56,8 +59,7 @@ class TestPayloadGeneration:
     async def test_generated_payload_is_bytes(self, client):
         """Test that generated payload is bytes, not string."""
         payload = await client.payload_generate(
-            "linux/x86/exec",
-            {"CMD": "/bin/sh"}
+            "linux/x86/exec", {"CMD": "/bin/sh"}
         )
 
         assert isinstance(payload, bytes)
@@ -75,7 +77,7 @@ class TestPayloadEncoding:
             "linux/x86/exec",
             encoder="x86/shikata_ga_nai",
             iterations=1,
-            options={"CMD": "/bin/sh"}
+            options={"CMD": "/bin/sh"},
         )
 
         assert isinstance(payload, bytes)
@@ -84,8 +86,9 @@ class TestPayloadEncoding:
     async def test_encoded_different_from_unencoded(self, client):
         """Test that encoding produces valid output.
 
-        Note: Some payloads/encoders may not actually modify the payload,
-        so we just verify encoding succeeds and returns bytes.
+        Note: Some payloads/encoders may not actually modify the
+        payload, so we just verify encoding succeeds and returns
+        bytes.
         """
         options = {"CMD": "/bin/sh"}
 
@@ -94,7 +97,7 @@ class TestPayloadEncoding:
             "linux/x86/exec",
             encoder="x86/shikata_ga_nai",
             iterations=1,
-            options=options
+            options=options,
         )
 
         # Both should be valid byte strings
@@ -102,7 +105,8 @@ class TestPayloadEncoding:
         assert isinstance(encoded, bytes)
         assert len(encoded) > 0
 
-        # Encoded may or may not be different - depends on encoder/payload compatibility
+        # Encoded may or may not be different - depends on
+        # encoder/payload compatibility
         # Just verify encoding completed successfully
 
     async def test_encode_without_encoder_specified(self, client):
@@ -111,7 +115,7 @@ class TestPayloadEncoding:
             "linux/x86/exec",
             encoder=None,  # Auto-select encoder
             iterations=1,
-            options={"CMD": "/bin/sh"}
+            options={"CMD": "/bin/sh"},
         )
 
         assert isinstance(payload, bytes)
@@ -128,13 +132,13 @@ class TestExecutableGeneration:
             "linux/x86/exec",
             platform="linux",
             arch="x86",
-            options={"CMD": "/bin/sh"}
+            options={"CMD": "/bin/sh"},
         )
 
         assert isinstance(exe, bytes)
         assert len(exe) > 0
         # Linux ELF binaries start with magic bytes
-        assert exe.startswith(b'\x7fELF')
+        assert exe.startswith(b"\x7fELF")
 
     async def test_executable_larger_than_raw(self, client):
         """Test that executable is larger than raw payload."""
@@ -142,10 +146,7 @@ class TestExecutableGeneration:
 
         raw = await client.payload_generate("linux/x86/exec", options)
         exe = await client.payload_generate_executable(
-            "linux/x86/exec",
-            platform="linux",
-            arch="x86",
-            options=options
+            "linux/x86/exec", platform="linux", arch="x86", options=options
         )
 
         # Executable should be larger (includes ELF headers, etc.)
@@ -159,12 +160,10 @@ class TestPayloadOptions:
     async def test_different_options_produce_different_payloads(self, client):
         """Test that different options produce different payloads."""
         payload1 = await client.payload_generate(
-            "linux/x86/exec",
-            {"CMD": "/bin/sh"}
+            "linux/x86/exec", {"CMD": "/bin/sh"}
         )
         payload2 = await client.payload_generate(
-            "linux/x86/exec",
-            {"CMD": "/bin/bash"}
+            "linux/x86/exec", {"CMD": "/bin/bash"}
         )
 
         # Different commands should produce different payloads
@@ -174,7 +173,7 @@ class TestPayloadOptions:
         """Test that options are passed as dictionary."""
         payload = await client.payload_generate(
             "linux/x86/shell_reverse_tcp",
-            {"LHOST": "192.168.1.100", "LPORT": "4444"}
+            {"LHOST": "192.168.1.100", "LPORT": "4444"},
         )
 
         assert isinstance(payload, bytes)

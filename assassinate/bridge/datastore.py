@@ -5,7 +5,7 @@ Provides key-value configuration storage for modules and framework settings.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from assassinate.ipc.client import MsfClient

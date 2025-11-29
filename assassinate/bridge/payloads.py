@@ -24,7 +24,8 @@ except ImportError as e:
 class PayloadGenerator:
     """MSF payload generator.
 
-    Creates and encodes payloads in various formats (raw bytes, executables, etc.).
+    Creates and encodes payloads in various formats (raw bytes,
+    executables, etc.).
     """
 
     _instance: Any  # The underlying PyO3 PayloadGenerator instance
@@ -114,7 +115,8 @@ class PayloadGenerator:
         """List all available payloads.
 
         Returns:
-            List of payload names (e.g., ["linux/x86/shell_reverse_tcp", ...]).
+            List of payload names (e.g.,
+            ["linux/x86/shell_reverse_tcp", ...]).
 
         Raises:
             RuntimeError: If listing payloads fails.

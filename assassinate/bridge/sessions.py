@@ -100,7 +100,9 @@ class SessionManager:
             ...     print("Session 1 terminated")
         """
         # TODO: Add kill_session IPC method to daemon
-        raise NotImplementedError("Session.kill() requires daemon support (not yet implemented)")
+        raise NotImplementedError(
+            "Session.kill() requires daemon support (not yet implemented)"
+        )
 
     def __repr__(self) -> str:
         """Return string representation of SessionManager.
@@ -175,7 +177,9 @@ class Session:
         Raises:
             NotImplementedError: Method not yet supported via IPC.
         """
-        raise NotImplementedError("Session.kill() requires daemon support (not yet implemented)")
+        raise NotImplementedError(
+            "Session.kill() requires daemon support (not yet implemented)"
+        )
 
     def execute(self, command: str) -> str:
         """Execute a command in the session.
@@ -192,7 +196,9 @@ class Session:
         Raises:
             NotImplementedError: Method not yet supported via IPC.
         """
-        raise NotImplementedError("Session.execute() requires daemon support (not yet implemented)")
+        raise NotImplementedError(
+            "Session.execute() requires daemon support (not yet implemented)"
+        )
 
     def write(self, data: str) -> int:
         """Write data to the session.
@@ -209,7 +215,9 @@ class Session:
         Raises:
             NotImplementedError: Method not yet supported via IPC.
         """
-        raise NotImplementedError("Session.write() requires daemon support (not yet implemented)")
+        raise NotImplementedError(
+            "Session.write() requires daemon support (not yet implemented)"
+        )
 
     def read(self, length: int | None = None) -> str:
         """Read data from the session.
@@ -226,7 +234,9 @@ class Session:
         Raises:
             NotImplementedError: Method not yet supported via IPC.
         """
-        raise NotImplementedError("Session.read() requires daemon support (not yet implemented)")
+        raise NotImplementedError(
+            "Session.read() requires daemon support (not yet implemented)"
+        )
 
     def __repr__(self) -> str:
         """Return string representation of Session.

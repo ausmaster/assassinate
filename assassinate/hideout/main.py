@@ -1,4 +1,4 @@
-from assassinate.bridge import initialize, get_version
+from assassinate.bridge import get_version, initialize
 
 
 def main():

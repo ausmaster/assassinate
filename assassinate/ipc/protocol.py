@@ -1,12 +1,14 @@
 """Protocol layer for message serialization.
 
-Using MessagePack for high-performance binary serialization (~5-10x faster than JSON).
+Using MessagePack for high-performance binary serialization
+(~5-10x faster than JSON).
 """
 
 from __future__ import annotations
 
-import msgpack
 from typing import Any
+
+import msgpack
 
 from assassinate.ipc.errors import DeserializationError, SerializationError
 
@@ -23,13 +25,18 @@ def serialize_call(call_id: int, method: str, args: list[Any]) -> bytes:
         Serialized message bytes
     """
     try:
-        message = {"call_id": call_id, "request": {"method": method, "args": args}}
+        message = {
+            "call_id": call_id,
+            "request": {"method": method, "args": args},
+        }
         return msgpack.packb(message, use_bin_type=True)
     except (TypeError, ValueError) as e:
         raise SerializationError(f"Failed to serialize call: {e}") from e
 
 
-def deserialize_response(data: bytes) -> tuple[int, Any | None, dict[str, str] | None]:
+def deserialize_response(
+    data: bytes,
+) -> tuple[int, Any | None, dict[str, str] | None]:
     """Deserialize a response message using MessagePack.
 
     Args:
@@ -53,9 +60,20 @@ def deserialize_response(data: bytes) -> tuple[int, Any | None, dict[str, str] |
             return call_id, response_data, None
         elif "error" in message and message["error"] is not None:
             error = message["error"]
-            return call_id, None, {"code": error["code"], "message": error["message"]}
+            return (
+                call_id,
+                None,
+                {"code": error["code"], "message": error["message"]},
+            )
         else:
             raise DeserializationError("Unknown message type")
 
-    except (msgpack.exceptions.UnpackException, KeyError, ValueError, TypeError) as e:
-        raise DeserializationError(f"Failed to deserialize response: {e}") from e
+    except (
+        msgpack.exceptions.UnpackException,
+        KeyError,
+        ValueError,
+        TypeError,
+    ) as e:
+        raise DeserializationError(
+            f"Failed to deserialize response: {e}"
+        ) from e

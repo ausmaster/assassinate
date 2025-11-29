@@ -4,7 +4,7 @@ This module provides Python wrappers that communicate with MSF via IPC
 (Inter-Process Communication) using shared memory ring buffers.
 
 Architecture:
-    Python Client ↔ Shared Memory ↔ Rust Daemon ↔ Ruby FFI ↔ Metasploit Framework
+    Python Client ↔ Shared Memory ↔ Rust Daemon ↔ Ruby FFI ↔ MSF
 
 Public API:
     Functions:
@@ -39,18 +39,25 @@ Example:
 Status:
     ✅ Core functionality (Framework, Module, Sessions) via IPC
     ✅ 38/38 tests passing - Full test suite passes!
-    ⏳ DataStore, PayloadGenerator, DbManager, JobManager - to be implemented when needed
+    ⏳ DataStore, PayloadGenerator, DbManager, JobManager -
+       to be implemented when needed
 """
 
 from __future__ import annotations
 
-from assassinate.bridge.core import Framework, get_version, initialize, initialize_async
+from assassinate.bridge.core import (
+    Framework,
+    get_version,
+    initialize,
+    initialize_async,
+)
 from assassinate.bridge.modules import Module
 from assassinate.bridge.sessions import Session, SessionManager
 
 # These modules need IPC implementation - use direct module methods for now:
 # - DataStore: Use module.set_option() / module.get_option() instead
-# - PayloadGenerator: Use module.compatible_payloads() and module.exploit()
+# - PayloadGenerator: Use module.compatible_payloads() and
+#   module.exploit()
 # - DbManager: Database functionality to be implemented
 # - JobManager: Job management to be implemented
 

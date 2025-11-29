@@ -103,19 +103,29 @@ class TestModuleDataStore:
         # Verify cleared
         rhosts = await client.module_get_option(test_module, "RHOSTS")
         rport = await client.module_get_option(test_module, "RPORT")
-        assert (rhosts is None or rhosts == "") and (rport is None or rport == "")
+        assert (rhosts is None or rhosts == "") and (
+            rport is None or rport == ""
+        )
 
-    async def test_module_datastore_independent_from_framework(self, test_module, client):
-        """Test that module datastore is independent from framework datastore."""
+    async def test_module_datastore_independent_from_framework(
+        self, test_module, client
+    ):
+        """Test module datastore is independent from framework."""
         # Set framework option
-        await client.framework_set_option("INDEPENDENCE_TEST", "framework_value")
+        await client.framework_set_option(
+            "INDEPENDENCE_TEST", "framework_value"
+        )
 
         # Set module option with different value
-        await client.module_set_option(test_module, "INDEPENDENCE_TEST", "module_value")
+        await client.module_set_option(
+            test_module, "INDEPENDENCE_TEST", "module_value"
+        )
 
         # Verify they're independent
         fw_val = await client.framework_get_option("INDEPENDENCE_TEST")
-        mod_val = await client.module_get_option(test_module, "INDEPENDENCE_TEST")
+        mod_val = await client.module_get_option(
+            test_module, "INDEPENDENCE_TEST"
+        )
 
         assert fw_val == "framework_value"
         assert mod_val == "module_value"

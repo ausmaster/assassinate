@@ -5,7 +5,7 @@ Provides access to exploit, auxiliary, payload, and other MSF modules.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from assassinate.ipc.client import MsfClient
@@ -40,10 +40,13 @@ class Module:
         """Get module name (short form).
 
         Returns:
-            Module name without type prefix (e.g., "vsftpd_234_backdoor").
+            Module name without type prefix (e.g.,
+            "vsftpd_234_backdoor").
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> print(await mod.name())
             vsftpd_234_backdoor
         """
@@ -57,7 +60,9 @@ class Module:
             Full module path (e.g., "exploit/unix/ftp/vsftpd_234_backdoor").
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> print(await mod.fullname())
             exploit/unix/ftp/vsftpd_234_backdoor
         """
@@ -71,7 +76,9 @@ class Module:
             Type string (e.g., "exploit", "auxiliary", "payload").
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> print(await mod.module_type())
             exploit
         """
@@ -85,7 +92,9 @@ class Module:
             Human-readable description of what the module does.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> print(await mod.description())
             This module exploits a malicious backdoor...
         """
@@ -103,7 +112,9 @@ class Module:
             ValueError: If option is invalid.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> await mod.set_option("RHOSTS", "192.168.1.100")
             >>> await mod.set_option("RPORT", "21")
         """
@@ -119,7 +130,9 @@ class Module:
             Option value or None if not set.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> await mod.set_option("RHOSTS", "192.168.1.100")
             >>> print(await mod.get_option("RHOSTS"))
             192.168.1.100
@@ -135,7 +148,9 @@ class Module:
             True if configuration is valid, False otherwise.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> await mod.set_option("RHOSTS", "192.168.1.100")
             >>> if await mod.validate():
             ...     print("Ready to run!")
@@ -151,36 +166,44 @@ class Module:
 
         Args:
             payload: Payload to use (e.g., "cmd/unix/reverse").
-            options: Optional additional options to set before execution.
+            options: Optional additional options to set before
+                     execution.
 
         Returns:
             Session ID if successful, None if no session created.
 
         Raises:
             RuntimeError: If execution fails.
-            ValueError: If module is not an exploit or config is invalid.
+            ValueError: If module is not an exploit or config is
+                        invalid.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> await mod.set_option("RHOSTS", "192.168.1.100")
             >>> session_id = await mod.exploit("cmd/unix/reverse")
             >>> if session_id:
             ...     print(f"Got session {session_id}")
         """
-        return await self._client.module_exploit(self._module_id, payload, options)
+        return await self._client.module_exploit(
+            self._module_id, payload, options
+        )
 
     async def run(self, options: dict[str, str] | None = None) -> bool:
         """Execute an auxiliary module.
 
         Args:
-            options: Optional additional options to set before execution.
+            options: Optional additional options to set before
+                     execution.
 
         Returns:
             True if successful, False otherwise.
 
         Raises:
             RuntimeError: If execution fails.
-            ValueError: If module is not auxiliary or config is invalid.
+            ValueError: If module is not auxiliary or config is
+                        invalid.
 
         Example:
             >>> mod = await fw.create_module("auxiliary/scanner/http/title")
@@ -193,13 +216,17 @@ class Module:
         """Check if target is vulnerable.
 
         Returns:
-            Check result string (e.g., "Appears vulnerable", "Safe", "Unknown").
+            Check result string (e.g., "Appears vulnerable", "Safe",
+            "Unknown").
 
         Raises:
-            RuntimeError: If check fails or module doesn't support checking.
+            RuntimeError: If check fails or module doesn't support
+                          checking.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> await mod.set_option("RHOSTS", "192.168.1.100")
             >>> result = await mod.check()
             >>> print(result)
@@ -214,7 +241,9 @@ class Module:
             True if module has a check() method, False otherwise.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> if await mod.has_check():
             ...     result = await mod.check()
         """
@@ -230,7 +259,9 @@ class Module:
             ValueError: If module is not an exploit.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> payloads = await mod.compatible_payloads()
             >>> print(payloads[0])
             cmd/unix/reverse
@@ -244,7 +275,9 @@ class Module:
             List of author names/credits.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> authors = await mod.author()
             >>> print(authors[0])
             hdm <x@hdm.io>
@@ -259,7 +292,9 @@ class Module:
             List of reference strings.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> refs = await mod.references()
             >>> for ref in refs:
             ...     print(ref)
@@ -274,7 +309,9 @@ class Module:
             String representation of OptionContainer.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> opts = await mod.options()
             >>> print(opts)
         """
@@ -287,7 +324,9 @@ class Module:
             List of platform names (e.g., ["linux", "windows"]).
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> platforms = await mod.platform()
             >>> print(platforms)
             ['linux', 'unix']
@@ -302,7 +341,9 @@ class Module:
             List of architecture names (e.g., ["x86", "x64"]).
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> archs = await mod.arch()
             >>> print(archs)
             ['x86']
@@ -317,7 +358,9 @@ class Module:
             List of target names.
 
         Example:
-            >>> mod = await fw.create_module("exploit/windows/smb/ms17_010_eternalblue")
+            >>> mod = await fw.create_module(
+            ...     "exploit/windows/smb/ms17_010_eternalblue"
+            ... )
             >>> targets = await mod.targets()
             >>> for target in targets:
             ...     print(target)
@@ -331,7 +374,9 @@ class Module:
             Disclosure date string or None if not available.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> date = await mod.disclosure_date()
             >>> print(date)
             2011-07-04
@@ -343,10 +388,13 @@ class Module:
         """Get module rank.
 
         Returns:
-            Rank string (e.g., "excellent", "great", "good", "normal", "average", "low", "manual").
+            Rank string (e.g., "excellent", "great", "good", "normal",
+            "average", "low", "manual").
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> rank = await mod.rank()
             >>> print(rank)
             excellent
@@ -358,10 +406,13 @@ class Module:
         """Check if module requires privileged access.
 
         Returns:
-            True if module requires elevated privileges, False otherwise.
+            True if module requires elevated privileges, False
+            otherwise.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> is_priv = await mod.privileged()
             >>> print(f"Requires privileges: {is_priv}")
         """
@@ -375,7 +426,9 @@ class Module:
             License string (typically "MSF_LICENSE" or similar).
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> lic = await mod.license()
             >>> print(lic)
         """
@@ -389,7 +442,9 @@ class Module:
             List of module alias names.
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> aliases = await mod.aliases()
             >>> print(f"Aliases: {aliases}")
         """
@@ -399,10 +454,13 @@ class Module:
         """Get module notes.
 
         Returns:
-            Dictionary of note keys to values (reliability, stability, side effects, etc.).
+            Dictionary of note keys to values (reliability, stability,
+            side effects, etc.).
 
         Example:
-            >>> mod = await fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> mod = await fw.create_module(
+            ...     "exploit/unix/ftp/vsftpd_234_backdoor"
+            ... )
             >>> notes = await mod.notes()
             >>> for key, value in notes.items():
             ...     print(f"{key}: {value}")

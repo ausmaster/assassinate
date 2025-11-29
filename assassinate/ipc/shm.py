@@ -1,16 +1,14 @@
 """Shared memory access for IPC.
 
-Provides Python interface to the shared memory ring buffer created by the Rust daemon.
+Provides Python interface to the shared memory ring buffer
+created by the Rust daemon.
 """
 
 from __future__ import annotations
 
-import ctypes
 import mmap
 import os
 import struct
-import sys
-from typing import Optional
 
 from assassinate.ipc.errors import BufferEmptyError, BufferFullError, IpcError
 
@@ -22,7 +20,8 @@ class RingBuffer:
     It must match the memory layout of the Rust RingBuffer exactly:
 
     Memory layout:
-        [write_pos: 8 bytes][read_pos: 8 bytes][padding: 48 bytes][data: capacity bytes]
+        [write_pos: 8 bytes][read_pos: 8 bytes][padding: 48 bytes]
+        [data: capacity bytes]
     """
 
     WRITE_POS_OFFSET = 0
@@ -53,14 +52,22 @@ class RingBuffer:
             # Check if shared memory exists
             if not os.path.exists(self.shm_path):
                 raise IpcError(
-                    f"Shared memory '{name}' not found at {self.shm_path}.\n"
-                    f"Make sure the assassinate_daemon is running first:\n"
-                    f"  ./assassinate_daemon/target/release/assassinate_daemon --msf-root /path/to/msf"
+                    f"Shared memory '{name}' not found at "
+                    f"{self.shm_path}.\n"
+                    f"Make sure the assassinate_daemon is running "
+                    f"first:\n"
+                    f"  ./assassinate_daemon/target/release/"
+                    f"assassinate_daemon --msf-root /path/to/msf"
                 )
 
             # Open the shared memory file descriptor
             fd = os.open(self.shm_path, os.O_RDWR)
-            self.mmap = mmap.mmap(fd, self.total_size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+            self.mmap = mmap.mmap(
+                fd,
+                self.total_size,
+                mmap.MAP_SHARED,
+                mmap.PROT_READ | mmap.PROT_WRITE,
+            )
             os.close(fd)
         except IpcError:
             raise
@@ -73,19 +80,21 @@ class RingBuffer:
     def _read_atomic_u64(self, offset: int) -> int:
         """Read a 64-bit atomic value with Acquire semantics.
 
-        Uses memory barriers to ensure proper visibility across processes.
+        Uses memory barriers to ensure proper visibility across
+        processes.
         On x86-64, aligned 64-bit reads are atomic by hardware.
         On other architectures, the memory barrier ensures visibility.
         """
         # Memory barrier before read (Acquire semantics)
-        # Ensures we see all writes that happened before this position was updated
+        # Ensures we see all writes that happened before this
+        # position was updated
         self.mmap.seek(offset)
         value = struct.unpack("<Q", self.mmap.read(8))[0]
 
         # Compiler fence - prevent reordering by Python/OS
         # On most systems, the seek/read operations already provide barriers,
         # but we make it explicit for correctness
-        if hasattr(self.mmap, 'madvise'):
+        if hasattr(self.mmap, "madvise"):
             # MADV_DONTNEED acts as a memory barrier on Linux
             pass
 
@@ -126,7 +135,10 @@ class RingBuffer:
 
         available = self.capacity - (write_pos - read_pos)
         if available < msg_size:
-            raise BufferFullError(f"Ring buffer full (capacity: {self.capacity}, available: {available})")
+            raise BufferFullError(
+                f"Ring buffer full (capacity: {self.capacity}, "
+                f"available: {available})"
+            )
 
         # Write message length header (little-endian u32)
         write_offset = (write_pos % self.capacity) + self.DATA_OFFSET
@@ -164,7 +176,9 @@ class RingBuffer:
         data = self.mmap.read(msg_len)
 
         # Update read position
-        self._write_atomic_u64(self.READ_POS_OFFSET, read_pos + self.HEADER_SIZE + msg_len)
+        self._write_atomic_u64(
+            self.READ_POS_OFFSET, read_pos + self.HEADER_SIZE + msg_len
+        )
 
         return data
 
