@@ -1006,8 +1006,8 @@ impl DbManager {
 
         // Convert to array by calling to_a on the relation, then map to get addresses
         let hosts_array = call_method(hosts_val, "to_a", &[])?;
-        let hosts_len: i64 = TryConvert::try_convert(call_method(hosts_array, "length", &[])?)
-            .unwrap_or(0);
+        let hosts_len: i64 =
+            TryConvert::try_convert(call_method(hosts_array, "length", &[])?).unwrap_or(0);
 
         let mut result = Vec::new();
         for i in 0..hosts_len {
@@ -1036,8 +1036,8 @@ impl DbManager {
 
         // Convert to array - MSF returns Mdm::Service objects
         let services_array = call_method(services_val, "to_a", &[])?;
-        let services_len: i64 = TryConvert::try_convert(call_method(services_array, "length", &[])?)
-            .unwrap_or(0);
+        let services_len: i64 =
+            TryConvert::try_convert(call_method(services_array, "length", &[])?).unwrap_or(0);
 
         let mut result = Vec::new();
         for i in 0..services_len {
@@ -1183,8 +1183,8 @@ impl DbManager {
 
         // Convert to array - MSF returns Mdm::Vuln objects
         let vulns_array = call_method(vulns_val, "to_a", &[])?;
-        let vulns_len: i64 = TryConvert::try_convert(call_method(vulns_array, "length", &[])?)
-            .unwrap_or(0);
+        let vulns_len: i64 =
+            TryConvert::try_convert(call_method(vulns_array, "length", &[])?).unwrap_or(0);
 
         let mut result = Vec::new();
         for i in 0..vulns_len {
