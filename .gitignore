@@ -15,6 +15,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.mypy_cache/
 
 # 🧪 Testing Artifacts
 *.coverage
@@ -116,10 +117,21 @@ thumbs.db
 rust/*/target/
 rust/*/Cargo.lock
 metasploit-framework.old/
+
+# Old planning and status documents
 BUILD_SUCCESS.md
 FULL_IMPLEMENTATION_PLAN.md
 IMPLEMENTATION_STATUS.md
+IPC_ARCHITECTURE.md
+MSF_API_COVERAGE.md
 PHASED_APPROACH.md
 REVIEW_SUMMARY.md
 RUST_FOUNDATION_PLAN.md
 SESSION_SUMMARY.md
+TESTING.md
+
+# Old infrastructure and POC files
+docker/test/
+docs/
+test_phase1_modules.py
+test_python_ruby_poc.py
