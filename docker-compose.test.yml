@@ -1,50 +1,54 @@
 version: '3.8'
 
 services:
-  debian:
-    image: debian:bookworm
-    container_name: test-debian
-    working_dir: /workspace
+  # PostgreSQL database for MSF
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: assassinate
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: msf_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assassinate"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     volumes:
-      - .:/workspace
-    command: sleep infinity
+      - postgres_data:/var/lib/postgresql/data
 
-  kali:
-    image: kalilinux/kali-rolling:latest
-    container_name: test-kali
-    working_dir: /workspace
+  # Assassinate test environment  
+  assassinate-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      target: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - MSF_ROOT=/tmp/metasploit-framework
+      - ASSASSINATE_LOG_LEVEL=WARNING
+      - DATABASE_URL=postgresql://assassinate:test_password@postgres:5432/msf_test
     volumes:
-      - .:/workspace
-    command: sleep infinity
+      # Mount source for development
+      - ./assassinate:/workspace/assassinate:ro
+      - ./rust:/workspace/rust:ro
+      - ./tests:/workspace/tests:ro
+      # Persist build cache
+      - cargo_cache:/root/.cargo
+      - target_cache_ipc:/workspace/rust/ipc/target
+      - target_cache_bridge:/workspace/rust/bridge/target
+      - target_cache_daemon:/workspace/rust/daemon/target
+    command: >
+      bash -c "
+        echo '=== Starting Assassinate Test Suite ===' &&
+        uv run pytest tests/ -v --tb=short --maxfail=5 &&
+        echo '=== All Tests Passed ==='
+      "
 
-  ubuntu:
-    image: ubuntu:24.04
-    container_name: test-ubuntu
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command: sleep infinity
-
-  fedora:
-    image: fedora:latest
-    container_name: test-fedora
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command: sleep infinity
-
-  arch:
-    image: archlinux:latest
-    container_name: test-arch
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command: sleep infinity
-
-  parrot:
-    image: parrotsec/security:latest
-    container_name: test-parrot
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command: ["/bin/bash", "-c", "sleep infinity"]
+volumes:
+  postgres_data:
+  cargo_cache:
+  target_cache_ipc:
+  target_cache_bridge:
+  target_cache_daemon:
