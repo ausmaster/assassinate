@@ -37,11 +37,11 @@ jobs:
 
       - name: Clone Metasploit Framework
         run: |
-          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git ~/metasploit-framework
+          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git metasploit-framework
 
       - name: Install MSF Dependencies
         run: |
-          cd ~/metasploit-framework
+          cd metasploit-framework
           sudo gem install bundler
           # Use single-threaded install to avoid race conditions
           sudo bundle install --jobs 1
@@ -64,7 +64,7 @@ jobs:
           sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || echo "Database may already exist"
 
           # Create database.yml for MSF
-          cat > $HOME/metasploit-framework/config/database.yml <<EOF
+          cat > ${{ github.workspace }}/metasploit-framework/config/database.yml <<EOF
           development: &pgsql
             adapter: postgresql
             database: msf_test
@@ -81,7 +81,7 @@ jobs:
           EOF
 
           # Run database migrations
-          cd $HOME/metasploit-framework
+          cd ${{ github.workspace }}/metasploit-framework
           export RAILS_ENV=test
           bundle exec rake db:migrate
 
