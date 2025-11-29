@@ -8,13 +8,11 @@ use std::collections::HashMap;
 /// Core Metasploit Framework interface
 ///
 /// This type provides access to the Metasploit Framework functionality through Ruby FFI.
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct Framework {
     pub(crate) ruby_framework: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl Framework {
     /// Create a new Framework instance
     pub fn new(options: Option<HashMap<String, String>>) -> Result<Self> {
@@ -187,21 +185,17 @@ impl Framework {
         crate::ruby_bridge::value_to_bool(threads_val)
     }
 
-    #[cfg(feature = "python-bindings")]
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<Framework version={}>", self.version()?))
     }
 }
 
 /// Metasploit module instance
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct Module {
     pub(crate) ruby_module: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl Module {
     /// Get module name
     pub fn name(&self) -> Result<String> {
@@ -237,8 +231,6 @@ impl Module {
     }
 
     /// Set a datastore option
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (key, value))]
     pub fn set_option(&self, key: &str, value: &str) -> Result<()> {
         let datastore = self.datastore()?;
         datastore.set(key, value)?;
@@ -246,8 +238,6 @@ impl Module {
     }
 
     /// Get a datastore option
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (key))]
     pub fn get_option(&self, key: &str) -> Result<Option<String>> {
         let datastore = self.datastore()?;
         datastore.get(key)
@@ -265,7 +255,6 @@ impl Module {
 
     /// Run an exploit module
     /// Returns the session ID if successful, None otherwise
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload, **options)))]
     pub fn exploit(
         &self,
         payload: &str,
@@ -316,7 +305,6 @@ impl Module {
 
     /// Run an auxiliary module
     /// Returns true if successful, false otherwise
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (**options)))]
     pub fn run(&self, options: Option<HashMap<String, String>>) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -586,7 +574,6 @@ impl Module {
         Ok(notes)
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
             "<Module name='{}' type='{}'>",
@@ -596,16 +583,13 @@ impl Module {
     }
 }
 
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct DataStore {
     pub(crate) ruby_datastore: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl DataStore {
     /// Set a value in the datastore
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key, value)))]
     pub fn set(&self, key: &str, value: &str) -> Result<()> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
         let value_val = crate::ruby_bridge::get_ruby()?.str_new(value).as_value();
@@ -616,7 +600,6 @@ impl DataStore {
     }
 
     /// Get a value from the datastore
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key)))]
     pub fn get(&self, key: &str) -> Result<Option<String>> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
 
@@ -662,7 +645,6 @@ impl DataStore {
     }
 
     /// Delete a key from datastore
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (key)))]
     pub fn delete(&self, key: &str) -> Result<()> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let key_val = ruby.str_new(key).as_value();
@@ -688,19 +670,16 @@ impl DataStore {
         Ok(())
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<DataStore {}>", self.to_dict()?.len()))
     }
 }
 
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct SessionManager {
     pub(crate) ruby_sessions: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl SessionManager {
     /// List all session IDs
     pub fn list(&self) -> Result<Vec<i64>> {
@@ -715,8 +694,6 @@ impl SessionManager {
     }
 
     /// Get a session by ID
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (session_id))]
     pub fn get(&self, session_id: i64) -> Result<Option<Session>> {
         let id_val = crate::ruby_bridge::get_ruby()?
             .eval::<Value>(&format!("{}", session_id))
@@ -738,8 +715,6 @@ impl SessionManager {
     }
 
     /// Kill a session by ID
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (session_id))]
     pub fn kill(&self, session_id: i64) -> Result<bool> {
         let id_val = crate::ruby_bridge::get_ruby()?
             .eval::<Value>(&format!("{}", session_id))
@@ -787,20 +762,17 @@ impl SessionManager {
         Ok(!is_nil(result_val))
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<SessionManager count={}>", self.list()?.len()))
     }
 }
 
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct Session {
     pub(crate) ruby_session: Value,
     pub session_id: i64,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl Session {
     /// Get session type
     pub fn session_type(&self) -> Result<String> {
@@ -827,8 +799,6 @@ impl Session {
     }
 
     /// Write data to the session
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (data))]
     pub fn write(&self, data: &str) -> Result<usize> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
@@ -842,8 +812,6 @@ impl Session {
     }
 
     /// Read data from the session
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (length=None))]
     pub fn read(&self, length: Option<usize>) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -864,8 +832,6 @@ impl Session {
     }
 
     /// Execute a command in the session (shell command)
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (command))]
     pub fn execute(&self, command: &str) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -881,8 +847,6 @@ impl Session {
     }
 
     /// Run a Meterpreter command (if it's a meterpreter session)
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (command))]
     pub fn run_cmd(&self, command: &str) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let cmd_val = ruby.str_new(command).as_value();
@@ -1010,7 +974,6 @@ impl Session {
         }
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
             "<Session id={} type='{}' alive={}>",
@@ -1022,13 +985,11 @@ impl Session {
 }
 
 /// Database manager
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct DbManager {
     pub(crate) ruby_db: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl DbManager {
     /// Get all hosts
     pub fn hosts(&self) -> Result<Vec<String>> {
@@ -1067,8 +1028,6 @@ impl DbManager {
     }
 
     /// Report a host
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (**opts))]
     pub fn report_host(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -1093,8 +1052,6 @@ impl DbManager {
     }
 
     /// Report a service
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (**opts))]
     pub fn report_service(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -1119,8 +1076,6 @@ impl DbManager {
     }
 
     /// Report a vulnerability
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (**opts))]
     pub fn report_vuln(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -1145,8 +1100,6 @@ impl DbManager {
     }
 
     /// Report a credential
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (**opts))]
     pub fn report_cred(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -1275,20 +1228,17 @@ impl DbManager {
         self.report_to_db("report_cred", opts)
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok("<DbManager>".to_string())
     }
 }
 
 /// Job manager
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct JobManager {
     pub(crate) ruby_jobs: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl JobManager {
     /// List all job IDs
     pub fn list(&self) -> Result<Vec<String>> {
@@ -1303,8 +1253,6 @@ impl JobManager {
     }
 
     /// Get job by ID
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (job_id))]
     pub fn get(&self, job_id: &str) -> Result<Option<String>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.str_new(job_id).as_value();
@@ -1319,8 +1267,6 @@ impl JobManager {
     }
 
     /// Kill a job by ID
-    #[cfg(feature = "python-bindings")]
-    #[pyo3(signature = (job_id))]
     pub fn kill(&self, job_id: &str) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.str_new(job_id).as_value();
@@ -1356,20 +1302,17 @@ impl JobManager {
         }
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<JobManager jobs={}>", self.list()?.len()))
     }
 }
 
 /// Plugin manager
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct PluginManager {
     pub(crate) ruby_plugins: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl PluginManager {
     /// List loaded plugins
     pub fn list(&self) -> Result<Vec<String>> {
@@ -1454,21 +1397,17 @@ impl PluginManager {
         Ok(false)
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<PluginManager plugins={}>", self.list()?.len()))
     }
 }
 
-#[cfg_attr(feature = "python-bindings", pyclass(unsendable))]
 #[derive(Clone)]
 pub struct PayloadGenerator {
     ruby_framework: Value,
 }
 
-#[cfg_attr(feature = "python-bindings", pymethods)]
 impl PayloadGenerator {
-    #[cfg_attr(feature = "python-bindings", new)]
     pub fn new(framework: &Framework) -> Result<Self> {
         Ok(PayloadGenerator {
             ruby_framework: framework.ruby_framework,
@@ -1476,7 +1415,6 @@ impl PayloadGenerator {
     }
 
     /// Generate a payload
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload_name, **options)))]
     pub fn generate(
         &self,
         payload_name: &str,
@@ -1528,7 +1466,6 @@ impl PayloadGenerator {
     }
 
     /// Generate a payload and encode it
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload_name, encoder=None, iterations=1, **options)))]
     pub fn generate_encoded(
         &self,
         payload_name: &str,
@@ -1614,7 +1551,6 @@ impl PayloadGenerator {
     }
 
     /// Generate a standalone executable payload
-    #[cfg_attr(feature = "python-bindings", pyo3(signature = (payload_name, platform, arch, **options)))]
     pub fn generate_executable(
         &self,
         payload_name: &str,
@@ -1717,7 +1653,6 @@ impl PayloadGenerator {
         Ok(bytes)
     }
 
-    #[cfg(feature = "python-bindings")]
     pub fn __repr__(&self) -> Result<String> {
         Ok("<PayloadGenerator>".to_string())
     }
