@@ -157,6 +157,7 @@ impl Daemon {
         _args: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value> {
         match method {
+            // === Framework Core Methods ===
             "framework_version" => {
                 let version = self
                     .framework
@@ -179,6 +180,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "modules": modules }))
             }
 
+            // === Module Search and Discovery ===
             "search" => {
                 let query = _args
                     .get(0)
@@ -222,6 +224,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "threads": threads }))
             }
 
+            // === Session Listing ===
             "list_sessions" => {
                 let session_manager = self
                     .framework
@@ -235,6 +238,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "session_ids": session_ids }))
             }
 
+            // === Module Instance Management ===
             "create_module" => {
                 let module_path = _args
                     .get(0)
@@ -254,6 +258,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "module_id": module_id }))
             }
 
+            // === Module Information and Options ===
             "module_info" => {
                 let module_id = _args
                     .get(0)
@@ -386,7 +391,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "notes": notes }))
             }
 
-            // DataStore operations - Framework level
+            // === Framework-level DataStore Operations ===
             "framework_get_option" => {
                 let key = _args.get(0).and_then(|v| v.as_str()).context("Missing key")?;
                 let datastore = self.framework.datastore()?;
@@ -421,7 +426,7 @@ impl Daemon {
                 Ok(serde_json::json!({}))
             }
 
-            // DataStore operations - Module level
+            // === Module-level DataStore Operations ===
             "module_datastore_to_dict" => {
                 let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
                 let modules = self.modules.lock();
@@ -450,7 +455,7 @@ impl Daemon {
                 Ok(serde_json::json!({}))
             }
 
-            // PayloadGenerator operations
+            // === PayloadGenerator Operations ===
             "payload_generate" => {
                 let payload_name = _args.get(0).and_then(|v| v.as_str()).context("Missing payload_name")?;
                 let options = parse_options(_args.get(1));
@@ -494,7 +499,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "executable": exe_b64 }))
             }
 
-            // DbManager operations
+            // === Database Manager Operations ===
             "db_hosts" => {
                 let db = self.framework.db()?;
                 let hosts = db.hosts()?;
@@ -549,7 +554,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "loot": loot }))
             }
 
-            // JobManager operations
+            // === Job Manager Operations ===
             "job_list" => {
                 let jobs = self.framework.jobs()?;
                 let job_ids = jobs.list()?;
@@ -570,7 +575,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "success": success }))
             }
 
-            // PluginManager operations
+            // === Plugin Manager Operations ===
             "plugins_list" => {
                 let plugins = self.framework.plugins()?;
                 let plugin_names = plugins.list_raw()?;
@@ -593,7 +598,7 @@ impl Daemon {
                 Ok(serde_json::json!({ "success": success }))
             }
 
-            // SessionManager operations
+            // === Session Manager Operations ===
             "session_get" => {
                 let session_id = _args.get(0).and_then(|v| v.as_i64()).context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
@@ -797,6 +802,7 @@ impl Daemon {
                 }
             }
 
+            // === Module Execution ===
             "module_exploit" => {
                 let module_id = _args.get(0).and_then(|v| v.as_str()).context("Missing module_id")?;
                 let payload = _args.get(1).and_then(|v| v.as_str()).context("Missing payload")?;
