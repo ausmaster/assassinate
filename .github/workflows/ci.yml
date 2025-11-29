@@ -67,7 +67,9 @@ jobs:
             ruby-dev \
             build-essential \
             libclang-dev \
-            pkg-config
+            pkg-config \
+            capnproto \
+            libcapnp-dev
 
       - name: Verify Ruby Installation
         run: |

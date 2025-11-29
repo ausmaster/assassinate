@@ -28,7 +28,9 @@ jobs:
             postgresql-contrib \
             libpq-dev \
             ruby-full \
-            ruby-dev
+            ruby-dev \
+            capnproto \
+            libcapnp-dev
 
       - name: Install Rust
         run: |
@@ -175,7 +177,9 @@ jobs:
                   ruby-full \
                   ruby-dev \
                   libyaml-dev \
-                  libffi-dev
+                  libffi-dev \
+                  capnproto \
+                  libcapnp-dev
               elif command -v dnf &> /dev/null; then
                 dnf install -y \
                   gcc \
@@ -193,7 +197,9 @@ jobs:
                   ruby \
                   ruby-devel \
                   libyaml-devel \
-                  libffi-devel
+                  libffi-devel \
+                  capnproto \
+                  capnproto-devel
               elif command -v pacman &> /dev/null; then
                 pacman -Sy --noconfirm \
                   base-devel \
@@ -207,7 +213,8 @@ jobs:
                   postgresql-libs \
                   ruby \
                   libyaml \
-                  libffi
+                  libffi \
+                  capnproto
               fi
 
               # Install Rust
