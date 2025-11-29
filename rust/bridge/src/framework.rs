@@ -2,7 +2,7 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, create_framework, is_nil, value_to_string};
-use magnus::{value::ReprValue, TryConvert, Value};
+use magnus::{value::ReprValue, StaticSymbol, TryConvert, Value};
 use std::collections::HashMap;
 
 /// Core Metasploit Framework interface
@@ -993,6 +993,10 @@ pub struct DbManager {
 impl DbManager {
     /// Get all hosts
     pub fn hosts(&self) -> Result<Vec<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // MSF hosts() returns an ActiveRecord relation of Mdm::Host objects
+        // We need to convert each host to a string representation (IP address)
         let hosts_val = call_method(self.ruby_db, "hosts", &[])?;
 
         // Check if nil (database might be empty or not configured)
@@ -1000,17 +1004,29 @@ impl DbManager {
             return Ok(Vec::new());
         }
 
-        // Convert to array of strings (host IPs)
-        let hosts: Vec<String> =
-            TryConvert::try_convert(hosts_val).map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert hosts: {}", e))
-            })?;
+        // Convert to array by calling to_a on the relation, then map to get addresses
+        let hosts_array = call_method(hosts_val, "to_a", &[])?;
+        let hosts_len: i64 = TryConvert::try_convert(call_method(hosts_array, "length", &[])?)
+            .unwrap_or(0);
 
-        Ok(hosts)
+        let mut result = Vec::new();
+        for i in 0..hosts_len {
+            let idx_val = ruby.integer_from_i64(i).as_value();
+            let host_obj = call_method(hosts_array, "[]", &[idx_val])?;
+            // Get the address attribute from the Mdm::Host object
+            let addr = call_method(host_obj, "address", &[])?;
+            if let Ok(addr_str) = value_to_string(addr) {
+                result.push(addr_str);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get all services
     pub fn services(&self) -> Result<Vec<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
         let services_val = call_method(self.ruby_db, "services", &[])?;
 
         // Check if nil (database might be empty or not configured)
@@ -1018,13 +1034,31 @@ impl DbManager {
             return Ok(Vec::new());
         }
 
-        // Convert to array of strings
-        let services: Vec<String> =
-            TryConvert::try_convert(services_val).map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert services: {}", e))
-            })?;
+        // Convert to array - MSF returns Mdm::Service objects
+        let services_array = call_method(services_val, "to_a", &[])?;
+        let services_len: i64 = TryConvert::try_convert(call_method(services_array, "length", &[])?)
+            .unwrap_or(0);
 
-        Ok(services)
+        let mut result = Vec::new();
+        for i in 0..services_len {
+            let idx_val = ruby.integer_from_i64(i).as_value();
+            let service_obj = call_method(services_array, "[]", &[idx_val])?;
+            // Get host address and port from service object
+            let host_obj = call_method(service_obj, "host", &[])?;
+            let host_addr = call_method(host_obj, "address", &[])?;
+            let port = call_method(service_obj, "port", &[])?;
+            let proto = call_method(service_obj, "proto", &[])?;
+
+            if let (Ok(host_str), Ok(port_str), Ok(proto_str)) = (
+                value_to_string(host_addr),
+                value_to_string(port),
+                value_to_string(proto),
+            ) {
+                result.push(format!("{}:{}/{}", host_str, port_str, proto_str));
+            }
+        }
+
+        Ok(result)
     }
 
     /// Report a host
@@ -1079,16 +1113,17 @@ impl DbManager {
     pub fn report_vuln(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash with symbol keys (MSF expects symbol keys like :host, not string keys)
         let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
             AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
         })?;
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
+                // Convert string key to symbol
+                let key_sym = StaticSymbol::new(key);
                 let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
+                call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
             }
         }
 
@@ -1103,18 +1138,25 @@ impl DbManager {
     pub fn report_cred(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash with symbol keys (MSF expects symbol keys like :host, not string keys)
         let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
             AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
         })?;
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
+                // Convert string key to symbol
+                let key_sym = StaticSymbol::new(key);
                 let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
+                call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
             }
         }
+
+        // MSF requires :workspace for report_cred - get the default workspace
+        // Use default_workspace which always returns a valid workspace (creating if needed)
+        let workspace = call_method(self.ruby_db, "default_workspace", &[])?;
+        let workspace_sym = StaticSymbol::new("workspace");
+        call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace])?;
 
         let cred_val = call_method(self.ruby_db, "report_cred", &[opts_val])?;
 
@@ -1125,8 +1167,9 @@ impl DbManager {
 
     /// Get all vulnerabilities
     pub fn vulns(&self) -> Result<Vec<String>> {
-        // MSF vulns() expects a workspace parameter, use empty hash for default workspace
         let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // MSF vulns() expects a workspace parameter, use empty hash for default workspace
         let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
             AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
         })?;
@@ -1138,13 +1181,23 @@ impl DbManager {
             return Ok(Vec::new());
         }
 
-        // Convert to array of strings
-        let vulns: Vec<String> =
-            TryConvert::try_convert(vulns_val).map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert vulns: {}", e))
-            })?;
+        // Convert to array - MSF returns Mdm::Vuln objects
+        let vulns_array = call_method(vulns_val, "to_a", &[])?;
+        let vulns_len: i64 = TryConvert::try_convert(call_method(vulns_array, "length", &[])?)
+            .unwrap_or(0);
 
-        Ok(vulns)
+        let mut result = Vec::new();
+        for i in 0..vulns_len {
+            let idx_val = ruby.integer_from_i64(i).as_value();
+            let vuln_obj = call_method(vulns_array, "[]", &[idx_val])?;
+            // Get vuln name from object
+            let name = call_method(vuln_obj, "name", &[])?;
+            if let Ok(name_str) = value_to_string(name) {
+                result.push(name_str);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get all credentials
@@ -1190,16 +1243,17 @@ impl DbManager {
     ) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash with symbol keys (MSF expects symbol keys like :host, not string keys)
         let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
             AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
         })?;
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
+                // Convert string key to symbol using intern
+                let key_sym = StaticSymbol::new(key);
                 let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
+                call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
             }
         }
 

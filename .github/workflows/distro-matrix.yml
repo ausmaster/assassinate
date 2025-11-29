@@ -30,7 +30,9 @@ jobs:
             ruby-full \
             ruby-dev \
             capnproto \
-            libcapnp-dev
+            libcapnp-dev \
+            python3-dev \
+            cmake
 
       - name: Install Rust
         run: |
@@ -180,7 +182,9 @@ jobs:
                   libyaml-dev \
                   libffi-dev \
                   capnproto \
-                  libcapnp-dev
+                  libcapnp-dev \
+                  python3-dev \
+                  cmake
               elif command -v dnf &> /dev/null; then
                 dnf install -y \
                   gcc \
@@ -200,7 +204,9 @@ jobs:
                   libyaml-devel \
                   libffi-devel \
                   capnproto \
-                  capnproto-devel
+                  capnproto-devel \
+                  python3-devel \
+                  cmake
               elif command -v pacman &> /dev/null; then
                 pacman -Sy --noconfirm \
                   base-devel \
@@ -215,7 +221,9 @@ jobs:
                   ruby \
                   libyaml \
                   libffi \
-                  capnproto
+                  capnproto \
+                  python \
+                  cmake
               fi
 
               # Install Rust

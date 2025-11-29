@@ -1,5 +1,6 @@
 """Pytest fixtures and configuration."""
 
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -12,15 +13,26 @@ from assassinate.ipc import MsfClient
 @pytest.fixture(scope="session")
 def daemon_process():
     """Start daemon for testing session."""
-    daemon_path = (
-        Path(__file__).parent.parent
-        / "rust"
-        / "daemon"
-        / "target"
-        / "release"
-        / "daemon"
-    )
-    msf_root = Path(__file__).parent.parent / "metasploit-framework"
+    # Check CARGO_TARGET_DIR first (used in CI containers), then fall back to default
+    cargo_target_dir = os.environ.get("CARGO_TARGET_DIR")
+    if cargo_target_dir:
+        daemon_path = Path(cargo_target_dir) / "release" / "daemon"
+    else:
+        daemon_path = (
+            Path(__file__).parent.parent
+            / "rust"
+            / "daemon"
+            / "target"
+            / "release"
+            / "daemon"
+        )
+
+    # Check MSF_ROOT env var first (used in CI), then fall back to default
+    msf_root_env = os.environ.get("MSF_ROOT")
+    if msf_root_env:
+        msf_root = Path(msf_root_env)
+    else:
+        msf_root = Path(__file__).parent.parent / "metasploit-framework"
 
     if not daemon_path.exists():
         pytest.skip("Daemon not built - run: cargo build --release -p daemon")

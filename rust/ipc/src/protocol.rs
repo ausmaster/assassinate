@@ -83,7 +83,8 @@ pub fn serialize_error(call_id: u64, code: &str, message: &str) -> Result<Vec<u8
         }),
     };
 
-    rmp_serde::to_vec(&msg).map_err(|e| IpcError::Serialization(e.to_string()))
+    // Use to_vec_named to produce a map with string keys (consistent with serialize_response)
+    rmp_serde::to_vec_named(&msg).map_err(|e| IpcError::Serialization(e.to_string()))
 }
 
 #[cfg(test)]
