@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Assassinate Daemon - High-performance IPC bridge to Metasploit Framework
 #[derive(Parser, Debug)]
@@ -132,20 +132,64 @@ impl Daemon {
 
     /// Process a single IPC request
     async fn process_request(&self, data: &[u8]) -> Result<()> {
+        let start = Instant::now();
+        let request_size = data.len();
+
+        // Deserialize request
         let (call_id, method, args) =
             protocol::deserialize_call(data).context("Failed to deserialize request")?;
 
+        let num_args = args.len();
+        debug!(
+            call_id = call_id,
+            method = %method,
+            num_args = num_args,
+            request_size = request_size,
+            "Processing RPC call"
+        );
+
+        // Dispatch and measure
+        let dispatch_start = Instant::now();
         let response = match self.dispatch_call(&method, args).await {
-            Ok(result) => protocol::serialize_response(call_id, result)?,
+            Ok(result) => {
+                let dispatch_time = dispatch_start.elapsed();
+                debug!(
+                    call_id = call_id,
+                    method = %method,
+                    dispatch_ms = dispatch_time.as_millis(),
+                    "RPC call succeeded"
+                );
+                protocol::serialize_response(call_id, result)?
+            }
             Err(e) => {
+                let dispatch_time = dispatch_start.elapsed();
                 let error_msg = format!("{:#}", e);
+                warn!(
+                    call_id = call_id,
+                    method = %method,
+                    error = %error_msg,
+                    dispatch_ms = dispatch_time.as_millis(),
+                    "RPC call failed"
+                );
                 protocol::serialize_error(call_id, "CallFailed", &error_msg)?
             }
         };
 
+        let response_size = response.len();
+
+        // Send response
         self.response_buffer
             .try_write(&response)
             .context("Failed to write response to ring buffer")?;
+
+        let total_time = start.elapsed();
+        debug!(
+            call_id = call_id,
+            method = %method,
+            total_ms = total_time.as_millis(),
+            response_size = response_size,
+            "Request completed"
+        );
 
         Ok(())
     }

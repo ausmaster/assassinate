@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from assassinate.ipc.errors import BufferEmptyError, RemoteError, TimeoutError
 from assassinate.ipc.protocol import deserialize_response, serialize_call
 from assassinate.ipc.shm import RingBuffer
+from assassinate.logging import PerformanceLogger, current_call_id, get_logger
+
+logger = get_logger("ipc.client")
 
 
 class MsfClient:
@@ -43,24 +47,40 @@ class MsfClient:
 
     async def connect(self) -> None:
         """Connect to the daemon's shared memory."""
-        # Connect to both ring buffers (names must match daemon)
-        request_name = f"{self.shm_name}_req"
-        response_name = f"{self.shm_name}_resp"
-        self.request_buffer = RingBuffer(request_name, self.buffer_size)
-        self.response_buffer = RingBuffer(response_name, self.buffer_size)
+        logger.info(f"Connecting to daemon: shm={self.shm_name}, buffer_size={self.buffer_size}")
 
-        # Start background response reader task
-        self._shutdown = False
-        self._response_reader_task = asyncio.create_task(self._response_reader())
+        try:
+            # Connect to both ring buffers (names must match daemon)
+            request_name = f"{self.shm_name}_req"
+            response_name = f"{self.shm_name}_resp"
+
+            logger.debug(f"Opening request buffer: {request_name}")
+            self.request_buffer = RingBuffer(request_name, self.buffer_size)
+
+            logger.debug(f"Opening response buffer: {response_name}")
+            self.response_buffer = RingBuffer(response_name, self.buffer_size)
+
+            # Start background response reader task
+            self._shutdown = False
+            self._response_reader_task = asyncio.create_task(self._response_reader())
+
+            logger.info("Successfully connected to daemon")
+        except Exception as e:
+            logger.error(f"Failed to connect to daemon: {e}")
+            raise
 
     async def disconnect(self) -> None:
         """Disconnect from shared memory."""
+        logger.info("Disconnecting from daemon")
+
         # Signal shutdown and wait for response reader to finish
         self._shutdown = True
         if self._response_reader_task:
             try:
                 await asyncio.wait_for(self._response_reader_task, timeout=2.0)
+                logger.debug("Response reader task completed")
             except asyncio.TimeoutError:
+                logger.warning("Response reader task timed out, cancelling")
                 self._response_reader_task.cancel()
                 try:
                     await self._response_reader_task
@@ -73,6 +93,8 @@ class MsfClient:
         if self.response_buffer:
             self.response_buffer.close()
             self.response_buffer = None
+
+        logger.info("Disconnected from daemon")
 
     async def __aenter__(self) -> MsfClient:
         """Async context manager entry."""
@@ -88,6 +110,8 @@ class MsfClient:
 
         This ensures responses are never lost, even if they arrive out of order.
         """
+        logger.debug("Response reader task started")
+
         while not self._shutdown:
             try:
                 # Try to read a response from the buffer
@@ -102,9 +126,13 @@ class MsfClient:
                 future = self._pending_calls.pop(response_call_id, None)
                 if future and not future.cancelled():
                     if error:
+                        logger.debug(f"Call {response_call_id} returned error: {error['code']}")
                         future.set_exception(RemoteError(error["code"], error["message"]))
                     else:
+                        logger.debug(f"Call {response_call_id} completed successfully")
                         future.set_result(result)
+                elif not future:
+                    logger.warning(f"Received response for unknown call_id={response_call_id} (possibly timed out)")
                 # If no pending call found, the response is silently dropped
                 # (this could happen if a call timed out)
 
@@ -113,9 +141,10 @@ class MsfClient:
                 await asyncio.sleep(0.001)  # 1ms
             except Exception as e:
                 # Log unexpected errors but keep running
-                import sys
-                print(f"Error in response reader: {e}", file=sys.stderr)
+                logger.error(f"Error in response reader: {e}", exc_info=True)
                 await asyncio.sleep(0.01)
+
+        logger.debug("Response reader task stopped")
 
     async def _call(self, method: str, *args: Any, timeout: float = 5.0) -> Any:
         """Make an RPC call to the daemon.
@@ -139,29 +168,47 @@ class MsfClient:
         call_id = self.next_call_id
         self.next_call_id += 1
 
+        # Set context for logging
+        current_call_id.set(call_id)
+
+        # Log the call with performance tracking
+        args_summary = f"{len(args)} args" if args else "no args"
+        logger.debug(f"Calling {method}({args_summary}) timeout={timeout}s")
+
         # Create a future for this call
         loop = asyncio.get_event_loop()
         future: asyncio.Future = loop.create_future()
         self._pending_calls[call_id] = future
 
         try:
-            # Serialize and send request
-            request_bytes = serialize_call(call_id, method, list(args))
-            self.request_buffer.try_write(request_bytes)
+            with PerformanceLogger(logger, f"RPC {method}", call_id=call_id):
+                # Serialize and send request
+                request_bytes = serialize_call(call_id, method, list(args))
+                self.request_buffer.try_write(request_bytes)
 
-            # Wait for response with timeout
-            # The response_reader task will set the result or exception
-            result = await asyncio.wait_for(future, timeout=timeout)
+                # Wait for response with timeout
+                # The response_reader task will set the result or exception
+                result = await asyncio.wait_for(future, timeout=timeout)
+
+            logger.info(f"Call {method} succeeded")
             return result
 
         except asyncio.TimeoutError:
             # Cleanup pending call on timeout
             self._pending_calls.pop(call_id, None)
+            logger.error(f"Call {method} timed out after {timeout}s")
             raise TimeoutError(f"Call to {method} timed out after {timeout}s")
-        except Exception:
+        except RemoteError as e:
+            logger.error(f"Call {method} failed on daemon: {e.code} - {e.message}")
+            raise
+        except Exception as e:
             # Cleanup on any other error
             self._pending_calls.pop(call_id, None)
+            logger.error(f"Call {method} failed: {e}")
             raise
+        finally:
+            # Clear context
+            current_call_id.set(None)
 
     # MSF API Methods
 

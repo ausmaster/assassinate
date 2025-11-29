@@ -36,10 +36,20 @@ Note:
 
 from __future__ import annotations
 
+import os
+
 __version__ = "0.1.0"
-__all__ = ["bridge"]
+__all__ = ["bridge", "setup_logging"]
 
 # Re-export bridge module for easy access
 from assassinate import bridge
+
+# Setup logging with default configuration
+# Can be overridden by calling setup_logging() with custom parameters
+from assassinate.logging import setup_logging
+
+# Setup default logging based on environment variable
+log_level = os.getenv("ASSASSINATE_LOG_LEVEL", "WARNING")
+setup_logging(level=log_level, structured=True)
 
 # Note: High-level API will be added here in future versions
