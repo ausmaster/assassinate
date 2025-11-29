@@ -1,18 +1,18 @@
 """Protocol layer for message serialization.
 
-For now using JSON for simplicity. Can be upgraded to Cap'n Proto later for better performance.
+Using MessagePack for high-performance binary serialization (~5-10x faster than JSON).
 """
 
 from __future__ import annotations
 
-import json
+import msgpack
 from typing import Any
 
 from assassinate.ipc.errors import DeserializationError, SerializationError
 
 
 def serialize_call(call_id: int, method: str, args: list[Any]) -> bytes:
-    """Serialize a method call to bytes.
+    """Serialize a method call to bytes using MessagePack.
 
     Args:
         call_id: Unique call identifier
@@ -24,13 +24,13 @@ def serialize_call(call_id: int, method: str, args: list[Any]) -> bytes:
     """
     try:
         message = {"call_id": call_id, "request": {"method": method, "args": args}}
-        return json.dumps(message).encode("utf-8")
+        return msgpack.packb(message, use_bin_type=True)
     except (TypeError, ValueError) as e:
         raise SerializationError(f"Failed to serialize call: {e}") from e
 
 
 def deserialize_response(data: bytes) -> tuple[int, Any | None, dict[str, str] | None]:
-    """Deserialize a response message.
+    """Deserialize a response message using MessagePack.
 
     Args:
         data: Serialized message bytes
@@ -41,16 +41,21 @@ def deserialize_response(data: bytes) -> tuple[int, Any | None, dict[str, str] |
         - If error: (call_id, None, {"code": str, "message": str})
     """
     try:
-        message = json.loads(data.decode("utf-8"))
+        message = msgpack.unpackb(data, raw=False)
         call_id = message["call_id"]
 
-        if "response" in message:
-            return call_id, message["response"].get("result"), None
-        elif "error" in message:
+        if "response" in message and message["response"] is not None:
+            response_data = message["response"]
+            # Response contains {"result": ...}
+            if isinstance(response_data, dict) and "result" in response_data:
+                return call_id, response_data["result"], None
+            # Fallback for backward compatibility
+            return call_id, response_data, None
+        elif "error" in message and message["error"] is not None:
             error = message["error"]
             return call_id, None, {"code": error["code"], "message": error["message"]}
         else:
             raise DeserializationError("Unknown message type")
 
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
+    except (msgpack.exceptions.UnpackException, KeyError, ValueError, TypeError) as e:
         raise DeserializationError(f"Failed to deserialize response: {e}") from e
