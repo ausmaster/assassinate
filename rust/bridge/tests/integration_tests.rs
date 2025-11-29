@@ -15,7 +15,7 @@ fn get_msf_path() -> String {
 }
 
 // Re-export functions we need for testing
-use assassinate_bridge::ruby_bridge;
+use bridge::ruby_bridge;
 
 /// All-in-one integration test that runs sequentially on a single thread
 #[test]

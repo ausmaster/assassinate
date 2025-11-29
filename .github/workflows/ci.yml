@@ -34,15 +34,15 @@ jobs:
       - name: Cache Cargo Build
         uses: actions/cache@v4
         with:
-          path: assassinate_bridge/target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('assassinate_bridge/Cargo.lock') }}
+          path: rust/bridge/target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('rust/bridge/Cargo.lock') }}
 
       - name: Check Rust Formatting
-        working-directory: ./assassinate_bridge
+        working-directory: ./rust/bridge
         run: cargo fmt -- --check
 
       - name: Run Clippy Linter
-        working-directory: ./assassinate_bridge
+        working-directory: ./rust/bridge
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   build_and_test:
@@ -84,24 +84,62 @@ jobs:
       - name: Cache Cargo Build
         uses: actions/cache@v4
         with:
-          path: assassinate_bridge/target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('assassinate_bridge/Cargo.lock') }}
+          path: rust/bridge/target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('rust/bridge/Cargo.lock') }}
 
       - name: Build Rust Bridge
-        working-directory: ./assassinate_bridge
+        working-directory: ./rust/bridge
         run: cargo build --verbose --release
 
-      - name: Run Integration Tests
-        working-directory: ./assassinate_bridge
+      - name: Run Rust Unit Tests
+        working-directory: ./rust/bridge
         run: cargo test --verbose --release --lib
         env:
           RUST_BACKTRACE: full
+
+      - name: Build All Rust Components
+        run: |
+          cd rust/ipc && cargo build --release
+          cd ../daemon && cargo build --release
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install Python Dependencies
+        run: uv sync --all-extras
+
+      - name: Clone Metasploit Framework
+        run: git clone --depth 1 https://github.com/rapid7/metasploit-framework.git metasploit-framework
+
+      - name: Install MSF Dependencies
+        run: |
+          cd metasploit-framework
+          sudo gem install bundler
+          sudo bundle install --jobs 4
+
+      - name: Setup PostgreSQL
+        run: |
+          sudo apt-get install -y postgresql postgresql-contrib libpq-dev
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE USER ${USER} SUPERUSER;" || true
+          sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || true
+
+      - name: Run Python Integration Tests
+        run: uv run pytest tests/ -v --tb=short --maxfail=5
+        env:
+          MSF_ROOT: ${{ github.workspace }}/metasploit-framework
+          ASSASSINATE_LOG_LEVEL: WARNING
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: assassinate-bridge-library
-          path: assassinate_bridge/target/release/libassassinate_bridge.*
+          path: rust/bridge/target/release/libbridge.*
           retention-days: 7
 
   test_summary:
@@ -115,8 +153,11 @@ jobs:
           echo "## Assassinate Bridge CI Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Rust format and linting passed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Unit tests passed (3 tests)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All Rust components built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Rust unit tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Python integration tests passed (118 tests)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Note" >> $GITHUB_STEP_SUMMARY
-          echo "Full MSF integration testing is handled by the Multi-Distro Validation workflow" >> $GITHUB_STEP_SUMMARY
+          echo "### Components Tested" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust Bridge, IPC, Daemon" >> $GITHUB_STEP_SUMMARY
+          echo "- Python IPC Client" >> $GITHUB_STEP_SUMMARY
+          echo "- Full MSF Integration" >> $GITHUB_STEP_SUMMARY

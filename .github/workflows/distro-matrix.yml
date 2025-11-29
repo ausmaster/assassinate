@@ -86,16 +86,16 @@ jobs:
           bundle exec rake db:migrate
 
       - name: Build Rust Bridge
-        working-directory: assassinate_bridge
+        working-directory: rust/bridge
         run: cargo build --release
 
       - name: Verify Rust Bridge Build
         run: |
-          cd assassinate_bridge
-          ls -lh target/release/libassassinate_bridge.*
+          cd rust/bridge
+          ls -lh target/release/libbridge.*
 
       - name: Run Rust Bridge Tests
-        working-directory: assassinate_bridge
+        working-directory: rust/bridge
         run: |
           export MSF_ROOT="$HOME/metasploit-framework"
           cargo test --release --lib
@@ -259,12 +259,12 @@ jobs:
 
               # Build and test Rust bridge
               echo 'Building Rust bridge...'
-              cd /workspace/assassinate_bridge
+              cd /workspace/rust/bridge
               cargo build --release
 
               # Verify bridge library exists
               echo 'Bridge library built:'
-              ls -lh target/release/libassassinate_bridge.*
+              ls -lh target/release/libbridge.*
 
               # Run Rust bridge tests with MSF
               echo 'Running Rust bridge tests...'

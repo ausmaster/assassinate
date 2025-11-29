@@ -124,14 +124,7 @@ impl Framework {
             })?;
 
         let mut results = Vec::new();
-        for item in results_array.each() {
-            let metadata_obj = item.map_err(|e| {
-                AssassinateError::ConversionError(format!(
-                    "Failed to iterate search results: {}",
-                    e
-                ))
-            })?;
-
+        for metadata_obj in results_array.into_iter() {
             // Extract fullname from metadata object
             let fullname_val = call_method(metadata_obj, "fullname", &[])?;
             let fullname = value_to_string(fullname_val)?;
