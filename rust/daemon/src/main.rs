@@ -1094,6 +1094,11 @@ async fn main() -> Result<()> {
     info!("Shared memory: {}", args.shm_name);
     info!("Buffer size: {} bytes", args.buffer_size);
 
+    // Log ASSASSINATE_WORKSPACE for debugging credential tests
+    let workspace_env =
+        std::env::var("ASSASSINATE_WORKSPACE").unwrap_or_else(|_| "not set".to_string());
+    info!("ASSASSINATE_WORKSPACE: {}", workspace_env);
+
     // Initialize Metasploit Framework
     info!("Initializing Metasploit Framework...");
     // Priority: 1) CLI arg, 2) MSF_ROOT env var, 3) Default
