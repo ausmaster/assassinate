@@ -1162,7 +1162,7 @@ impl DbManager {
             std::env::var("ASSASSINATE_WORKSPACE").unwrap_or_else(|_| "default".to_string());
 
         // Ensure workspace exists by finding or creating it
-        let workspace_obj = call_method(
+        let mut workspace_obj = call_method(
             self.ruby_db,
             "find_workspace",
             &[ruby.str_new(&workspace_name).as_value()],
@@ -1182,19 +1182,12 @@ impl DbManager {
                     ruby.str_new(&workspace_name).as_value(),
                 ],
             )?;
-            call_method(self.ruby_db, "add_workspace", &[add_opts])?;
+            workspace_obj = call_method(self.ruby_db, "add_workspace", &[add_opts])?;
         }
 
-        // Now pass the workspace name to report_cred
+        // Now pass the workspace object to report_cred (not the string)
         let workspace_sym = StaticSymbol::new("workspace");
-        call_method(
-            opts_val,
-            "[]=",
-            &[
-                workspace_sym.as_value(),
-                ruby.str_new(&workspace_name).as_value(),
-            ],
-        )?;
+        call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace_obj])?;
 
         let cred_val = call_method(self.ruby_db, "report_cred", &[opts_val])?;
 
