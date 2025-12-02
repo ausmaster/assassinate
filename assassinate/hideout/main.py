@@ -1,8 +1,11 @@
+import os
+
 from assassinate.bridge import get_version, initialize
 
 
 def main():
-    msf_path = "../../metasploit-framework"
+    # Priority: 1) MSF_ROOT env var, 2) Default relative path
+    msf_path = os.getenv("MSF_ROOT", "../../metasploit-framework")
     print(f"Initializing Metasploit from {msf_path}...")
     initialize(msf_path)
 

@@ -58,13 +58,18 @@ pub fn init_metasploit(msf_path: &str) -> Result<Value> {
     let ruby = get_ruby()?;
 
     // Initialize Metasploit the same way msfconsole does:
-    // 1. Load config/boot (sets up bundler)
-    // 2. Load msfenv (sets up Rails environment and MSF autoloader)
+    // 1. Set BUNDLE_GEMFILE so bundler/setup finds the right gems
+    // 2. Load config/boot (sets up bundler)
+    // 3. Load msfenv (sets up Rails environment and MSF autoloader)
     // This ensures Rails.application is initialized before Framework.create is called
     let code = format!(
         r###"
         # Change to MSF installation directory
         Dir.chdir('{}')
+
+        # Set BUNDLE_GEMFILE explicitly so bundler/setup finds bundled gems
+        # This is critical - without it, bundler loads system gems instead of bundled gems
+        ENV['BUNDLE_GEMFILE'] = '{}/Gemfile'
 
         # Add lib directory to load path
         $LOAD_PATH.unshift('{}/lib')
@@ -78,7 +83,7 @@ pub fn init_metasploit(msf_path: &str) -> Result<Value> {
         # Load msfenv (sets up Rails app and MSF autoloader)
         require 'msfenv'
         "###,
-        msf_path, msf_path, msf_path
+        msf_path, msf_path, msf_path, msf_path
     );
 
     let _result: Value = ruby

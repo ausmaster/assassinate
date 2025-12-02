@@ -314,6 +314,105 @@ See `help(assassinate)` for complete API documentation.
 
 ---
 
+## ⚙️ Environment Variables
+
+Assassinate supports the following environment variables for configuration:
+
+### MSF_ROOT
+
+**Purpose:** Specifies the path to the Metasploit Framework installation.
+
+**Used by:**
+- Daemon (`rust/daemon`) - When `--msf-root` CLI argument is not provided
+- Python scripts - When initializing MSF without explicit path
+
+**Priority:**
+1. CLI argument `--msf-root` (daemon only)
+2. `MSF_ROOT` environment variable
+3. Default: `/usr/share/metasploit-framework`
+
+**Example:**
+```bash
+# For package-managed MSF (Kali/Parrot)
+export MSF_ROOT=/usr/share/metasploit-framework
+
+# For manually installed MSF
+export MSF_ROOT=$HOME/metasploit-framework
+
+# Start daemon with env var
+./rust/daemon/target/release/daemon
+```
+
+### ASSASSINATE_WORKSPACE
+
+**Purpose:** Specifies the MSF database workspace for credential operations.
+
+**Used by:**
+- Database credential reporting (`db.report_cred()`)
+
+**Default:** `"default"`
+
+**Example:**
+```bash
+export ASSASSINATE_WORKSPACE=pentest_project_1
+uv run pytest tests/test_db.py
+```
+
+### ASSASSINATE_LOG_LEVEL
+
+**Purpose:** Controls Python logging verbosity.
+
+**Used by:**
+- Python package logging system
+
+**Valid values:** `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+
+**Default:** `WARNING`
+
+**Example:**
+```bash
+# Enable debug logging for tests
+ASSASSINATE_LOG_LEVEL=DEBUG uv run pytest tests/ -v
+
+# Quiet logging for production
+ASSASSINATE_LOG_LEVEL=ERROR python my_script.py
+```
+
+### ASSASSINATE_LOG_FILE
+
+**Purpose:** Specifies a file path for log output (in addition to console).
+
+**Used by:**
+- Python package logging system
+
+**Default:** `None` (console only)
+
+**Example:**
+```bash
+export ASSASSINATE_LOG_FILE=/var/log/assassinate.log
+python my_script.py
+```
+
+### CARGO_TARGET_DIR
+
+**Purpose:** Specifies the Cargo build output directory for Rust components.
+
+**Used by:**
+- Pytest fixtures to locate daemon binary
+- CI/CD environments to share build artifacts
+
+**Default:** `rust/daemon/target` (relative to project root)
+
+**Example:**
+```bash
+# CI environments
+export CARGO_TARGET_DIR=/tmp/cargo-target
+cargo build --release
+uv run pytest tests/
+```
+
+---
+
 ## ✅ Testing
 
 ### Test Suite (118 Tests)

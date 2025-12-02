@@ -2,9 +2,9 @@ name: Multi-Distro Validation
 
 on:
   push:
-    branches: [ main, test/* ]
+    branches: [main, test/*]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   ubuntu-full-test:
@@ -122,6 +122,7 @@ jobs:
         env:
           MSF_ROOT: ${{ github.workspace }}/metasploit-framework
           ASSASSINATE_LOG_LEVEL: WARNING
+          ASSASSINATE_WORKSPACE: default
 
   distro-install-validation:
     name: ${{ matrix.distro }} Validation Test
@@ -342,6 +343,7 @@ jobs:
               echo \"Using MSF_ROOT: \$MSF_ROOT\"
               cd /workspace
               export ASSASSINATE_LOG_LEVEL=WARNING
+              export ASSASSINATE_WORKSPACE=default
               uv run pytest tests/ -v --tb=short --maxfail=5
 
               echo '=== ${{ matrix.distro }} validation completed successfully ==='

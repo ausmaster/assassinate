@@ -2,9 +2,9 @@ name: Assassinate Rust FFI Bridge CI
 
 on:
   push:
-    branches: [ main, redesign ]
+    branches: [main, redesign]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -140,6 +140,7 @@ jobs:
         env:
           MSF_ROOT: ${{ github.workspace }}/metasploit-framework
           ASSASSINATE_LOG_LEVEL: WARNING
+          ASSASSINATE_WORKSPACE: default
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4

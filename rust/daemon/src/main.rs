@@ -1096,10 +1096,13 @@ async fn main() -> Result<()> {
 
     // Initialize Metasploit Framework
     info!("Initializing Metasploit Framework...");
+    // Priority: 1) CLI arg, 2) MSF_ROOT env var, 3) Default
+    let msf_root_env = std::env::var("MSF_ROOT").ok();
     let msf_root = args
         .msf_root
         .as_ref()
         .and_then(|p| p.to_str())
+        .or_else(|| msf_root_env.as_deref())
         .unwrap_or("/usr/share/metasploit-framework");
     bridge::init_metasploit(msf_root)
         .context("Failed to initialize Metasploit Ruby environment")?;
