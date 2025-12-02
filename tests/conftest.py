@@ -50,6 +50,11 @@ def daemon_process():
 
     # Build environment with LD_LIBRARY_PATH if needed (for rbenv Ruby)
     env = os.environ.copy()
+
+    # Ensure ASSASSINATE_WORKSPACE is set for credential reporting
+    if "ASSASSINATE_WORKSPACE" not in env:
+        env["ASSASSINATE_WORKSPACE"] = "default"
+
     # Check if using rbenv and add library path
     rbenv_root = Path.home() / ".rbenv"
     if rbenv_root.exists():
@@ -60,7 +65,11 @@ def daemon_process():
             ruby_lib_path = rbenv_root / "versions" / ruby_version / "lib"
             if ruby_lib_path.exists():
                 existing_ld_path = env.get("LD_LIBRARY_PATH", "")
-                env["LD_LIBRARY_PATH"] = f"{ruby_lib_path}:{existing_ld_path}" if existing_ld_path else str(ruby_lib_path)
+                env["LD_LIBRARY_PATH"] = (
+                    f"{ruby_lib_path}:{existing_ld_path}"
+                    if existing_ld_path
+                    else str(ruby_lib_path)
+                )
 
     # Start daemon
     proc = subprocess.Popen(
@@ -76,13 +85,35 @@ def daemon_process():
         env=env,
     )
 
-    # Wait for daemon to start
-    time.sleep(5)
+    # Wait for daemon to start and initialize
+    time.sleep(8)
 
     # Verify it's running
     if proc.poll() is not None:
         stdout, stderr = proc.communicate()
+        print(f"\n=== DAEMON STARTUP FAILED ===")
+        print(f"Command: {daemon_path} --msf-root {msf_root}")
+        print(f"STDERR:\n{stderr.decode()}")
+        print(f"STDOUT:\n{stdout.decode()}")
+        print(f"LD_LIBRARY_PATH: {env.get('LD_LIBRARY_PATH')}")
+        print(f"ASSASSINATE_WORKSPACE: {env.get('ASSASSINATE_WORKSPACE')}")
         pytest.fail(f"Daemon failed to start:\n{stderr.decode()}")
+
+    # Double-check shared memory was created
+    import glob
+
+    shm_files = glob.glob("/dev/shm/assassinate_msf_ipc*")
+    if not shm_files:
+        # Wait a bit more for slow initialization
+        time.sleep(5)
+        shm_files = glob.glob("/dev/shm/assassinate_msf_ipc*")
+        if not shm_files:
+            stdout, stderr = (
+                proc.communicate() if proc.poll() is not None else (b"", b"")
+            )
+            pytest.fail(
+                f"Daemon started but shared memory not created. Daemon may have crashed.\nSTDERR: {stderr.decode()}\nSTDOUT: {stdout.decode()}"
+            )
 
     yield proc
 
