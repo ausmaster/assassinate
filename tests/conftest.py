@@ -91,7 +91,7 @@ def daemon_process():
     # Verify it's running
     if proc.poll() is not None:
         stdout, stderr = proc.communicate()
-        print(f"\n=== DAEMON STARTUP FAILED ===")
+        print("\n=== DAEMON STARTUP FAILED ===")
         print(f"Command: {daemon_path} --msf-root {msf_root}")
         print(f"STDERR:\n{stderr.decode()}")
         print(f"STDOUT:\n{stdout.decode()}")

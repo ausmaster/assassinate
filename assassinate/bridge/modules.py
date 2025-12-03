@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from assassinate.bridge.client_utils import call_client_method
+
 if TYPE_CHECKING:
-    from assassinate.ipc.client import MsfClient
+    from assassinate.ipc.protocol import ClientProtocol
 
 
 class Module:
@@ -19,15 +21,16 @@ class Module:
 
     Note:
         Create via Framework.create_module(), not directly.
-        All methods are async since they use IPC.
+        All methods are async. Works with both async (MsfClient) and
+        sync (SyncMsfClient) - just always use await.
     """
 
-    def __init__(self, module_id: str, client: MsfClient) -> None:
+    def __init__(self, module_id: str, client: ClientProtocol) -> None:
         """Initialize Module wrapper.
 
         Args:
             module_id: Unique module instance ID from daemon.
-            client: Connected MsfClient instance.
+            client: Connected client instance (MsfClient or SyncMsfClient).
 
         Note:
             This is called internally by Framework.create_module().
@@ -50,7 +53,9 @@ class Module:
             >>> print(await mod.name())
             vsftpd_234_backdoor
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info["name"]
 
     async def fullname(self) -> str:
@@ -66,7 +71,9 @@ class Module:
             >>> print(await mod.fullname())
             exploit/unix/ftp/vsftpd_234_backdoor
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info["fullname"]
 
     async def module_type(self) -> str:
@@ -82,7 +89,9 @@ class Module:
             >>> print(await mod.module_type())
             exploit
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info["type"]
 
     async def description(self) -> str:
@@ -98,7 +107,9 @@ class Module:
             >>> print(await mod.description())
             This module exploits a malicious backdoor...
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info["description"]
 
     async def set_option(self, key: str, value: str) -> None:
@@ -118,7 +129,9 @@ class Module:
             >>> await mod.set_option("RHOSTS", "192.168.1.100")
             >>> await mod.set_option("RPORT", "21")
         """
-        await self._client.module_set_option(self._module_id, key, value)
+        await call_client_method(
+            self._client, "module_set_option", self._module_id, key, value
+        )
 
     async def get_option(self, key: str) -> str | None:
         """Get a module option value (convenience method).
@@ -137,7 +150,9 @@ class Module:
             >>> print(await mod.get_option("RHOSTS"))
             192.168.1.100
         """
-        return await self._client.module_get_option(self._module_id, key)
+        return await call_client_method(
+            self._client, "module_get_option", self._module_id, key
+        )
 
     async def validate(self) -> bool:
         """Validate module configuration.
@@ -155,7 +170,9 @@ class Module:
             >>> if await mod.validate():
             ...     print("Ready to run!")
         """
-        return await self._client.module_validate(self._module_id)
+        return await call_client_method(
+            self._client, "module_validate", self._module_id
+        )
 
     async def exploit(
         self,
@@ -186,8 +203,8 @@ class Module:
             >>> if session_id:
             ...     print(f"Got session {session_id}")
         """
-        return await self._client.module_exploit(
-            self._module_id, payload, options
+        return await call_client_method(
+            self._client, "module_exploit", self._module_id, payload, options
         )
 
     async def run(self, options: dict[str, str] | None = None) -> bool:
@@ -210,7 +227,9 @@ class Module:
             >>> await mod.set_option("RHOSTS", "192.168.1.1-254")
             >>> success = await mod.run()
         """
-        return await self._client.module_run(self._module_id, options)
+        return await call_client_method(
+            self._client, "module_run", self._module_id, options
+        )
 
     async def check(self) -> str:
         """Check if target is vulnerable.
@@ -232,7 +251,9 @@ class Module:
             >>> print(result)
             Appears vulnerable
         """
-        return await self._client.module_check(self._module_id)
+        return await call_client_method(
+            self._client, "module_check", self._module_id
+        )
 
     async def has_check(self) -> bool:
         """Check if module supports vulnerability checking.
@@ -247,7 +268,9 @@ class Module:
             >>> if await mod.has_check():
             ...     result = await mod.check()
         """
-        return await self._client.module_has_check(self._module_id)
+        return await call_client_method(
+            self._client, "module_has_check", self._module_id
+        )
 
     async def compatible_payloads(self) -> list[str]:
         """Get list of compatible payloads for this exploit.
@@ -266,7 +289,9 @@ class Module:
             >>> print(payloads[0])
             cmd/unix/reverse
         """
-        return await self._client.module_compatible_payloads(self._module_id)
+        return await call_client_method(
+            self._client, "module_compatible_payloads", self._module_id
+        )
 
     async def author(self) -> list[str]:
         """Get module authors.
@@ -282,7 +307,9 @@ class Module:
             >>> print(authors[0])
             hdm <x@hdm.io>
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("author", [])
 
     async def references(self) -> list[str]:
@@ -299,7 +326,9 @@ class Module:
             >>> for ref in refs:
             ...     print(ref)
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("references", [])
 
     async def options(self) -> str:
@@ -315,7 +344,9 @@ class Module:
             >>> opts = await mod.options()
             >>> print(opts)
         """
-        return await self._client.module_options(self._module_id)
+        return await call_client_method(
+            self._client, "module_options", self._module_id
+        )
 
     async def platform(self) -> list[str]:
         """Get target platforms.
@@ -331,7 +362,9 @@ class Module:
             >>> print(platforms)
             ['linux', 'unix']
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("platform", [])
 
     async def arch(self) -> list[str]:
@@ -348,7 +381,9 @@ class Module:
             >>> print(archs)
             ['x86']
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("arch", [])
 
     async def targets(self) -> list[str]:
@@ -365,7 +400,9 @@ class Module:
             >>> for target in targets:
             ...     print(target)
         """
-        return await self._client.module_targets(self._module_id)
+        return await call_client_method(
+            self._client, "module_targets", self._module_id
+        )
 
     async def disclosure_date(self) -> str | None:
         """Get vulnerability disclosure date.
@@ -381,7 +418,9 @@ class Module:
             >>> print(date)
             2011-07-04
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("disclosure_date")
 
     async def rank(self) -> str:
@@ -399,7 +438,9 @@ class Module:
             >>> print(rank)
             excellent
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("rank", "")
 
     async def privileged(self) -> bool:
@@ -416,7 +457,9 @@ class Module:
             >>> is_priv = await mod.privileged()
             >>> print(f"Requires privileges: {is_priv}")
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("privileged", False)
 
     async def license(self) -> str:
@@ -432,7 +475,9 @@ class Module:
             >>> lic = await mod.license()
             >>> print(lic)
         """
-        info = await self._client.module_info(self._module_id)
+        info = await call_client_method(
+            self._client, "module_info", self._module_id
+        )
         return info.get("license", "")
 
     async def aliases(self) -> list[str]:
@@ -448,7 +493,9 @@ class Module:
             >>> aliases = await mod.aliases()
             >>> print(f"Aliases: {aliases}")
         """
-        return await self._client.module_aliases(self._module_id)
+        return await call_client_method(
+            self._client, "module_aliases", self._module_id
+        )
 
     async def notes(self) -> dict[str, str]:
         """Get module notes.
@@ -465,7 +512,9 @@ class Module:
             >>> for key, value in notes.items():
             ...     print(f"{key}: {value}")
         """
-        return await self._client.module_notes(self._module_id)
+        return await call_client_method(
+            self._client, "module_notes", self._module_id
+        )
 
     def __repr__(self) -> str:
         """Return string representation of Module.

@@ -15,6 +15,33 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
+/// Cleanup guard that ensures shared memory is removed even on panic or unexpected exit
+struct CleanupGuard {
+    shm_name: String,
+}
+
+impl CleanupGuard {
+    fn new(shm_name: String) -> Self {
+        Self { shm_name }
+    }
+
+    fn cleanup(&self) {
+        let request_shm_path = format!("/dev/shm/{}_req", self.shm_name);
+        let response_shm_path = format!("/dev/shm/{}_resp", self.shm_name);
+
+        // Try to remove both, don't care if they fail
+        let _ = std::fs::remove_file(&request_shm_path);
+        let _ = std::fs::remove_file(&response_shm_path);
+    }
+}
+
+impl Drop for CleanupGuard {
+    fn drop(&mut self) {
+        info!("Cleaning up shared memory segments...");
+        self.cleanup();
+    }
+}
+
 /// Assassinate Daemon - High-performance IPC bridge to Metasploit Framework
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -1099,6 +1126,20 @@ async fn main() -> Result<()> {
         std::env::var("ASSASSINATE_WORKSPACE").unwrap_or_else(|_| "not set".to_string());
     info!("ASSASSINATE_WORKSPACE: {}", workspace_env);
 
+    // Create cleanup guard early - this will run even on panic thanks to Drop
+    let _cleanup_guard = CleanupGuard::new(args.shm_name.clone());
+
+    // Set up panic handler to ensure cleanup happens
+    let shm_name_for_panic = args.shm_name.clone();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        error!("Daemon panicked: {}", panic_info);
+        // Manual cleanup in panic handler as extra safety
+        let request_shm_path = format!("/dev/shm/{}_req", shm_name_for_panic);
+        let response_shm_path = format!("/dev/shm/{}_resp", shm_name_for_panic);
+        let _ = std::fs::remove_file(&request_shm_path);
+        let _ = std::fs::remove_file(&response_shm_path);
+    }));
+
     // Initialize Metasploit Framework
     info!("Initializing Metasploit Framework...");
     // Priority: 1) CLI arg, 2) MSF_ROOT env var, 3) Default
@@ -1143,6 +1184,8 @@ async fn main() -> Result<()> {
     // Cleanup
     signals_handle.close();
     info!("Daemon stopped");
+
+    // Note: CleanupGuard's Drop will handle shared memory cleanup automatically
 
     result
 }

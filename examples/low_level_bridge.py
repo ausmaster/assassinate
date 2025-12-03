@@ -1,156 +1,136 @@
-"""Example usage of the low-level assassinate.bridge API.
+"""Example usage of the assassinate bridge API.
 
-This demonstrates direct usage of the Metasploit Framework bridge without
-the high-level Python interface. Use this when you need full control or
-the high-level API doesn't provide necessary functionality.
+This demonstrates usage of the Metasploit Framework bridge through the
+IPC architecture. Shows both synchronous and asynchronous APIs.
 
 Requirements:
     - Metasploit Framework installed (e.g., /opt/metasploit-framework)
-    - assassinate_bridge Rust module compiled
+    - assassinate daemon running (see README.md)
     - PostgreSQL running (for full MSF functionality)
 """
 
 from __future__ import annotations
 
-from assassinate.bridge import (
-    DataStore,
-    Framework,
-    Module,
-    PayloadGenerator,
-    Session,
-    SessionManager,
-    get_version,
-    initialize,
-)
 
+def sync_example() -> None:
+    """Demonstrate synchronous API usage."""
+    from assassinate.bridge import Framework, initialize
 
-def main() -> None:
-    """Demonstrate low-level bridge API usage."""
-    # Initialize MSF (required before any operations)
-    msf_path = "/opt/metasploit-framework"
-    print(f"Initializing Metasploit from {msf_path}...")  # noqa: T201
-    initialize(msf_path)
+    print("=== Synchronous API Example ===\n")
 
-    # Get MSF version without creating framework
-    version = get_version()
-    print(f"MSF Version: {version}\n")  # noqa: T201
+    # Connect to daemon (no MSF path needed - daemon handles that)
+    print("Connecting to assassinate daemon...")
+    initialize()
 
     # Create framework instance
-    print("Creating framework...")  # noqa: T201
+    print("Creating framework...")
     fw = Framework()
-    print(f"Framework: {fw}\n")  # noqa: T201
+    print(f"MSF Version: {fw.version()}\n")
 
     # List available modules
-    print("Listing modules...")  # noqa: T201
-    exploits = fw.list_modules("exploits")
-    auxiliary = fw.list_modules("auxiliary")
-    payloads = fw.list_modules("payloads")
-
-    print(f"  Exploits:  {len(exploits)}")  # noqa: T201
-    print(f"  Auxiliary: {len(auxiliary)}")  # noqa: T201
-    print(f"  Payloads:  {len(payloads)}\n")  # noqa: T201
+    print("Listing modules...")
+    exploits = fw.list_modules("exploit")
+    print(f"  Exploits: {len(exploits)}")
 
     # Show first 5 exploits
-    print("Sample exploits:")  # noqa: T201
+    print("\nSample exploits:")
     for exploit in exploits[:5]:
-        print(f"  - {exploit}")  # noqa: T201
-    print()  # noqa: T201
+        print(f"  - {exploit}")
+    print()
 
     # Create and configure a module
     module_name = "exploit/unix/ftp/vsftpd_234_backdoor"
-    print(f"Creating module: {module_name}")  # noqa: T201
-    mod: Module = fw.create_module(module_name)
-
-    print(f"  Name:        {mod.name()}")  # noqa: T201
-    print(f"  Full name:   {mod.fullname()}")  # noqa: T201
-    print(f"  Type:        {mod.module_type()}")  # noqa: T201
-    print(f"  Description: {mod.description()[:100]}...")  # noqa: T201
-    print()  # noqa: T201
+    print(f"Creating module: {module_name}")
+    mod = fw.create_module(module_name)
+    print(f"  Module type: {mod.module_type()}")
+    print()
 
     # Configure module options via datastore
-    print("Configuring module options...")  # noqa: T201
-    ds: DataStore = mod.datastore()
+    print("Configuring module options...")
+    ds = mod.datastore()
     ds.set("RHOSTS", "192.168.1.100")
     ds.set("RPORT", "21")
 
-    print(f"  RHOSTS: {ds.get('RHOSTS')}")  # noqa: T201
-    print(f"  RPORT:  {ds.get('RPORT')}")  # noqa: T201
-    print(f"  Case-insensitive: rhosts = {ds.get('rhosts')}\n")  # noqa: T201
-
-    # Module validation and execution
-    print("Module validation and execution...")  # noqa: T201
-    is_valid = mod.validate()
-    print(f"  Module valid: {is_valid}")  # noqa: T201
-
-    if mod.has_check():
-        print(f"  Module supports check: {mod.has_check()}")  # noqa: T201
-
-    compatible = mod.compatible_payloads()
-    print(f"  Compatible payloads: {len(compatible)}")  # noqa: T201
-    if compatible:
-        print(f"    First payload: {compatible[0]}")  # noqa: T201
-    print()  # noqa: T201
-
-    # DataStore to dictionary
-    print("DataStore to dictionary...")  # noqa: T201
-    ds_dict = ds.to_dict()
-    print(f"  DataStore as dict: {ds_dict}\n")  # noqa: T201
-
-    # Global framework datastore
-    print("Framework global datastore...")  # noqa: T201
-    global_ds: DataStore = fw.datastore()
-    global_ds.set("WORKSPACE", "default")
-    print(f"  WORKSPACE: {global_ds.get('WORKSPACE')}\n")  # noqa: T201
+    print(f"  RHOSTS: {ds.get('RHOSTS')}")
+    print(f"  RPORT: {ds.get('RPORT')}")
+    print()
 
     # Session management
-    print("Session manager...")  # noqa: T201
-    sm: SessionManager = fw.sessions()
+    print("Session manager...")
+    sm = fw.sessions()
     session_ids = sm.list()
-    print(f"  Active sessions: {len(session_ids)}")  # noqa: T201
+    print(f"  Active sessions: {len(session_ids)}")
+    print()
 
-    if session_ids:
-        sess: Session | None = sm.get(session_ids[0])
-        if sess:
-            print(f"  Session info: {sess.info()}")  # noqa: T201
-            print(f"  Alive: {sess.alive()}")  # noqa: T201
-            print(f"  Session type: {sess.session_type()}")  # noqa: T201
-            print(f"  Description: {sess.desc()}")  # noqa: T201
-            print(f"  Target host: {sess.target_host()}")  # noqa: T201
-            print(f"  Tunnel peer: {sess.tunnel_peer()}")  # noqa: T201
+    print("Synchronous example complete!\n")
 
-            if sess.alive():
-                try:
-                    output = sess.execute("whoami")
-                    print(f"  Command output: {output}")  # noqa: T201
-                except RuntimeError as e:
-                    print(f"  Command failed: {e}")  # noqa: T201
-    print()  # noqa: T201
 
-    # Demonstrate module types
-    print("Creating different module types...")  # noqa: T201
+async def async_example() -> None:
+    """Demonstrate asynchronous API usage."""
+    from assassinate.bridge.async_api import AsyncFramework, initialize
 
-    # Auxiliary module
-    aux_mod = fw.create_module("auxiliary/scanner/http/title")
-    print(f"  Auxiliary: {aux_mod.name()}")  # noqa: T201
-    aux_ds: DataStore = aux_mod.datastore()
-    aux_ds.set("RHOSTS", "192.168.1.100")
+    print("=== Asynchronous API Example ===\n")
 
-    # Payload module
-    payload_mod = fw.create_module("payload/linux/x86/shell_reverse_tcp")
-    print(f"  Payload: {payload_mod.name()}\n")  # noqa: T201
+    # Connect to daemon
+    print("Connecting to assassinate daemon...")
+    await initialize()
 
-    # Payload generation
-    print("Payload generation...")  # noqa: T201
-    pg: PayloadGenerator = PayloadGenerator(fw)
+    # Create framework instance
+    print("Creating framework...")
+    fw = AsyncFramework()
+    version = await fw.version()
+    print(f"MSF Version: {version}\n")
 
-    available_payloads = pg.list_payloads()
-    print(f"  Total payloads: {len(available_payloads)}")  # noqa: T201
-    print("  Sample payloads:")  # noqa: T201
-    for p in available_payloads[:3]:
-        print(f"    - {p}")  # noqa: T201
-    print()  # noqa: T201
+    # List available modules
+    print("Listing modules...")
+    exploits = await fw.list_modules("exploit")
+    print(f"  Exploits: {len(exploits)}")
 
-    print("\nLow-level bridge example complete!")  # noqa: T201
+    # Show first 5 exploits
+    print("\nSample exploits:")
+    for exploit in exploits[:5]:
+        print(f"  - {exploit}")
+    print()
+
+    # Create and configure a module
+    module_name = "exploit/unix/ftp/vsftpd_234_backdoor"
+    print(f"Creating module: {module_name}")
+    mod = await fw.create_module(module_name)
+    mod_type = await mod.module_type()
+    print(f"  Module type: {mod_type}")
+    print()
+
+    # Configure module options via datastore
+    print("Configuring module options...")
+    ds = await mod.datastore()
+    await ds.set("RHOSTS", "192.168.1.100")
+    await ds.set("RPORT", "21")
+
+    rhosts = await ds.get("RHOSTS")
+    rport = await ds.get("RPORT")
+    print(f"  RHOSTS: {rhosts}")
+    print(f"  RPORT: {rport}")
+    print()
+
+    # Session management
+    print("Session manager...")
+    sm = await fw.sessions()
+    session_ids = await sm.list()
+    print(f"  Active sessions: {len(session_ids)}")
+    print()
+
+    print("Asynchronous example complete!\n")
+
+
+def main() -> None:
+    """Run both synchronous and asynchronous examples."""
+    import asyncio
+
+    # Run synchronous example
+    sync_example()
+
+    # Run asynchronous example
+    asyncio.run(async_example())
 
 
 if __name__ == "__main__":

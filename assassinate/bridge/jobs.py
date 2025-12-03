@@ -5,42 +5,53 @@ Provides access to background jobs for running modules asynchronously.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
+
+from assassinate.bridge.client_utils import call_client_method
+
+if TYPE_CHECKING:
+    from assassinate.ipc.protocol import ClientProtocol
 
 
 class JobManager:
     """Job manager for MSF.
 
     Manages background jobs for running modules asynchronously.
+
+    Now uses IPC for all operations.
     """
 
-    _instance: Any  # The underlying PyO3 JobManager instance
+    _client: ClientProtocol
 
-    def __init__(self, instance: Any) -> None:
-        """Initialize JobManager wrapper.
+    def __init__(self, client: ClientProtocol) -> None:
+        """Initialize JobManager instance.
 
         Args:
-            instance: PyO3 JobManager instance.
+            client: IPC client (MsfClient or SyncMsfClient) to use.
 
-        Note:
-            This is called internally via Framework.jobs().
+        Example:
+            >>> from assassinate.ipc import MsfClient
+            >>> client = MsfClient()
+            >>> await client.connect()
+            >>> jm = JobManager(client)
         """
-        self._instance = instance
+        self._client = client
 
-    def list(self) -> list[str]:
+    async def list(self) -> list[str]:
         """List all active job IDs.
 
         Returns:
             List of job IDs.
 
         Example:
-            >>> jm = fw.jobs()
-            >>> job_ids = jm.list()
+            >>> jm = JobManager(client)
+            >>> job_ids = await jm.list()
             >>> print(f"Active jobs: {len(job_ids)}")
         """
-        return list(self._instance.list())
+        result = await call_client_method(self._client, "job_list")
+        return list(result)
 
-    def get(self, job_id: str) -> str | None:
+    async def get(self, job_id: str) -> str | None:
         """Get job information by ID.
 
         Args:
@@ -50,15 +61,15 @@ class JobManager:
             Job information string or None if not found.
 
         Example:
-            >>> jm = fw.jobs()
-            >>> job = jm.get("0")
+            >>> jm = JobManager(client)
+            >>> job = await jm.get("0")
             >>> if job:
             ...     print(job)
         """
-        result = self._instance.get(job_id)
+        result = await call_client_method(self._client, "job_get", job_id)
         return str(result) if result is not None else None
 
-    def kill(self, job_id: str) -> bool:
+    async def kill(self, job_id: str) -> bool:
         """Kill a job by ID.
 
         Args:
@@ -68,11 +79,12 @@ class JobManager:
             True if job was killed, False if not found.
 
         Example:
-            >>> jm = fw.jobs()
-            >>> if jm.kill("0"):
+            >>> jm = JobManager(client)
+            >>> if await jm.kill("0"):
             ...     print("Job killed")
         """
-        return bool(self._instance.kill(job_id))
+        result = await call_client_method(self._client, "job_kill", job_id)
+        return bool(result)
 
     def __repr__(self) -> str:
         """Return string representation of JobManager.
@@ -80,5 +92,5 @@ class JobManager:
         Returns:
             String representation.
         """
-        job_count = len(self.list())
-        return f"<JobManager jobs={job_count}>"
+        # Don't call async methods in __repr__ - return static string
+        return "<JobManager>"

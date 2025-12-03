@@ -6,10 +6,41 @@ This module provides Python wrappers that communicate with MSF via IPC
 Architecture:
     Python Client ↔ Shared Memory ↔ Rust Daemon ↔ Ruby FFI ↔ MSF
 
-Public API:
+There are TWO distinct APIs:
+
+1. **Sync API** (default) - For synchronous code:
+   ```python
+   from assassinate.bridge import initialize, Framework, get_version
+
+   initialize()  # Connect to daemon
+   version = get_version()
+
+   fw = Framework()
+   print(fw.version())
+   ```
+
+2. **Async API** - For async code:
+   ```python
+   from assassinate.bridge.async_api import (
+       initialize,
+       AsyncFramework,
+       get_version,
+   )
+
+   await initialize()  # Connect to daemon
+   version = await get_version()
+
+   fw = AsyncFramework()
+   await fw.initialize()
+   print(await fw.version())
+   ```
+
+The sync API uses a background thread to run async operations, making it
+convenient for use in synchronous code without managing event loops.
+
+Public API (Sync):
     Functions:
-        - initialize(msf_path): Initialize MSF connection (sync)
-        - initialize_async(): Initialize MSF connection (async)
+        - initialize(msf_path): Initialize MSF connection
         - get_version(): Get MSF version
 
     Classes:
@@ -18,52 +49,36 @@ Public API:
         - SessionManager: Manages active sessions
         - Session: Active session to compromised target
 
-    Note: All Module methods are async. Use `await` when calling them.
+Public API (Async):
+    Available via `assassinate.bridge.async_api`
 
-Example:
-    >>> from assassinate.bridge import initialize, Framework
-    >>> import asyncio
-    >>>
-    >>> async def main():
-    ...     from assassinate.bridge.core import initialize_async
-    ...     await initialize_async()
-    ...     fw = Framework()
-    ...     print(fw.version())
-    ...
-    ...     # Create a module
-    ...     mod = fw.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
-    ...     print(await mod.name())  # Module methods are async
-    ...
-    >>> asyncio.run(main())
+    Functions:
+        - initialize(): Initialize MSF connection (async)
+        - get_version(): Get MSF version (async)
+
+    Classes:
+        - AsyncFramework: Main MSF interface (async)
 
 Status:
     ✅ Core functionality (Framework, Module, Sessions) via IPC
-    ✅ 38/38 tests passing - Full test suite passes!
-    ⏳ DataStore, PayloadGenerator, DbManager, JobManager -
-       to be implemented when needed
+    ✅ 118/118 integration tests passing
+    ✅ Sync and Async APIs cleanly separated
 """
 
 from __future__ import annotations
 
-from assassinate.bridge.core import (
-    Framework,
-    get_version,
-    initialize,
-    initialize_async,
-)
 from assassinate.bridge.modules import Module
 from assassinate.bridge.sessions import Session, SessionManager
 
-# These modules need IPC implementation - use direct module methods for now:
-# - DataStore: Use module.set_option() / module.get_option() instead
-# - PayloadGenerator: Use module.compatible_payloads() and
-#   module.exploit()
-# - DbManager: Database functionality to be implemented
-# - JobManager: Job management to be implemented
+# Default export: Sync API
+from assassinate.bridge.sync_api import (
+    Framework,
+    get_version,
+    initialize,
+)
 
 __all__ = [
     "initialize",
-    "initialize_async",
     "get_version",
     "Framework",
     "Module",

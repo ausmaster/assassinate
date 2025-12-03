@@ -30,7 +30,7 @@ spec/
 
 1. **Build the Rust bridge:**
    ```bash
-   cd assassinate_bridge
+   cd rust/bridge
    cargo build
    ```
 
@@ -42,7 +42,7 @@ spec/
 
 3. **Set up PostgreSQL test database (REQUIRED for full test suite):**
    ```bash
-   cd assassinate_bridge
+   cd rust/bridge
    ./setup_test_db.sh
    ```
 
@@ -88,7 +88,7 @@ spec/
 ```bash
 cd metasploit-framework
 bundle exec rspec \
-  --require ../assassinate_bridge/spec/bridge_spec_helper.rb \
+  --require ../rust/bridge/spec/bridge_spec_helper.rb \
   spec/lib/msf/core/framework_spec.rb
 ```
 
@@ -161,7 +161,7 @@ When MSF tests run:
 ## Troubleshooting
 
 ### "Bridge library not found"
-Run `cargo build` in the assassinate_bridge directory.
+Run `cargo build` in the rust/bridge directory.
 
 ### "Metasploit spec_helper not found"
 Set the `MSF_ROOT` environment variable:
