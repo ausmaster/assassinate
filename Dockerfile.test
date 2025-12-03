@@ -1,0 +1,85 @@
+# Multi-stage Dockerfile for testing Assassinate
+# Provides clean, reproducible test environment
+
+FROM ubuntu:24.04 AS base
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV RUST_BACKTRACE=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    libssl-dev \
+    pkg-config \
+    libclang-dev \
+    libpcap-dev \
+    postgresql \
+    postgresql-contrib \
+    libpq-dev \
+    ruby-full \
+    ruby-dev \
+    libyaml-dev \
+    libffi-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install uv (Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Verify installations
+RUN rustc --version && \
+    cargo --version && \
+    ruby --version && \
+    uv --version
+
+# Stage 2: Setup Metasploit Framework
+FROM base AS msf-setup
+
+WORKDIR /tmp
+
+# Clone MSF (shallow clone for speed)
+RUN git clone --depth 1 https://github.com/rapid7/metasploit-framework.git metasploit-framework
+
+# Install MSF Ruby dependencies
+WORKDIR /tmp/metasploit-framework
+RUN gem install bundler && \
+    bundle install --jobs 4
+
+# Stage 3: Build and Test
+FROM msf-setup AS test
+
+WORKDIR /workspace
+
+# Copy project files
+COPY . .
+
+# Setup PostgreSQL
+RUN service postgresql start && \
+    sudo -u postgres psql -c "CREATE USER root SUPERUSER;" && \
+    sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER root;" && \
+    service postgresql stop
+
+# Install Python dependencies
+RUN uv sync
+
+# Build Rust components
+RUN cd rust/ipc && cargo build --release && \
+    cd ../bridge && cargo build --release && \
+    cd ../daemon && cargo build --release
+
+# Healthcheck: Verify all components built
+RUN test -f rust/ipc/target/release/libipc.rlib && \
+    test -f rust/bridge/target/release/libbridge.rlib && \
+    test -f rust/daemon/target/release/daemon
+
+# Set default command to run tests
+CMD ["bash", "-c", "service postgresql start && ASSASSINATE_LOG_LEVEL=WARNING MSF_ROOT=/tmp/metasploit-framework uv run pytest tests/ -v --tb=short"]

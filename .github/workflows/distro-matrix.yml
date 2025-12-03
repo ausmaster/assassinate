@@ -2,9 +2,9 @@ name: Multi-Distro Validation
 
 on:
   push:
-    branches: [ main, test/* ]
+    branches: [main, test/*]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   ubuntu-full-test:
@@ -28,7 +28,11 @@ jobs:
             postgresql-contrib \
             libpq-dev \
             ruby-full \
-            ruby-dev
+            ruby-dev \
+            capnproto \
+            libcapnp-dev \
+            python3-dev \
+            cmake
 
       - name: Install Rust
         run: |
@@ -37,11 +41,11 @@ jobs:
 
       - name: Clone Metasploit Framework
         run: |
-          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git ~/metasploit-framework
+          git clone --depth 1 https://github.com/rapid7/metasploit-framework.git metasploit-framework
 
       - name: Install MSF Dependencies
         run: |
-          cd ~/metasploit-framework
+          cd metasploit-framework
           sudo gem install bundler
           # Use single-threaded install to avoid race conditions
           sudo bundle install --jobs 1
@@ -64,7 +68,7 @@ jobs:
           sudo -u postgres psql -c "CREATE DATABASE msf_test OWNER ${USER};" || echo "Database may already exist"
 
           # Create database.yml for MSF
-          cat > $HOME/metasploit-framework/config/database.yml <<EOF
+          cat > ${{ github.workspace }}/metasploit-framework/config/database.yml <<EOF
           development: &pgsql
             adapter: postgresql
             database: msf_test
@@ -81,34 +85,44 @@ jobs:
           EOF
 
           # Run database migrations
-          cd $HOME/metasploit-framework
+          cd ${{ github.workspace }}/metasploit-framework
           export RAILS_ENV=test
           bundle exec rake db:migrate
 
-      - name: Build Rust Bridge
-        working-directory: assassinate_bridge
-        run: cargo build --release
-
-      - name: Verify Rust Bridge Build
+      - name: Build All Rust Components
         run: |
-          cd assassinate_bridge
-          ls -lh target/release/libassassinate_bridge.*
+          cd rust/ipc && cargo build --release
+          cd ../bridge && cargo build --release
+          cd ../daemon && cargo build --release
 
-      - name: Run Rust Bridge Tests
-        working-directory: assassinate_bridge
+      - name: Verify Rust Build
         run: |
-          export MSF_ROOT="$HOME/metasploit-framework"
-          cargo test --release --lib
+          ls -lh rust/bridge/target/release/libbridge.*
+          ls -lh rust/daemon/target/release/daemon
 
-      - name: Run MSF Framework Test Suite
-        run: |
-          cd $HOME/metasploit-framework
-          export MSF_ROOT="$HOME/metasploit-framework"
-          bundle exec rspec spec/lib/msf/core/ \
-            --exclude-pattern "**/opt_address_local_spec.rb" \
-            --format progress \
-            --format documentation \
-            --out test_results.txt
+      - name: Run Rust Unit Tests
+        working-directory: rust/bridge
+        run: cargo test --release --lib
+        env:
+          MSF_ROOT: ${{ github.workspace }}/metasploit-framework
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install Python Dependencies
+        run: uv sync --all-extras
+
+      - name: Run Python Integration Tests
+        run: uv run pytest tests/ -v --tb=short --maxfail=5
+        env:
+          MSF_ROOT: ${{ github.workspace }}/metasploit-framework
+          ASSASSINATE_LOG_LEVEL: WARNING
+          ASSASSINATE_WORKSPACE: default
 
   distro-install-validation:
     name: ${{ matrix.distro }} Validation Test
@@ -146,8 +160,9 @@ jobs:
             -w /workspace \
             ${{ matrix.image }} \
             bash -c "
-              set -e
+              # Workaround for Parrot bash environment issue
               echo '=== Testing ${{ matrix.distro }} - Installation and Bridge Tests ==='
+              set -e
 
               # Update package lists based on distro
               if command -v apt-get &> /dev/null; then
@@ -166,7 +181,11 @@ jobs:
                   ruby-full \
                   ruby-dev \
                   libyaml-dev \
-                  libffi-dev
+                  libffi-dev \
+                  capnproto \
+                  libcapnp-dev \
+                  python3-dev \
+                  cmake
               elif command -v dnf &> /dev/null; then
                 dnf install -y \
                   gcc \
@@ -184,7 +203,11 @@ jobs:
                   ruby \
                   ruby-devel \
                   libyaml-devel \
-                  libffi-devel
+                  libffi-devel \
+                  capnproto \
+                  capnproto-devel \
+                  python3-devel \
+                  cmake
               elif command -v pacman &> /dev/null; then
                 pacman -Sy --noconfirm \
                   base-devel \
@@ -198,7 +221,10 @@ jobs:
                   postgresql-libs \
                   ruby \
                   libyaml \
-                  libffi
+                  libffi \
+                  capnproto \
+                  python \
+                  cmake
               fi
 
               # Install Rust
@@ -211,32 +237,42 @@ jobs:
               rustc --version
               cargo --version
 
-              # Clone Metasploit Framework
-              echo 'Cloning Metasploit Framework...'
-              git clone --depth 1 https://github.com/rapid7/metasploit-framework.git /tmp/metasploit-framework
+              # Setup Metasploit Framework based on distro
+              # Kali and Parrot use package manager (real-world usage)
+              # Others clone from GitHub
+              if [[ '${{ matrix.distro }}' == 'Kali' ]] || [[ '${{ matrix.distro }}' == 'Parrot' ]]; then
+                echo 'Installing Metasploit Framework from package manager...'
+                apt-get install -y metasploit-framework
+                export MSF_ROOT=/usr/share/metasploit-framework
+                echo 'Using package MSF at /usr/share/metasploit-framework'
+              else
+                echo 'Cloning Metasploit Framework from GitHub...'
+                git clone --depth 1 https://github.com/rapid7/metasploit-framework.git /tmp/metasploit-framework
+                export MSF_ROOT=/tmp/metasploit-framework
 
-              # Install MSF Ruby dependencies
-              echo 'Installing MSF dependencies...'
-              cd /tmp/metasploit-framework
-              gem install bundler
+                # Install MSF Ruby dependencies for cloned version
+                echo 'Installing MSF dependencies...'
+                cd /tmp/metasploit-framework
+                gem install bundler
 
-              # Fix PATH for Arch Linux gem executables
-              # See: https://wiki.archlinux.org/title/Ruby
-              if command -v pacman &> /dev/null; then
-                export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
+                # Fix PATH for Arch Linux gem executables
+                # See: https://wiki.archlinux.org/title/Ruby
+                if command -v pacman &> /dev/null; then
+                  export PATH=\"\$(ruby -e 'puts Gem.user_dir')/bin:\$PATH\"
+                fi
+
+                # Workaround for Kali: xmlrpc gem fails during bundle install
+                # Install it separately first to avoid Bundler::GemNotFound error
+                # See: https://github.com/beefproject/beef/issues/2687
+                gem install xmlrpc
+
+                # Use single-threaded install to avoid race conditions
+                # Retry network errors (e.g., xmlrpc gem not found)
+                # No timeout - let GitHub Actions job timeout handle it (360min default)
+                # Bundle install for MSF can take 10-15 minutes depending on network
+                # See: https://github.com/bundler/bundler/issues/6698
+                bundle install --jobs 1 --retry 3
               fi
-
-              # Workaround for Kali: xmlrpc gem fails during bundle install
-              # Install it separately first to avoid Bundler::GemNotFound error
-              # See: https://github.com/beefproject/beef/issues/2687
-              gem install xmlrpc
-
-              # Use single-threaded install to avoid race conditions
-              # Retry network errors (e.g., xmlrpc gem not found)
-              # No timeout - let GitHub Actions job timeout handle it (360min default)
-              # Bundle install for MSF can take 10-15 minutes depending on network
-              # See: https://github.com/bundler/bundler/issues/6698
-              bundle install --jobs 1 --retry 3
 
               # Setup PostgreSQL
               echo 'Setting up PostgreSQL...'
@@ -257,19 +293,58 @@ jobs:
                 sleep 5
               fi
 
-              # Build and test Rust bridge
-              echo 'Building Rust bridge...'
-              cd /workspace/assassinate_bridge
-              cargo build --release
+              # Build all Rust components
+              echo 'Building all Rust components...'
+              cd /workspace/rust/ipc && cargo build --release
+              cd /workspace/rust/bridge && cargo build --release
+              cd /workspace/rust/daemon && cargo build --release
 
-              # Verify bridge library exists
-              echo 'Bridge library built:'
-              ls -lh target/release/libassassinate_bridge.*
+              # Verify all components built
+              echo 'Components built:'
+              ls -lh /workspace/rust/bridge/target/release/libbridge.*
+              ls -lh /workspace/rust/daemon/target/release/daemon
 
-              # Run Rust bridge tests with MSF
-              echo 'Running Rust bridge tests...'
-              export MSF_ROOT=/tmp/metasploit-framework
-              cargo test --release -- --test-threads=1
+              # Run Rust unit tests
+              echo 'Running Rust unit tests...'
+              cd /workspace/rust/bridge
+              cargo test --release --lib
+
+              # Install uv (Python package manager)
+              echo 'Installing uv...'
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              source \$HOME/.local/bin/env
+
+              # Install Python dependencies
+              echo 'Installing Python dependencies...'
+              cd /workspace
+              uv sync --all-extras
+
+              # Setup PostgreSQL database
+              echo 'Setting up MSF database...'
+              cd \$MSF_ROOT
+              cat > config/database.yml <<EOF
+              development: &pgsql
+                adapter: postgresql
+                database: msf_test
+                username: postgres
+                password:
+                host: localhost
+                port: 5432
+                pool: 200
+                timeout: 5
+              production: &production
+                <<: *pgsql
+              test:
+                <<: *pgsql
+              EOF
+
+              # Run Python integration test suite
+              echo 'Running Python integration tests (118 tests)...'
+              echo \"Using MSF_ROOT: \$MSF_ROOT\"
+              cd /workspace
+              export ASSASSINATE_LOG_LEVEL=WARNING
+              export ASSASSINATE_WORKSPACE=default
+              uv run pytest tests/ -v --tb=short --maxfail=5
 
               echo '=== ${{ matrix.distro }} validation completed successfully ==='
             "

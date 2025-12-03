@@ -22,7 +22,15 @@ sudo apt-get install -y \
     libpcap-dev \
     postgresql \
     postgresql-contrib \
-    libpq-dev
+    libpq-dev \
+    ruby-full \
+    ruby-dev \
+    libyaml-dev \
+    libffi-dev \
+    capnproto \
+    libcapnp-dev \
+    python3-dev \
+    cmake
 
 # Install Rust
 echo "[3/6] Installing Rust toolchain..."
