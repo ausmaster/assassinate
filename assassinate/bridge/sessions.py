@@ -112,8 +112,8 @@ class SessionManager:
         Returns:
             String representation.
         """
-        session_count = len(self.list())
-        return f"<SessionManager sessions={session_count}>"
+        # Don't call self.list() here as it's async and __repr__ should be sync
+        return "<SessionManager>"
 
 
 class Session:
