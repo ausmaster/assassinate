@@ -64,6 +64,8 @@ class SyncMsfClient:
 
     def _run_loop(self) -> None:
         """Run the event loop in the background thread."""
+        if self._loop is None:
+            return
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
 
@@ -78,6 +80,9 @@ class SyncMsfClient:
         """
         if not self._started:
             self._start_loop()
+
+        if self._loop is None:
+            raise RuntimeError("Event loop not initialized")
 
         # Submit coroutine to background loop and wait for result
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)

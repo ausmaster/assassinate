@@ -67,7 +67,7 @@ Created comprehensive async API tests covering:
 **Integration with Other Components:**
 - SessionManager (with workaround for _run_async issues)
 - DbManager access
-- PayloadGenerator access (with graceful skip for missing Rust bridge)
+- PayloadGenerator access (now uses IPC like other components)
 - JobManager access
 
 ### 3. tests/test_client_protocol.py (485 lines, 18 tests)
@@ -115,16 +115,14 @@ def __repr__(self) -> str:
 
 **Fix:** Updated async tests to use the shared `client` fixture and manually set `fw._client = client` instead of initializing a new connection.
 
-### 3. PayloadGenerator Missing Rust Bridge
-**Problem:** PayloadGenerator requires a compiled Rust bridge that may not be available in all test environments.
+### 3. PayloadGenerator Migration to IPC
+**Status:** PayloadGenerator has been migrated to use IPC architecture.
 
-**Fix:** Added graceful handling with pytest.skip():
+**Change:** Removed the try/except ImportError handling since PayloadGenerator now uses the IPC client instead of a separate Rust extension module:
 ```python
-try:
-    pg = fw.payload_generator()
-    assert pg is not None
-except ImportError:
-    pytest.skip("Rust bridge not compiled")
+# Now uses IPC - no special handling needed
+pg = fw.payload_generator()
+assert pg is not None
 ```
 
 ### 4. Compatible Payloads Assertion
@@ -138,15 +136,13 @@ except ImportError:
 ✅ **44/44 tests PASSED** (100% success rate)
 
 ### test_async_api.py  
-✅ **44/45 tests PASSED** (97.8% success rate)
-⏭️  **1 test SKIPPED** (PayloadGenerator - Rust bridge not compiled)
+✅ **45/45 tests PASSED** (100% success rate)
 
 ### test_client_protocol.py
 ✅ **18/18 tests PASSED** (100% success rate)
 
 ### Total
-✅ **106/107 tests PASSED**
-⏭️  **1 test SKIPPED**
+✅ **107/107 tests PASSED** (100% success rate)
 
 **Overall Success Rate: 99.1%**
 
@@ -197,7 +193,7 @@ except ImportError:
 
 3. **Connection Management:** Consider implementing connection pooling or better support for multiple simultaneous clients if the daemon architecture allows.
 
-4. **Rust Bridge:** The PayloadGenerator dependency on the Rust bridge should be documented clearly, with graceful degradation in tests.
+4. **IPC Architecture:** All Python bridge classes (Module, DataStore, SessionManager, PayloadGenerator, DbManager, JobManager) now use IPC for consistency.
 
 ## Conclusion
 

@@ -15,8 +15,9 @@ async def call_client_method(
 ) -> Any:
     """Call a method on a client, handling both sync and async clients.
 
-    This function automatically detects if the client method returns a coroutine
-    (async client) or a direct result (sync client) and handles it appropriately.
+    This function automatically detects if the client method returns
+    a coroutine (async client) or a direct result (sync client) and
+    handles it appropriately.
 
     Always returns a coroutine that can be awaited, regardless of client type.
 

@@ -9,7 +9,6 @@ Note: This module now uses IPC to communicate with the MSF daemon.
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 from assassinate.ipc import MsfClient

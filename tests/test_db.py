@@ -164,7 +164,12 @@ class TestDbCreds:
         # First report the host and service
         await client.db_report_host({"host": "192.168.1.106"})
         await client.db_report_service(
-            {"host": "192.168.1.106", "port": "22", "proto": "tcp", "name": "ssh"}
+            {
+                "host": "192.168.1.106",
+                "port": "22",
+                "proto": "tcp",
+                "name": "ssh",
+            }
         )
 
         # Report a credential - MSF requires port for credential reporting
@@ -182,7 +187,12 @@ class TestDbCreds:
         """Test reporting a credential with additional details."""
         await client.db_report_host({"host": "192.168.1.107"})
         await client.db_report_service(
-            {"host": "192.168.1.107", "port": "443", "proto": "tcp", "name": "https"}
+            {
+                "host": "192.168.1.107",
+                "port": "443",
+                "proto": "tcp",
+                "name": "https",
+            }
         )
 
         # Note: service_name requires workspace to be explicitly set in MSF's report_cred

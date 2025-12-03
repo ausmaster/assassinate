@@ -6,7 +6,12 @@ vulnerabilities, etc.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
+
+from assassinate.bridge.client_utils import call_client_method
+
+if TYPE_CHECKING:
+    from assassinate.ipc.protocol import ClientProtocol
 
 
 class DbManager:
@@ -14,49 +19,56 @@ class DbManager:
 
     Provides access to hosts, services, vulnerabilities, credentials,
     and other database-stored information.
+
+    Now uses IPC for all operations.
     """
 
-    _instance: Any  # The underlying PyO3 DbManager instance
+    _client: ClientProtocol
 
-    def __init__(self, instance: Any) -> None:
-        """Initialize DbManager wrapper.
+    def __init__(self, client: ClientProtocol) -> None:
+        """Initialize DbManager instance.
 
         Args:
-            instance: PyO3 DbManager instance.
+            client: IPC client (MsfClient or SyncMsfClient) to use.
 
-        Note:
-            This is called internally via Framework.db().
+        Example:
+            >>> from assassinate.ipc import MsfClient
+            >>> client = MsfClient()
+            >>> await client.connect()
+            >>> db = DbManager(client)
         """
-        self._instance = instance
+        self._client = client
 
-    def hosts(self) -> list[str]:
+    async def hosts(self) -> list[str]:
         """Get all hosts from the database.
 
         Returns:
             List of host IP addresses.
 
         Example:
-            >>> db = fw.db()
-            >>> hosts = db.hosts()
+            >>> db = DbManager(client)
+            >>> hosts = await db.hosts()
             >>> print(f"Found {len(hosts)} hosts")
         """
-        return list(self._instance.hosts())
+        result = await call_client_method(self._client, "db_hosts")
+        return list(result)
 
-    def services(self) -> list[str]:
+    async def services(self) -> list[str]:
         """Get all services from the database.
 
         Returns:
             List of services.
 
         Example:
-            >>> db = fw.db()
-            >>> services = db.services()
+            >>> db = DbManager(client)
+            >>> services = await db.services()
             >>> for svc in services:
             ...     print(svc)
         """
-        return list(self._instance.services())
+        result = await call_client_method(self._client, "db_services")
+        return list(result)
 
-    def report_host(self, **opts: str) -> int:
+    async def report_host(self, **opts: str) -> int:
         """Report a host to the database.
 
         Args:
@@ -66,17 +78,18 @@ class DbManager:
             Host ID.
 
         Example:
-            >>> db = fw.db()
-            >>> host_id = db.report_host(
+            >>> db = DbManager(client)
+            >>> host_id = await db.report_host(
             ...     host="192.168.1.100",
             ...     os_name="Linux",
             ...     os_flavor="Ubuntu"
             ... )
             >>> print(f"Reported host with ID: {host_id}")
         """
-        return int(self._instance.report_host(opts))
+        result = await call_client_method(self._client, "db_report_host", opts)
+        return int(result)
 
-    def report_service(self, **opts: str) -> int:
+    async def report_service(self, **opts: str) -> int:
         """Report a service to the database.
 
         Args:
@@ -86,8 +99,8 @@ class DbManager:
             Service ID.
 
         Example:
-            >>> db = fw.db()
-            >>> svc_id = db.report_service(
+            >>> db = DbManager(client)
+            >>> svc_id = await db.report_service(
             ...     host="192.168.1.100",
             ...     port="22",
             ...     proto="tcp",
@@ -95,9 +108,12 @@ class DbManager:
             ... )
             >>> print(f"Reported service with ID: {svc_id}")
         """
-        return int(self._instance.report_service(opts))
+        result = await call_client_method(
+            self._client, "db_report_service", opts
+        )
+        return int(result)
 
-    def report_vuln(self, **opts: str) -> int:
+    async def report_vuln(self, **opts: str) -> int:
         """Report a vulnerability to the database.
 
         Args:
@@ -108,8 +124,8 @@ class DbManager:
             Vulnerability ID.
 
         Example:
-            >>> db = fw.db()
-            >>> vuln_id = db.report_vuln(
+            >>> db = DbManager(client)
+            >>> vuln_id = await db.report_vuln(
             ...     host="192.168.1.100",
             ...     name="CVE-2021-44228",
             ...     refs="CVE-2021-44228",
@@ -117,9 +133,10 @@ class DbManager:
             ... )
             >>> print(f"Reported vulnerability with ID: {vuln_id}")
         """
-        return int(self._instance.report_vuln(opts))
+        result = await call_client_method(self._client, "db_report_vuln", opts)
+        return int(result)
 
-    def report_cred(self, **opts: str) -> int:
+    async def report_cred(self, **opts: str) -> int:
         """Report a credential to the database.
 
         Args:
@@ -130,8 +147,8 @@ class DbManager:
             Credential ID.
 
         Example:
-            >>> db = fw.db()
-            >>> cred_id = db.report_cred(
+            >>> db = DbManager(client)
+            >>> cred_id = await db.report_cred(
             ...     origin_type="service",
             ...     address="192.168.1.100",
             ...     port="22",
@@ -140,47 +157,51 @@ class DbManager:
             ... )
             >>> print(f"Reported credential with ID: {cred_id}")
         """
-        return int(self._instance.report_cred(opts))
+        result = await call_client_method(self._client, "db_report_cred", opts)
+        return int(result)
 
-    def vulns(self) -> list[str]:
+    async def vulns(self) -> list[str]:
         """Get all vulnerabilities from the database.
 
         Returns:
             List of vulnerabilities.
 
         Example:
-            >>> db = fw.db()
-            >>> vulns = db.vulns()
+            >>> db = DbManager(client)
+            >>> vulns = await db.vulns()
             >>> print(f"Found {len(vulns)} vulnerabilities")
         """
-        return list(self._instance.vulns())
+        result = await call_client_method(self._client, "db_vulns")
+        return list(result)
 
-    def creds(self) -> list[str]:
+    async def creds(self) -> list[str]:
         """Get all credentials from the database.
 
         Returns:
             List of credentials.
 
         Example:
-            >>> db = fw.db()
-            >>> creds = db.creds()
+            >>> db = DbManager(client)
+            >>> creds = await db.creds()
             >>> for cred in creds:
             ...     print(cred)
         """
-        return list(self._instance.creds())
+        result = await call_client_method(self._client, "db_creds")
+        return list(result)
 
-    def loot(self) -> list[str]:
+    async def loot(self) -> list[str]:
         """Get all loot from the database.
 
         Returns:
             List of loot items.
 
         Example:
-            >>> db = fw.db()
-            >>> loot = db.loot()
+            >>> db = DbManager(client)
+            >>> loot = await db.loot()
             >>> print(f"Found {len(loot)} loot items")
         """
-        return list(self._instance.loot())
+        result = await call_client_method(self._client, "db_loot")
+        return list(result)
 
     def __repr__(self) -> str:
         """Return string representation of DbManager.

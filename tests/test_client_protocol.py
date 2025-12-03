@@ -29,7 +29,6 @@ class TestClientProtocol:
 
     def test_call_client_method_with_sync_client(self, daemon_process):
         """Test call_client_method with sync SyncMsfClient."""
-        import asyncio
 
         from assassinate.bridge.client_utils import call_client_method
         from assassinate.ipc.sync import SyncMsfClient
@@ -82,7 +81,6 @@ class TestClientProtocol:
 
     def test_module_with_sync_client(self, daemon_process):
         """Test Module class with sync SyncMsfClient."""
-        import asyncio
 
         from assassinate.bridge.modules import Module
         from assassinate.ipc.sync import SyncMsfClient
@@ -158,7 +156,6 @@ class TestClientProtocol:
 
     def test_module_info_with_sync_client(self, daemon_process):
         """Test Module info methods with sync client."""
-        import asyncio
 
         from assassinate.bridge.modules import Module
         from assassinate.ipc.sync import SyncMsfClient
@@ -220,7 +217,6 @@ class TestClientProtocol:
 
     def test_datastore_with_sync_client(self, daemon_process):
         """Test DataStore with sync client."""
-        import asyncio
 
         from assassinate.bridge.datastore import DataStore
         from assassinate.ipc.sync import SyncMsfClient
@@ -271,7 +267,6 @@ class TestClientProtocol:
 
     def test_module_datastore_with_sync_client(self, daemon_process):
         """Test Module-specific DataStore with sync client."""
-        import asyncio
 
         from assassinate.bridge.datastore import DataStore
         from assassinate.ipc.sync import SyncMsfClient
@@ -321,7 +316,6 @@ class TestClientProtocol:
 
     def test_call_client_method_sync_with_args(self, daemon_process):
         """Test call_client_method with sync client and arguments."""
-        import asyncio
 
         from assassinate.bridge.client_utils import call_client_method
         from assassinate.ipc.sync import SyncMsfClient
@@ -374,7 +368,6 @@ class TestClientProtocol:
 
     def test_module_options_operations_sync(self, daemon_process):
         """Test module option operations with sync client."""
-        import asyncio
 
         from assassinate.bridge.modules import Module
         from assassinate.ipc.sync import SyncMsfClient
@@ -460,7 +453,6 @@ class TestClientTypeDetection:
 
     def test_call_client_method_detects_sync(self, daemon_process):
         """Test that call_client_method detects sync client correctly."""
-        import asyncio
         import inspect
 
         from assassinate.bridge.client_utils import call_client_method

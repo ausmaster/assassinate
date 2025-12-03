@@ -1,37 +1,51 @@
 """Assassinate - Metasploit Framework Python interface.
 
 A modular exploitation framework providing Python access to the complete
-Metasploit Framework through a high-performance Rust FFI bridge.
+Metasploit Framework through a high-performance IPC architecture.
 
 This package provides:
 
-1. **Low-Level Bridge** (``assassinate.bridge``):
-   Direct access to MSF functionality with full control. Use when you need
-   low-level access or the high-level API doesn't provide what you need.
+1. **Sync API** (``assassinate.bridge``):
+   Synchronous interface for traditional Python code. Uses a background
+   thread to handle async operations transparently.
 
-2. **High-Level API** (coming soon):
-   Pythonic, convenient interface with context managers, better error
-   handling, and helper methods. Recommended for most use cases.
+2. **Async API** (``assassinate.bridge.async_api``):
+   Native async/await interface for async Python code. Provides best
+   performance when used in async contexts.
 
-Example:
-    Using the low-level bridge::
+Example (Sync):
+    Using the synchronous API::
 
         from assassinate.bridge import initialize, Framework
 
-        # Initialize MSF
-        initialize("/opt/metasploit-framework")
+        # Connect to MSF daemon
+        initialize()
 
         # Create framework and list exploits
         fw = Framework()
-        exploits = fw.list_modules("exploits")
+        exploits = fw.list_modules("exploit")
+        print(f"Available exploits: {len(exploits)}")
+
+Example (Async):
+    Using the async API::
+
+        from assassinate.bridge.async_api import initialize, AsyncFramework
+
+        # Connect to MSF daemon
+        await initialize()
+
+        # Create framework and list exploits
+        fw = AsyncFramework()
+        exploits = await fw.list_modules("exploit")
         print(f"Available exploits: {len(exploits)}")
 
 Attributes:
     __version__: Package version string.
 
 Note:
-    The Rust FFI bridge (assassinate_bridge) must be compiled before use.
-    See README.md for installation instructions.
+    Requires the assassinate daemon to be running. The daemon uses a Rust
+    FFI bridge to communicate with Metasploit Framework via shared memory IPC.
+    See README.md for daemon setup instructions.
 """
 
 from __future__ import annotations

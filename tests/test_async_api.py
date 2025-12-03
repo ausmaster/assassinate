@@ -585,14 +585,9 @@ class TestAsyncFramework:
         fw = AsyncFramework()
         fw._client = client
 
-        # PayloadGenerator requires Rust bridge which may not be compiled
-        # Just verify the method exists and doesn't crash when accessing
-        try:
-            pg = fw.payload_generator()
-            assert pg is not None
-        except ImportError:
-            # Rust bridge not compiled - skip this test
-            pytest.skip("Rust bridge not compiled")
+        # PayloadGenerator now uses IPC
+        pg = fw.payload_generator()
+        assert pg is not None
 
     async def test_async_framework_jobs(self, client):
         """Test getting jobs manager."""

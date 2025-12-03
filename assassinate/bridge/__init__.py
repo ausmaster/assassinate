@@ -21,7 +21,11 @@ There are TWO distinct APIs:
 
 2. **Async API** - For async code:
    ```python
-   from assassinate.bridge.async_api import initialize, AsyncFramework, get_version
+   from assassinate.bridge.async_api import (
+       initialize,
+       AsyncFramework,
+       get_version,
+   )
 
    await initialize()  # Connect to daemon
    version = await get_version()

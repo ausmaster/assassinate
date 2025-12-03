@@ -216,7 +216,7 @@ class TestSyncAPI:
             # If we get here, creation succeeded but it shouldn't have
             # Some invalid names might not raise immediately
             assert False, "Expected module creation to fail"
-        except Exception as e:
+        except Exception:
             # Should get some kind of error
             assert True
 
@@ -502,7 +502,6 @@ class TestSyncAPI:
 
     def test_sync_module_repr(self, daemon_process):
         """Test module __repr__."""
-        import asyncio
 
         from assassinate.bridge import Framework
 
