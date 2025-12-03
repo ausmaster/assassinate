@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://github.com/ausmaster/assassinate">
+    <img src="./docs/assassinate-logo.png" alt="Assassinate Logo" width="400">
+  </a>
+</p>
+
 # Assassinate
 
 [![Rust](https://img.shields.io/badge/rust-1.91+-FF8400)](https://www.rust-lang.org)
