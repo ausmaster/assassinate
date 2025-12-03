@@ -7,6 +7,7 @@ use std::ptr;
 
 /// Shared memory region
 pub struct SharedMemory {
+    #[allow(dead_code)] // Kept for debugging purposes
     name: String,
     size: usize,
     ptr: *mut u8,
@@ -32,7 +33,10 @@ impl SharedMemory {
         Self::open_shm(name, size)
     }
 
+    // Memfd functions kept for potential future use but currently unused
+    // We use POSIX shared memory for cross-language compatibility with Python
     #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
     fn create_memfd(name: &str, size: usize) -> Result<Self> {
         use memfd::MemfdOptions;
 
@@ -72,6 +76,7 @@ impl SharedMemory {
     }
 
     #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
     fn open_memfd(_name: &str, _size: usize) -> Result<Self> {
         // For memfd, we need file descriptor passing via Unix socket
         // This is a simplified version - full implementation would use SCM_RIGHTS
