@@ -1061,139 +1061,55 @@ impl DbManager {
         Ok(result)
     }
 
-    /// Report a host
+    /// Report a host to the database
+    ///
+    /// # Arguments
+    /// * `opts` - Optional HashMap with host parameters (e.g., "host", "os_name", "os_flavor")
+    ///
+    /// # Returns
+    /// Returns the host ID from the database
     pub fn report_host(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-
-        // Build options hash
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
-
-        if let Some(opts_map) = opts {
-            for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
-            }
-        }
-
-        let host_val = call_method(self.ruby_db, "report_host", &[opts_val])?;
-
-        // Get host ID
-        let id: i64 = TryConvert::try_convert(host_val).unwrap_or(0);
-        Ok(id)
+        self.report_to_db("report_host", opts)
     }
 
-    /// Report a service
+    /// Report a service to the database
+    ///
+    /// # Arguments
+    /// * `opts` - Optional HashMap with service parameters (e.g., "host", "port", "proto", "name")
+    ///
+    /// # Returns
+    /// Returns the service ID from the database
     pub fn report_service(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-
-        // Build options hash
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
-
-        if let Some(opts_map) = opts {
-            for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
-            }
-        }
-
-        let service_val = call_method(self.ruby_db, "report_service", &[opts_val])?;
-
-        // Get service ID
-        let id: i64 = TryConvert::try_convert(service_val).unwrap_or(0);
-        Ok(id)
+        self.report_to_db("report_service", opts)
     }
 
-    /// Report a vulnerability
+    /// Report a vulnerability to the database
+    ///
+    /// # Arguments
+    /// * `opts` - Optional HashMap with vulnerability parameters (e.g., "host", "name", "info")
+    ///
+    /// # Returns
+    /// Returns the vulnerability ID from the database
     pub fn report_vuln(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-
-        // Build options hash with symbol keys (MSF expects symbol keys like :host, not string keys)
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
-
-        if let Some(opts_map) = opts {
-            for (key, value) in opts_map {
-                // Convert string key to symbol
-                let key_sym = StaticSymbol::new(key);
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
-            }
-        }
-
-        let vuln_val = call_method(self.ruby_db, "report_vuln", &[opts_val])?;
-
-        // Get vuln ID
-        let id: i64 = TryConvert::try_convert(vuln_val).unwrap_or(0);
-        Ok(id)
+        self.report_to_db("report_vuln", opts)
     }
 
-    /// Report a credential
+    /// Report a credential to the database
+    ///
+    /// This method automatically handles workspace injection via the ASSASSINATE_WORKSPACE
+    /// environment variable (defaults to "default"). The workspace is found or created
+    /// automatically, ensuring the credential is always reported in a valid workspace context.
+    ///
+    /// # Arguments
+    /// * `opts` - Optional HashMap with credential parameters (e.g., "host", "port", "user", "pass")
+    ///
+    /// # Returns
+    /// Returns the credential ID from the database
+    ///
+    /// # Environment Variables
+    /// * `ASSASSINATE_WORKSPACE` - Workspace name to use (defaults to "default" if not set)
     pub fn report_cred(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-
-        // Build options hash with symbol keys (MSF expects symbol keys like :host, not string keys)
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
-
-        if let Some(opts_map) = opts {
-            for (key, value) in opts_map {
-                // Convert string key to symbol
-                let key_sym = StaticSymbol::new(key);
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
-            }
-        }
-
-        // MSF requires :workspace for report_cred
-        // Per Msf::Util::DBManager.process_opts_workspace, workspace can be:
-        // - A String (workspace name)
-        // - An Mdm::Workspace object
-        // - A Hash with :name key
-        // Use ASSASSINATE_WORKSPACE env var or default to "default"
-        let workspace_name =
-            std::env::var("ASSASSINATE_WORKSPACE").unwrap_or_else(|_| "default".to_string());
-
-        // Ensure workspace exists by finding or creating it
-        let mut workspace_obj = call_method(
-            self.ruby_db,
-            "find_workspace",
-            &[ruby.str_new(&workspace_name).as_value()],
-        )?;
-
-        // If workspace doesn't exist, create it
-        if is_nil(workspace_obj) {
-            let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
-                AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-            })?;
-            let name_sym = StaticSymbol::new("name");
-            call_method(
-                add_opts,
-                "[]=",
-                &[
-                    name_sym.as_value(),
-                    ruby.str_new(&workspace_name).as_value(),
-                ],
-            )?;
-            workspace_obj = call_method(self.ruby_db, "add_workspace", &[add_opts])?;
-        }
-
-        // Now pass the workspace object to report_cred (not the string)
-        let workspace_sym = StaticSymbol::new("workspace");
-        call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace_obj])?;
-
-        let cred_val = call_method(self.ruby_db, "report_cred", &[opts_val])?;
-
-        // Get cred ID
-        let id: i64 = TryConvert::try_convert(cred_val).unwrap_or(0);
-        Ok(id)
+        self.report_to_db("report_cred", opts)
     }
 
     /// Get all vulnerabilities
@@ -1267,6 +1183,21 @@ impl DbManager {
     }
 
     /// Helper function to report to database (reduces code duplication)
+    ///
+    /// This unified helper handles all database reporting operations and automatically
+    /// injects workspace context for methods that require it (like report_cred).
+    ///
+    /// # Arguments
+    /// * `method_name` - The MSF database method to call (e.g., "report_host", "report_cred")
+    /// * `opts` - Optional HashMap of parameters to pass to the method
+    ///
+    /// # Workspace Handling
+    /// For `report_cred`, this method automatically:
+    /// 1. Reads ASSASSINATE_WORKSPACE environment variable (defaults to "default")
+    /// 2. Finds or creates the workspace using find_workspace/add_workspace
+    /// 3. Injects the workspace object into the options hash
+    ///
+    /// This ensures report_cred always has a valid workspace context, which MSF requires.
     fn report_to_db(
         &self,
         method_name: &str,
@@ -1288,29 +1219,49 @@ impl DbManager {
             }
         }
 
+        // Special handling for report_cred: MSF requires :workspace parameter
+        // See: https://github.com/rapid7/metasploit-framework/blob/master/lib/msf/core/db_manager/cred.rb
+        // Per Msf::Util::DBManager.process_opts_workspace, workspace can be:
+        // - A String (workspace name) - but this is less reliable
+        // - An Mdm::Workspace object - recommended approach
+        // - A Hash with :name key
+        if method_name == "report_cred" {
+            // Get workspace name from environment or use default
+            let workspace_name =
+                std::env::var("ASSASSINATE_WORKSPACE").unwrap_or_else(|_| "default".to_string());
+
+            // Find existing workspace
+            let mut workspace_obj = call_method(
+                self.ruby_db,
+                "find_workspace",
+                &[ruby.str_new(&workspace_name).as_value()],
+            )?;
+
+            // If workspace doesn't exist, create it
+            if is_nil(workspace_obj) {
+                let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
+                    AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+                })?;
+                let name_sym = StaticSymbol::new("name");
+                call_method(
+                    add_opts,
+                    "[]=",
+                    &[
+                        name_sym.as_value(),
+                        ruby.str_new(&workspace_name).as_value(),
+                    ],
+                )?;
+                workspace_obj = call_method(self.ruby_db, "add_workspace", &[add_opts])?;
+            }
+
+            // Inject workspace object into options hash
+            let workspace_sym = StaticSymbol::new("workspace");
+            call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace_obj])?;
+        }
+
         let result_val = call_method(self.ruby_db, method_name, &[opts_val])?;
         let id: i64 = TryConvert::try_convert(result_val).unwrap_or(0);
         Ok(id)
-    }
-
-    /// Report a host (raw version without PyO3)
-    pub fn report_host_raw(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        self.report_to_db("report_host", opts)
-    }
-
-    /// Report a service (raw version without PyO3)
-    pub fn report_service_raw(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        self.report_to_db("report_service", opts)
-    }
-
-    /// Report a vulnerability (raw version without PyO3)
-    pub fn report_vuln_raw(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        self.report_to_db("report_vuln", opts)
-    }
-
-    /// Report a credential (raw version without PyO3)
-    pub fn report_cred_raw(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
-        self.report_to_db("report_cred", opts)
     }
 
     pub fn __repr__(&self) -> Result<String> {

@@ -636,25 +636,25 @@ impl Daemon {
 
             "db_report_host" => {
                 let db = self.framework.db()?;
-                let host_id = db.report_host_raw(parse_options(_args.get(0)))?;
+                let host_id = db.report_host(parse_options(_args.get(0)))?;
                 Ok(serde_json::json!({ "host_id": host_id }))
             }
 
             "db_report_service" => {
                 let db = self.framework.db()?;
-                let service_id = db.report_service_raw(parse_options(_args.get(0)))?;
+                let service_id = db.report_service(parse_options(_args.get(0)))?;
                 Ok(serde_json::json!({ "service_id": service_id }))
             }
 
             "db_report_vuln" => {
                 let db = self.framework.db()?;
-                let vuln_id = db.report_vuln_raw(parse_options(_args.get(0)))?;
+                let vuln_id = db.report_vuln(parse_options(_args.get(0)))?;
                 Ok(serde_json::json!({ "vuln_id": vuln_id }))
             }
 
             "db_report_cred" => {
                 let db = self.framework.db()?;
-                let cred_id = db.report_cred_raw(parse_options(_args.get(0)))?;
+                let cred_id = db.report_cred(parse_options(_args.get(0)))?;
                 Ok(serde_json::json!({ "cred_id": cred_id }))
             }
 
