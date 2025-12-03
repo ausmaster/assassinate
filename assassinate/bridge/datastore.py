@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from assassinate.bridge.client_utils import call_client_method
+
 if TYPE_CHECKING:
-    from assassinate.ipc.client import MsfClient
+    from assassinate.ipc.protocol import ClientProtocol
 
 
 class DataStore:
@@ -23,11 +25,13 @@ class DataStore:
         All methods are async since they use IPC.
     """
 
-    def __init__(self, client: MsfClient, module_id: str | None = None) -> None:
+    def __init__(
+        self, client: ClientProtocol, module_id: str | None = None
+    ) -> None:
         """Initialize DataStore wrapper.
 
         Args:
-            client: Connected MsfClient instance.
+            client: Connected client instance (MsfClient or SyncMsfClient).
             module_id: Optional module ID for module-specific datastore.
                       If None, uses framework global datastore.
 
@@ -55,10 +59,14 @@ class DataStore:
         """
         if self._module_id:
             # Module-specific datastore
-            return await self._client.module_get_option(self._module_id, key)
+            return await call_client_method(
+                self._client, "module_get_option", self._module_id, key
+            )
         else:
             # Framework global datastore
-            return await self._client.framework_get_option(key)
+            return await call_client_method(
+                self._client, "framework_get_option", key
+            )
 
     async def set(self, key: str, value: str) -> None:
         """Set value by key.
@@ -74,10 +82,14 @@ class DataStore:
         """
         if self._module_id:
             # Module-specific datastore
-            await self._client.module_set_option(self._module_id, key, value)
+            await call_client_method(
+                self._client, "module_set_option", self._module_id, key, value
+            )
         else:
             # Framework global datastore
-            await self._client.framework_set_option(key, value)
+            await call_client_method(
+                self._client, "framework_set_option", key, value
+            )
 
     async def to_dict(self) -> dict[str, str]:
         """Convert datastore to a dictionary.
@@ -93,9 +105,13 @@ class DataStore:
             {'RHOSTS': '192.168.1.100', 'RPORT': '21'}
         """
         if self._module_id:
-            return await self._client.module_datastore_to_dict(self._module_id)
+            return await call_client_method(
+                self._client, "module_datastore_to_dict", self._module_id
+            )
         else:
-            return await self._client.framework_datastore_to_dict()
+            return await call_client_method(
+                self._client, "framework_datastore_to_dict"
+            )
 
     async def delete(self, key: str) -> None:
         """Delete a key from the datastore.
@@ -111,9 +127,13 @@ class DataStore:
             None
         """
         if self._module_id:
-            await self._client.module_delete_option(self._module_id, key)
+            await call_client_method(
+                self._client, "module_delete_option", self._module_id, key
+            )
         else:
-            await self._client.framework_delete_option(key)
+            await call_client_method(
+                self._client, "framework_delete_option", key
+            )
 
     async def keys(self) -> list[str]:
         """Get all keys in the datastore.
@@ -142,9 +162,11 @@ class DataStore:
             {}
         """
         if self._module_id:
-            await self._client.module_clear_datastore(self._module_id)
+            await call_client_method(
+                self._client, "module_clear_datastore", self._module_id
+            )
         else:
-            await self._client.framework_clear_datastore()
+            await call_client_method(self._client, "framework_clear_datastore")
 
     def __repr__(self) -> str:
         """Return string representation of DataStore.

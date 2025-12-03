@@ -13,6 +13,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from assassinate.ipc import MsfClient
+from assassinate.ipc.sync import SyncMsfClient
 
 if TYPE_CHECKING:
     from assassinate.bridge.datastore import DataStore
@@ -22,85 +23,51 @@ if TYPE_CHECKING:
     from assassinate.bridge.payloads import PayloadGenerator
     from assassinate.bridge.sessions import SessionManager
 
-# Global IPC client - initialized on first use
-_client: MsfClient | None = None
+# Global async IPC client - for async usage
+_async_client: MsfClient | None = None
+
+# Global sync IPC client - for sync usage
+_sync_client: SyncMsfClient | None = None
 
 
 async def _get_client_async() -> MsfClient:
-    """Get or create the global IPC client (async version)."""
-    global _client
-    if _client is None:
-        _client = MsfClient()
-        await _client.connect()
-    return _client
+    """Get or create the global async IPC client."""
+    global _async_client
+    if _async_client is None:
+        _async_client = MsfClient()
+        await _async_client.connect()
+    return _async_client
 
 
-def _get_client() -> MsfClient:
-    """Get or create the global IPC client (sync wrapper)."""
-    global _client
-    if _client is None:
-        _client = MsfClient()
-        # Try to connect
-        try:
-            asyncio.get_running_loop()
-            # If there's a running loop, we're in async context
-            # Return unconnected client - user should call initialize_async()
-            raise RuntimeError(
-                "Cannot call initialize() from async context. "
-                "Use 'await initialize_async()' instead."
-            )
-        except RuntimeError as e:
-            if "no running event loop" in str(e):
-                # No running loop - safe to use asyncio.run()
-                asyncio.run(_client.connect())
-            else:
-                raise
-    return _client
-
-
-def _run_async(coro):
-    """Helper to run async code synchronously."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If event loop is already running, we need to use a
-            # different approach
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result()
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        # No event loop, create one
-        return asyncio.run(coro)
+def _get_sync_client() -> SyncMsfClient:
+    """Get or create the global sync IPC client."""
+    global _sync_client
+    if _sync_client is None:
+        _sync_client = SyncMsfClient()
+        _sync_client.connect()
+    return _sync_client
 
 
 def initialize(msf_path: str | None = None) -> None:
     """Initialize connection to the Metasploit Framework daemon.
 
-    Sync version.
+    Sync version - uses a background thread to run the event loop.
 
     Note: With IPC architecture, this just establishes the connection
           to the daemon. The daemon itself must be started separately
           with the MSF path.
-
-          DO NOT call from async context - use initialize_async()
-          instead.
 
     Args:
         msf_path: Deprecated - MSF path is configured in the daemon.
                   Kept for API compatibility.
 
     Raises:
-        RuntimeError: If connection to daemon fails or called from
-                      async context.
+        RuntimeError: If connection to daemon fails.
 
     Example:
         >>> initialize()  # Connect to running daemon
     """
-    _get_client()
+    _get_sync_client()
 
 
 async def initialize_async(msf_path: str | None = None) -> None:
@@ -142,8 +109,8 @@ def get_version() -> str:
         >>> print(f"MSF Version: {version}")
         MSF Version: 6.4.28-dev
     """
-    client = _get_client()
-    result = _run_async(client.framework_version())
+    client = _get_sync_client()
+    result = client.framework_version()
     return result.get("version", "unknown")
 
 
@@ -163,7 +130,7 @@ class Framework:
         6.4.28-dev
     """
 
-    _client: MsfClient
+    _client: SyncMsfClient
 
     def __init__(self) -> None:
         """Initialize Framework instance.
@@ -174,7 +141,7 @@ class Framework:
         Example:
             >>> fw = Framework()
         """
-        self._client = _get_client()
+        self._client = _get_sync_client()
 
     def version(self) -> str:
         """Get MSF version.
@@ -187,7 +154,7 @@ class Framework:
             >>> print(fw.version())
             6.4.28-dev
         """
-        result = _run_async(self._client.framework_version())
+        result = self._client.framework_version()
         return result.get("version", "unknown")
 
     def list_modules(self, module_type: str) -> list[str]:
@@ -211,7 +178,7 @@ class Framework:
             >>> print(f"Found {len(exploits)} exploits")
             Found 2575 exploits
         """
-        return _run_async(self._client.list_modules(module_type))
+        return self._client.list_modules(module_type)
 
     def create_module(self, module_name: str) -> Module:
         """Create a module instance by name.
@@ -239,7 +206,7 @@ class Framework:
         from assassinate.bridge.modules import Module
 
         # Create module via IPC and get its ID
-        module_id = _run_async(self._client.create_module(module_name))
+        module_id = self._client.create_module(module_name)
         return Module(module_id, self._client)
 
     def datastore(self) -> DataStore:
@@ -324,7 +291,7 @@ class Framework:
             ...     print(module)
             exploit/unix/ftp/vsftpd_234_backdoor
         """
-        return _run_async(self._client.search(query))
+        return self._client.search(query)
 
     def jobs(self) -> JobManager:
         """Get jobs manager.
@@ -353,7 +320,7 @@ class Framework:
             >>> num_threads = fw.threads()
             >>> print(f"Framework threads: {num_threads}")
         """
-        return _run_async(self._client.threads())
+        return self._client.threads()
 
     def threads_enabled(self) -> bool:
         """Check if framework has threads configured.
@@ -367,7 +334,7 @@ class Framework:
             ...     print("Threading is enabled")
         """
         # For IPC, assume threads are enabled if we can get a thread count
-        threads = _run_async(self._client.threads())
+        threads = self._client.threads()
         return threads > 0
 
     def __repr__(self) -> str:

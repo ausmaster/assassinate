@@ -8,8 +8,10 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+from assassinate.bridge.client_utils import call_client_method
+
 if TYPE_CHECKING:
-    from assassinate.ipc import MsfClient
+    from assassinate.ipc.protocol import ClientProtocol
 
 
 def _run_async(coro):
@@ -34,13 +36,13 @@ class SessionManager:
     Provides access to established sessions from successful exploits.
     """
 
-    _client: MsfClient
+    _client: ClientProtocol
 
-    def __init__(self, client: MsfClient) -> None:
+    def __init__(self, client: ClientProtocol) -> None:
         """Initialize SessionManager with IPC client.
 
         Args:
-            client: IPC client for communication with daemon.
+            client: Connected client instance (MsfClient or SyncMsfClient).
 
         Note:
             This is called internally via Framework.sessions().
@@ -59,7 +61,7 @@ class SessionManager:
             >>> print(f"Active sessions: {session_ids}")
             Active sessions: [1, 2]
         """
-        return _run_async(self._client.list_sessions())
+        return _run_async(call_client_method(self._client, "list_sessions"))
 
     def get(self, session_id: int) -> Session | None:
         """Get session by ID.
@@ -126,14 +128,14 @@ class Session:
     """
 
     _session_id: int
-    _client: MsfClient
+    _client: ClientProtocol
 
-    def __init__(self, session_id: int, client: MsfClient) -> None:
+    def __init__(self, session_id: int, client: ClientProtocol) -> None:
         """Initialize Session wrapper.
 
         Args:
             session_id: Session ID number.
-            client: IPC client for communication.
+            client: Connected client instance (MsfClient or SyncMsfClient).
 
         Note:
             This is called internally via SessionManager.get().
