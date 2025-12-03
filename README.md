@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/ausmaster/assassinate">
-    <img src="./docs/assassinate-logo.png" alt="Assassinate Logo" width="400">
+    <img src="./logo.png" alt="Assassinate Logo" width="400">
   </a>
 </p>
 
