@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from assassinate.bridge.client_utils import call_client_method
+from python.bridge.client_utils import call_client_method
 
 if TYPE_CHECKING:
-    from assassinate.ipc.protocol import ClientProtocol
+    from python.ipc.protocol import ClientProtocol
 
 
 class DataStore:

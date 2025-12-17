@@ -10,7 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import msgpack
 
-from assassinate.ipc.errors import DeserializationError, SerializationError
+from .errors import DeserializationError, SerializationError
 
 
 @runtime_checkable
@@ -88,7 +88,7 @@ def is_async_client(client: ClientProtocol) -> bool:
         True if client is async (MsfClient), False if sync (SyncMsfClient)
     """
     # Import here to avoid circular dependency
-    from assassinate.ipc.client import MsfClient
+    from python.ipc.client import MsfClient
 
     return isinstance(client, MsfClient)
 

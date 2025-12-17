@@ -14,7 +14,7 @@ Example:
     Basic usage::
 
         import asyncio
-        from assassinate.ipc import MsfClient
+        from python.ipc import MsfClient
 
         async def main():
             # Connect to daemon
@@ -34,5 +34,5 @@ from __future__ import annotations
 
 __all__ = ["MsfClient", "IpcError"]
 
-from assassinate.ipc.client import MsfClient
-from assassinate.ipc.errors import IpcError
+from python.ipc.client import MsfClient
+from python.ipc.errors import IpcError

@@ -16,7 +16,7 @@ This package provides:
 Example (Sync):
     Using the synchronous API::
 
-        from assassinate.bridge import initialize, Framework
+        from python.bridge import initialize, Framework
 
         # Connect to MSF daemon
         initialize()
@@ -29,7 +29,7 @@ Example (Sync):
 Example (Async):
     Using the async API::
 
-        from assassinate.bridge.async_api import initialize, AsyncFramework
+        from python.bridge.async_api import initialize, AsyncFramework
 
         # Connect to MSF daemon
         await initialize()
@@ -56,11 +56,11 @@ __version__ = "0.1.0"
 __all__ = ["bridge", "setup_logging"]
 
 # Re-export bridge module for easy access
-from assassinate import bridge
+from python import bridge
 
 # Setup logging with default configuration
 # Can be overridden by calling setup_logging() with custom parameters
-from assassinate.logging import setup_logging
+from python.log_config import setup_logging
 
 # Setup default logging based on environment variables
 log_level = os.getenv("ASSASSINATE_LOG_LEVEL", "WARNING")

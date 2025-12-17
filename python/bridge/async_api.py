@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from assassinate.ipc import MsfClient
+from python.ipc import MsfClient
 
 if TYPE_CHECKING:
-    from assassinate.bridge.datastore import DataStore
-    from assassinate.bridge.db import DbManager
-    from assassinate.bridge.jobs import JobManager
-    from assassinate.bridge.modules import Module
-    from assassinate.bridge.payloads import PayloadGenerator
-    from assassinate.bridge.sessions import SessionManager
+    from python.bridge.datastore import DataStore
+    from python.bridge.db import DbManager
+    from python.bridge.jobs import JobManager
+    from python.bridge.modules import Module
+    from python.bridge.payloads import PayloadGenerator
+    from python.bridge.sessions import SessionManager
 
 # Global async client - initialized on first use
 _client: MsfClient | None = None
@@ -126,7 +126,7 @@ class AsyncFramework:
         Returns:
             Module instance.
         """
-        from assassinate.bridge.modules import Module
+        from python.bridge.modules import Module
 
         client = self._ensure_initialized()
         module_id = await client.create_module(module_name)
@@ -138,7 +138,7 @@ class AsyncFramework:
         Returns:
             Global DataStore instance.
         """
-        from assassinate.bridge.datastore import DataStore
+        from python.bridge.datastore import DataStore
 
         client = self._ensure_initialized()
         return DataStore(client)
@@ -149,7 +149,7 @@ class AsyncFramework:
         Returns:
             SessionManager instance.
         """
-        from assassinate.bridge.sessions import SessionManager
+        from python.bridge.sessions import SessionManager
 
         client = self._ensure_initialized()
         return SessionManager(client)
@@ -160,7 +160,7 @@ class AsyncFramework:
         Returns:
             PayloadGenerator instance.
         """
-        from assassinate.bridge.payloads import PayloadGenerator
+        from python.bridge.payloads import PayloadGenerator
 
         client = self._ensure_initialized()
         return PayloadGenerator(client)
@@ -171,7 +171,7 @@ class AsyncFramework:
         Returns:
             DbManager instance.
         """
-        from assassinate.bridge.db import DbManager
+        from python.bridge.db import DbManager
 
         client = self._ensure_initialized()
         return DbManager(client)
@@ -194,7 +194,7 @@ class AsyncFramework:
         Returns:
             JobManager instance.
         """
-        from assassinate.bridge.jobs import JobManager
+        from python.bridge.jobs import JobManager
 
         client = self._ensure_initialized()
         return JobManager(client)

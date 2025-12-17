@@ -10,7 +10,7 @@ There are TWO distinct APIs:
 
 1. **Sync API** (default) - For synchronous code:
    ```python
-   from assassinate.bridge import initialize, Framework, get_version
+   from python.bridge import initialize, Framework, get_version
 
    initialize()  # Connect to daemon
    version = get_version()
@@ -21,7 +21,7 @@ There are TWO distinct APIs:
 
 2. **Async API** - For async code:
    ```python
-   from assassinate.bridge.async_api import (
+   from python.bridge.async_api import (
        initialize,
        AsyncFramework,
        get_version,
@@ -67,11 +67,11 @@ Status:
 
 from __future__ import annotations
 
-from assassinate.bridge.modules import Module
-from assassinate.bridge.sessions import Session, SessionManager
+from .modules import Module
+from .sessions import Session, SessionManager
 
 # Default export: Sync API
-from assassinate.bridge.sync_api import (
+from .sync_api import (
     Framework,
     get_version,
     initialize,

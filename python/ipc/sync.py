@@ -9,7 +9,7 @@ import atexit
 import threading
 from typing import Any
 
-from assassinate.ipc.client import MsfClient
+from .client import MsfClient
 
 
 class SyncMsfClient:

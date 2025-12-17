@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from assassinate.ipc.errors import BufferEmptyError, RemoteError, TimeoutError
-from assassinate.ipc.protocol import deserialize_response, serialize_call
-from assassinate.ipc.shm import RingBuffer
-from assassinate.logging import PerformanceLogger, current_call_id, get_logger
+from ..log_config import PerformanceLogger, current_call_id, get_logger
+from .errors import BufferEmptyError, RemoteError, TimeoutError
+from .protocol import deserialize_response, serialize_call
+from .shm import RingBuffer
 
 logger = get_logger("ipc.client")
 

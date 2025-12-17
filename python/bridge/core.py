@@ -11,16 +11,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from assassinate.ipc import MsfClient
-from assassinate.ipc.sync import SyncMsfClient
+from python.ipc import MsfClient
+from python.ipc.sync import SyncMsfClient
 
 if TYPE_CHECKING:
-    from assassinate.bridge.datastore import DataStore
-    from assassinate.bridge.db import DbManager
-    from assassinate.bridge.jobs import JobManager
-    from assassinate.bridge.modules import Module
-    from assassinate.bridge.payloads import PayloadGenerator
-    from assassinate.bridge.sessions import SessionManager
+    from python.bridge.datastore import DataStore
+    from python.bridge.db import DbManager
+    from python.bridge.jobs import JobManager
+    from python.bridge.modules import Module
+    from python.bridge.payloads import PayloadGenerator
+    from python.bridge.sessions import SessionManager
 
 # Global async IPC client - for async usage
 _async_client: MsfClient | None = None
@@ -202,7 +202,7 @@ class Framework:
             vsftpd_234_backdoor
         """
         # Import here to avoid circular dependency
-        from assassinate.bridge.modules import Module
+        from python.bridge.modules import Module
 
         # Create module via IPC and get its ID
         module_id = self._client.create_module(module_name)
@@ -222,7 +222,7 @@ class Framework:
             >>> ds.set("WORKSPACE", "default")
         """
         # Import here to avoid circular dependency
-        from assassinate.bridge.datastore import DataStore
+        from python.bridge.datastore import DataStore
 
         return DataStore(self._client)
 
@@ -238,7 +238,7 @@ class Framework:
             >>> session_ids = sm.list()
         """
         # Import here to avoid circular dependency
-        from assassinate.bridge.sessions import SessionManager
+        from python.bridge.sessions import SessionManager
 
         return SessionManager(self._client)
 
@@ -254,7 +254,7 @@ class Framework:
             >>> payloads = pg.list_payloads()
         """
         # Import here to avoid circular dependency
-        from assassinate.bridge.payloads import PayloadGenerator
+        from python.bridge.payloads import PayloadGenerator
 
         return PayloadGenerator(self._client)
 
@@ -270,7 +270,7 @@ class Framework:
             >>> hosts = db.hosts()
         """
         # Import here to avoid circular dependency
-        from assassinate.bridge.db import DbManager
+        from python.bridge.db import DbManager
 
         return DbManager(self._client)
 
@@ -304,7 +304,7 @@ class Framework:
             >>> job_ids = jm.list()
         """
         # Import here to avoid circular dependency
-        from assassinate.bridge.jobs import JobManager
+        from python.bridge.jobs import JobManager
 
         return JobManager(self._client)
 

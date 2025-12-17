@@ -7,7 +7,7 @@ or SyncMsfClient transparently.
 import inspect
 from typing import Any
 
-from assassinate.ipc.protocol import ClientProtocol
+from python.ipc.protocol import ClientProtocol
 
 
 async def call_client_method(

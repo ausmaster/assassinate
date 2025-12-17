@@ -10,7 +10,7 @@ import mmap
 import os
 import struct
 
-from assassinate.ipc.errors import BufferEmptyError, BufferFullError, IpcError
+from .errors import BufferEmptyError, BufferFullError, IpcError
 
 
 class RingBuffer:
