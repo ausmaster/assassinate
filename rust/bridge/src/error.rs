@@ -41,6 +41,9 @@ pub enum AssassinateError {
     #[error("Type conversion error: {0}")]
     ConversionError(String),
 
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

@@ -1166,6 +1166,32 @@ impl Daemon {
                 Ok(serde_json::json!({ "value": session.net_get_proxy_config()? }))
             }),
 
+            // === Shell Session Operations (Non-Meterpreter) ===
+            "session_shell_read" => self.with_session(&_args, |session| {
+                let output = session.shell_read()?;
+                Ok(serde_json::json!({ "output": output }))
+            }),
+
+            "session_shell_write" => {
+                let data = get_str_arg(&_args, 1, "data")?;
+                self.with_session(&_args, |session| {
+                    let bytes_written = session.shell_write(data)?;
+                    Ok(serde_json::json!({ "bytes_written": bytes_written }))
+                })
+            },
+
+            "session_shell_to_meterpreter" => {
+                let lhost = get_str_arg(&_args, 1, "lhost")?;
+                let lport = _args
+                    .get(2)
+                    .and_then(|v| v.as_u64())
+                    .context("Missing lport")? as u16;
+                self.with_session(&_args, |session| {
+                    let success = session.shell_to_meterpreter(lhost, lport)?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
             // === Module Execution ===
             "module_exploit" => {
                 let module_id = _args

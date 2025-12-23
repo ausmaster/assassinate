@@ -1528,3 +1528,59 @@ class MsfClient:
         """
         result = await self._call("session_net_get_proxy_config", session_id)
         return result["value"]
+
+    # ========== Shell Session Operations (Non-Meterpreter) ==========
+
+    async def session_shell_read(self, session_id: int) -> str:
+        """Read output from shell session (non-Meterpreter).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Output from shell session
+
+        Example:
+            output = await client.session_shell_read(1)
+            print(f"Shell output: {output}")
+        """
+        result = await self._call("session_shell_read", session_id)
+        return result["output"]
+
+    async def session_shell_write(self, session_id: int, data: str) -> int:
+        """Write input to shell session (non-Meterpreter).
+
+        Args:
+            session_id: Session ID
+            data: Data to write to shell
+
+        Returns:
+            Number of bytes written
+
+        Example:
+            bytes_written = await client.session_shell_write(1, "whoami\\n")
+            print(f"Wrote {bytes_written} bytes")
+        """
+        result = await self._call("session_shell_write", session_id, data)
+        return result["bytes_written"]
+
+    async def session_shell_to_meterpreter(
+        self, session_id: int, lhost: str, lport: int
+    ) -> bool:
+        """Upgrade shell session to Meterpreter.
+
+        Args:
+            session_id: Session ID
+            lhost: Local host IP for reverse connection
+            lport: Local port for reverse connection
+
+        Returns:
+            True if upgrade was initiated successfully
+
+        Example:
+            success = await client.session_shell_to_meterpreter(1, "192.168.1.10", 4444)
+            if success:
+                print("Shell upgrade initiated")
+        """
+        result = await self._call("session_shell_to_meterpreter", session_id, lhost, lport)
+        return result["success"]

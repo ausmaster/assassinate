@@ -135,3 +135,8 @@ docker/test/
 docs/
 test_phase1_modules.py
 test_python_ruby_poc.py
+
+# Claude Code local notes (developer-specific)
+
+# Claude Code documentation (developer-specific)
+CLAUDE.local.md

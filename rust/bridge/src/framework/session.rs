@@ -232,6 +232,72 @@ impl Session {
         ))
     }
 
+    // ========== Shell Session Operations ==========
+
+    /// Read output from shell session
+    /// Only works for command shell sessions (not Meterpreter)
+    pub fn shell_read(&self) -> Result<String> {
+        let result = call_method(self.ruby_session, "shell_read", &[])?;
+
+        if is_nil(result) {
+            Ok(String::new())
+        } else {
+            Ok(value_to_string(result)?)
+        }
+    }
+
+    /// Write input to shell session
+    /// Only works for command shell sessions (not Meterpreter)
+    /// Returns number of bytes written
+    pub fn shell_write(&self, data: &str) -> Result<usize> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let data_val = ruby.str_new(data).as_value();
+
+        let result = call_method(self.ruby_session, "shell_write", &[data_val])?;
+
+        // Try to convert to integer (bytes written)
+        let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
+
+        Ok(bytes_written as usize)
+    }
+
+    /// Upgrade shell session to Meterpreter
+    /// This runs the post/multi/manage/shell_to_meterpreter module
+    /// Only works for command shell sessions
+    pub fn shell_to_meterpreter(&self, lhost: &str, lport: u16) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Get exploit_datastore
+        let exploit_ds = call_method(self.ruby_session, "exploit_datastore", &[])?;
+
+        // Set LHOST
+        call_method(
+            exploit_ds,
+            "[]=",
+            &[
+                ruby.str_new("LHOST").as_value(),
+                ruby.str_new(lhost).as_value(),
+            ],
+        )?;
+
+        // Set LPORT
+        call_method(
+            exploit_ds,
+            "[]=",
+            &[
+                ruby.str_new("LPORT").as_value(),
+                ruby.integer_from_i64(lport as i64).as_value(),
+            ],
+        )?;
+
+        // Execute the shell_to_meterpreter post module
+        let script_path = ruby.str_new("post/multi/manage/shell_to_meterpreter").as_value();
+        match call_method(self.ruby_session, "execute_script", &[script_path]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
     // ========== Meterpreter Extension Helpers (DRY) ==========
 
     /// Get the fs extension object (caches fs access pattern)
