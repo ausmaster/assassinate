@@ -802,7 +802,7 @@ impl Daemon {
                     .and_then(|v| v.as_str())
                     .context("Missing job_id")?;
                 let jobs = self.framework.jobs()?;
-                let job_info = jobs.get_raw(job_id)?;
+                let job_info = jobs.get(job_id)?;
                 Ok(serde_json::json!({ "job_info": job_info }))
             }
 
@@ -812,14 +812,14 @@ impl Daemon {
                     .and_then(|v| v.as_str())
                     .context("Missing job_id")?;
                 let jobs = self.framework.jobs()?;
-                let success = jobs.kill_raw(job_id)?;
+                let success = jobs.kill(job_id)?;
                 Ok(serde_json::json!({ "success": success }))
             }
 
             // === Plugin Manager Operations ===
             "plugins_list" => {
                 let plugins = self.framework.plugins()?;
-                let plugin_names = plugins.list_raw()?;
+                let plugin_names = plugins.list()?;
                 Ok(serde_json::json!({ "plugins": plugin_names }))
             }
 
@@ -831,7 +831,7 @@ impl Daemon {
                 let options = parse_options(_args.get(1));
 
                 let plugins = self.framework.plugins()?;
-                let plugin_name = plugins.load_raw(path, options)?;
+                let plugin_name = plugins.load(path, options)?;
                 Ok(serde_json::json!({ "plugin_name": plugin_name }))
             }
 
@@ -841,7 +841,7 @@ impl Daemon {
                     .and_then(|v| v.as_str())
                     .context("Missing plugin_name")?;
                 let plugins = self.framework.plugins()?;
-                let success = plugins.unload_raw(plugin_name)?;
+                let success = plugins.unload(plugin_name)?;
                 Ok(serde_json::json!({ "success": success }))
             }
 
@@ -875,7 +875,7 @@ impl Daemon {
                     .and_then(|v| v.as_i64())
                     .context("Missing session_id")?;
                 let sessions = self.framework.sessions()?;
-                let success = sessions.kill_raw(session_id)?;
+                let success = sessions.kill(session_id)?;
                 Ok(serde_json::json!({ "success": success }))
             }
 
@@ -894,7 +894,7 @@ impl Daemon {
             "session_read" => {
                 let length = _args.get(1).and_then(|v| v.as_u64()).map(|v| v as usize);
                 self.with_session(&_args, |session| {
-                    let data = session.read_raw(length)?;
+                    let data = session.read(length)?;
                     Ok(serde_json::json!({ "data": data }))
                 })
             }
@@ -902,7 +902,7 @@ impl Daemon {
             "session_write" => {
                 let data = get_str_arg(&_args, 1, "data")?;
                 self.with_session(&_args, |session| {
-                    let bytes_written = session.write_raw(data)?;
+                    let bytes_written = session.write(data)?;
                     Ok(serde_json::json!({ "bytes_written": bytes_written }))
                 })
             }
@@ -910,7 +910,7 @@ impl Daemon {
             "session_execute" => {
                 let command = get_str_arg(&_args, 1, "command")?;
                 self.with_session(&_args, |session| {
-                    let output = session.execute_raw(command)?;
+                    let output = session.execute(command)?;
                     Ok(serde_json::json!({ "output": output }))
                 })
             }
@@ -918,7 +918,7 @@ impl Daemon {
             "session_run_cmd" => {
                 let command = get_str_arg(&_args, 1, "command")?;
                 self.with_session(&_args, |session| {
-                    let output = session.run_cmd_raw(command)?;
+                    let output = session.run_cmd(command)?;
                     Ok(serde_json::json!({ "output": output }))
                 })
             }

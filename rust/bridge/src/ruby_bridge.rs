@@ -243,6 +243,101 @@ pub fn ruby_array_map_property(array: Value, property: &str) -> Result<Vec<Strin
     Ok(result)
 }
 
+// ========== Simple Getter Helpers ==========
+// These reduce boilerplate for common patterns in framework.rs
+
+/// Call a method on a Ruby object and convert result to String
+/// Usage: `get_string_attr(self.ruby_module, "name")?`
+pub fn get_string_attr(obj: Value, method: &str) -> Result<String> {
+    let val = call_method(obj, method, &[])?;
+    value_to_string(val)
+}
+
+/// Call a method on a Ruby object and convert result to bool
+/// Usage: `get_bool_attr(self.ruby_module, "privileged")?`
+pub fn get_bool_attr(obj: Value, method: &str) -> Result<bool> {
+    let val = call_method(obj, method, &[])?;
+    value_to_bool(val)
+}
+
+/// Call a method on a Ruby object and convert result to i64
+/// Usage: `get_i64_attr(self.ruby_session, "session_port")?`
+pub fn get_i64_attr(obj: Value, method: &str) -> Result<i64> {
+    let val = call_method(obj, method, &[])?;
+    value_to_i64(val)
+}
+
+/// Call a method on a Ruby object with one string arg, return nothing
+/// Usage: `call_void_with_str(self.ruby_dir, "chdir", path)?`
+pub fn call_void_with_str(obj: Value, method: &str, arg: &str) -> Result<()> {
+    call_method(obj, method, &[to_ruby_str(arg)?])?;
+    Ok(())
+}
+
+/// Call a method on a Ruby object with one string arg, return String
+/// Usage: `call_str_with_str(self.ruby_file, "expand_path", path)?`
+pub fn call_str_with_str(obj: Value, method: &str, arg: &str) -> Result<String> {
+    let val = call_method(obj, method, &[to_ruby_str(arg)?])?;
+    value_to_string(val)
+}
+
+/// Call a method on a Ruby object with one string arg, return bool
+/// Usage: `call_bool_with_str(self.ruby_file, "exist?", path)?`
+pub fn call_bool_with_str(obj: Value, method: &str, arg: &str) -> Result<bool> {
+    let val = call_method(obj, method, &[to_ruby_str(arg)?])?;
+    value_to_bool(val)
+}
+
+/// Call a method on a Ruby object with one string arg, return Vec<String>
+/// Usage: `call_strings_with_str(self.ruby_dir, "entries", path)?`
+pub fn call_strings_with_str(obj: Value, method: &str, arg: &str) -> Result<Vec<String>> {
+    let val = call_method(obj, method, &[to_ruby_str(arg)?])?;
+    ruby_array_to_strings(val)
+}
+
+// ========== Options Hash Builders ==========
+
+/// Build a Ruby options hash with Quiet mode set and optional additional options
+/// Used for exploit_simple, run_simple, check_simple methods
+/// Usage: `build_quiet_opts(Some(options_map))?`
+pub fn build_quiet_opts(options: Option<std::collections::HashMap<String, String>>) -> Result<Value> {
+    let ruby = get_ruby()?;
+    let opts_val = ruby.hash_new().as_value();
+
+    // Set Quiet mode
+    let quiet_key = ruby.str_new("Quiet").as_value();
+    let quiet_val = ruby.qtrue().as_value();
+    call_method(opts_val, "[]=", &[quiet_key, quiet_val])?;
+
+    // Set additional options
+    if let Some(opts_map) = options {
+        for (key, value) in opts_map {
+            let key_val = ruby.str_new(&key).as_value();
+            let value_val = ruby.str_new(&value).as_value();
+            call_method(opts_val, "[]=", &[key_val, value_val])?;
+        }
+    }
+
+    Ok(opts_val)
+}
+
+/// Build a Ruby options hash from a HashMap (without Quiet mode)
+/// Usage: `build_opts(Some(options_map))?`
+pub fn build_opts(options: Option<std::collections::HashMap<String, String>>) -> Result<Value> {
+    let ruby = get_ruby()?;
+    let opts_val = ruby.hash_new().as_value();
+
+    if let Some(opts_map) = options {
+        for (key, value) in opts_map {
+            let key_val = ruby.str_new(&key).as_value();
+            let value_val = ruby.str_new(&value).as_value();
+            call_method(opts_val, "[]=", &[key_val, value_val])?;
+        }
+    }
+
+    Ok(opts_val)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
