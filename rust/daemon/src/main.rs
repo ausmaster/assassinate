@@ -789,6 +789,47 @@ impl Daemon {
                 Ok(serde_json::json!({ "loot": loot }))
             }
 
+            // === Database Workspace Management ===
+            "db_workspaces" => {
+                let db = self.framework.db()?;
+                let workspaces = db.workspaces()?;
+                Ok(serde_json::json!({ "workspaces": workspaces }))
+            }
+
+            "db_workspace" => {
+                let db = self.framework.db()?;
+                let workspace = db.workspace()?;
+                Ok(serde_json::json!({ "workspace": workspace }))
+            }
+
+            "db_set_workspace" => {
+                let name = get_str_arg(&_args, 0, "name")?;
+                let db = self.framework.db()?;
+                db.set_workspace(name)?;
+                Ok(serde_json::json!({ "success": true }))
+            }
+
+            "db_add_workspace" => {
+                let name = get_str_arg(&_args, 0, "name")?;
+                let db = self.framework.db()?;
+                let workspace = db.add_workspace(name)?;
+                Ok(serde_json::json!({ "workspace": workspace }))
+            }
+
+            "db_find_workspace" => {
+                let name = get_str_arg(&_args, 0, "name")?;
+                let db = self.framework.db()?;
+                let workspace = db.find_workspace(name)?;
+                Ok(serde_json::json!({ "workspace": workspace }))
+            }
+
+            "db_delete_workspace" => {
+                let id = _args.get(0).and_then(|v| v.as_i64()).context("Missing workspace_id")?;
+                let db = self.framework.db()?;
+                let success = db.delete_workspace(id)?;
+                Ok(serde_json::json!({ "success": success }))
+            }
+
             // === Job Manager Operations ===
             "job_list" => {
                 let jobs = self.framework.jobs()?;

@@ -743,6 +743,104 @@ class MsfClient:
         result = await self._call("db_loot")
         return result["loot"]
 
+    # ========== Database Workspace Management ==========
+
+    async def db_workspaces(self) -> list[dict[str, Any]]:
+        """List all workspaces in the database.
+
+        Returns:
+            List of workspace dicts with keys: id, name
+
+        Example:
+            workspaces = await client.db_workspaces()
+            for ws in workspaces:
+                print(f"Workspace {ws['id']}: {ws['name']}")
+        """
+        result = await self._call("db_workspaces")
+        return result["workspaces"]
+
+    async def db_workspace(self) -> dict[str, Any] | None:
+        """Get the current active workspace.
+
+        Returns:
+            Current workspace dict with keys: id, name, or None if no database
+
+        Example:
+            workspace = await client.db_workspace()
+            if workspace:
+                print(f"Current workspace: {workspace['name']}")
+        """
+        result = await self._call("db_workspace")
+        workspace = result["workspace"]
+        return workspace if workspace else None
+
+    async def db_set_workspace(self, name: str) -> None:
+        """Set the current workspace by name.
+
+        Args:
+            name: Workspace name to switch to
+
+        Raises:
+            Exception: If workspace not found
+
+        Example:
+            await client.db_set_workspace("project_alpha")
+            print("Switched workspace")
+        """
+        await self._call("db_set_workspace", name)
+
+    async def db_add_workspace(self, name: str) -> dict[str, Any]:
+        """Create a new workspace.
+
+        Args:
+            name: Name for the new workspace
+
+        Returns:
+            Created workspace dict with keys: id, name
+
+        Example:
+            workspace = await client.db_add_workspace("new_project")
+            print(f"Created workspace: {workspace['name']} (ID: {workspace['id']})")
+        """
+        result = await self._call("db_add_workspace", name)
+        return result["workspace"]
+
+    async def db_find_workspace(self, name: str) -> dict[str, Any] | None:
+        """Find a workspace by name.
+
+        Args:
+            name: Workspace name to find
+
+        Returns:
+            Workspace dict with keys: id, name, or None if not found
+
+        Example:
+            workspace = await client.db_find_workspace("project_alpha")
+            if workspace:
+                print(f"Found workspace ID: {workspace['id']}")
+            else:
+                print("Workspace not found")
+        """
+        result = await self._call("db_find_workspace", name)
+        return result["workspace"]
+
+    async def db_delete_workspace(self, workspace_id: int) -> bool:
+        """Delete a workspace by ID.
+
+        Args:
+            workspace_id: ID of workspace to delete
+
+        Returns:
+            True if successfully deleted
+
+        Example:
+            success = await client.db_delete_workspace(5)
+            if success:
+                print("Workspace deleted")
+        """
+        result = await self._call("db_delete_workspace", workspace_id)
+        return result["success"]
+
     # JobManager operations
     async def job_list(self) -> list[str]:
         """List all active job IDs.
