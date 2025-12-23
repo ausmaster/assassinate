@@ -900,6 +900,36 @@ class MsfClient:
         result = await self._call("db_delete_note", note_ids)
         return result["count"]
 
+    # ========== Database Status ==========
+
+    async def db_active(self) -> bool:
+        """Check if database is active/connected.
+
+        Returns:
+            True if database is connected, False otherwise
+
+        Example:
+            if await client.db_active():
+                print("Database is connected")
+            else:
+                print("No database connection")
+        """
+        result = await self._call("db_active")
+        return result["active"]
+
+    async def db_driver(self) -> str:
+        """Get the database driver name.
+
+        Returns:
+            Database driver name (e.g., "postgresql", "mysql")
+
+        Example:
+            driver = await client.db_driver()
+            print(f"Using database driver: {driver}")
+        """
+        result = await self._call("db_driver")
+        return result["driver"]
+
     # JobManager operations
     async def job_list(self) -> list[str]:
         """List all active job IDs.

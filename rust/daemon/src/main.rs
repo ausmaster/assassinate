@@ -857,6 +857,19 @@ impl Daemon {
                 Ok(serde_json::json!({ "count": count }))
             }
 
+            // === Database Status ===
+            "db_active" => {
+                let db = self.framework.db()?;
+                let active = db.active()?;
+                Ok(serde_json::json!({ "active": active }))
+            }
+
+            "db_driver" => {
+                let db = self.framework.db()?;
+                let driver = db.driver()?;
+                Ok(serde_json::json!({ "driver": driver }))
+            }
+
             // === Job Manager Operations ===
             "job_list" => {
                 let jobs = self.framework.jobs()?;
