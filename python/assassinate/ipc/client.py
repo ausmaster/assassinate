@@ -1401,6 +1401,97 @@ class MsfClient:
         result = await self._call("session_sys_getprivs", session_id)
         return result["value"]
 
+    # ========== Process Management Methods (Meterpreter) ==========
+
+    async def session_process_getpid(self, session_id: int) -> int:
+        """Get the current process ID from a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Current process ID
+
+        Raises:
+            Exception: If session is not a Meterpreter session
+
+        Example:
+            pid = await client.session_process_getpid(1)
+            print(f"Current PID: {pid}")
+        """
+        result = await self._call("session_process_getpid", session_id)
+        return result["pid"]
+
+    async def session_process_list(self, session_id: int) -> list[dict[str, Any]]:
+        """List all running processes from a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of process dicts with keys: pid, ppid, name, path, user, session, arch
+
+        Raises:
+            Exception: If session is not a Meterpreter session
+
+        Example:
+            processes = await client.session_process_list(1)
+            for proc in processes:
+                print(f"PID {proc['pid']}: {proc['name']} ({proc['user']})")
+        """
+        result = await self._call("session_process_list", session_id)
+        return result["processes"]
+
+    async def session_process_kill(self, session_id: int, pid: int) -> None:
+        """Kill a process by PID on a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+            pid: Process ID to kill
+
+        Raises:
+            Exception: If session is not a Meterpreter session or kill fails
+
+        Example:
+            await client.session_process_kill(1, 1234)
+            print("Process terminated")
+        """
+        await self._call("session_process_kill", session_id, pid)
+
+    async def session_process_execute(
+        self,
+        session_id: int,
+        path: str,
+        args: str = "",
+        hidden: bool = False,
+        channelized: bool = False,
+    ) -> dict[str, Any]:
+        """Execute a command and return process info from a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+            path: Path to executable
+            args: Command-line arguments
+            hidden: Run hidden (no window)
+            channelized: Create I/O channels for interaction
+
+        Returns:
+            Dict with keys: pid, handle, channel_id (if channelized)
+
+        Raises:
+            Exception: If session is not a Meterpreter session or execution fails
+
+        Example:
+            proc_info = await client.session_process_execute(
+                1, "cmd.exe", "/c whoami", hidden=True, channelized=True
+            )
+            print(f"Started PID {proc_info['pid']}, channel {proc_info.get('channel_id')}")
+        """
+        result = await self._call(
+            "session_process_execute", session_id, path, args, hidden, channelized
+        )
+        return result["value"]
+
     # ========== Network Configuration Methods ==========
 
     async def session_net_get_interfaces(self, session_id: int) -> list[dict[str, Any]]:
