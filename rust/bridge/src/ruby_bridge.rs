@@ -176,6 +176,73 @@ pub fn hash_to_json(hash: Value) -> Result<serde_json::Value> {
         .map_err(|e| AssassinateError::ConversionError(format!("Failed to parse JSON: {}", e)))
 }
 
+// ========== Ruby Value Creation Helpers ==========
+
+/// Convert Rust string to Ruby String value
+pub fn to_ruby_str(s: &str) -> Result<Value> {
+    let ruby = get_ruby()?;
+    Ok(ruby.str_new(s).as_value())
+}
+
+/// Convert Rust i64 to Ruby Integer value
+pub fn to_ruby_int(i: i64) -> Result<Value> {
+    let ruby = get_ruby()?;
+    Ok(ruby.integer_from_i64(i).as_value())
+}
+
+// ========== Ruby Array Helpers ==========
+
+/// Get the length of a Ruby array
+pub fn ruby_array_len(array: Value) -> Result<usize> {
+    let len_val = call_method(array, "length", &[])?;
+    TryConvert::try_convert(len_val).map_err(|e: magnus::Error| {
+        AssassinateError::ConversionError(format!("Failed to get array length: {}", e))
+    })
+}
+
+/// Get an element from a Ruby array by index
+pub fn ruby_array_get(array: Value, index: usize) -> Result<Value> {
+    let idx_val = to_ruby_int(index as i64)?;
+    call_method(array, "[]", &[idx_val])
+}
+
+/// Convert Ruby array to Vec<String>
+pub fn ruby_array_to_strings(array: Value) -> Result<Vec<String>> {
+    let len = ruby_array_len(array)?;
+    let mut result = Vec::with_capacity(len);
+    for i in 0..len {
+        let elem = ruby_array_get(array, i)?;
+        result.push(value_to_string(elem)?);
+    }
+    Ok(result)
+}
+
+/// Convert Ruby array to Vec<i64>
+pub fn ruby_array_to_ints(array: Value) -> Result<Vec<i64>> {
+    let len = ruby_array_len(array)?;
+    let mut result = Vec::with_capacity(len);
+    for i in 0..len {
+        let elem = ruby_array_get(array, i)?;
+        let val: i64 = TryConvert::try_convert(elem).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert array element to i64: {}", e))
+        })?;
+        result.push(val);
+    }
+    Ok(result)
+}
+
+/// Iterate over Ruby array with callback, extracting a string property from each element
+pub fn ruby_array_map_property(array: Value, property: &str) -> Result<Vec<String>> {
+    let len = ruby_array_len(array)?;
+    let mut result = Vec::with_capacity(len);
+    for i in 0..len {
+        let elem = ruby_array_get(array, i)?;
+        let prop_val = call_method(elem, property, &[])?;
+        result.push(value_to_string(prop_val)?);
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,7 +7,6 @@
 #   - Debian
 #   - Fedora
 #   - Arch Linux
-#   - Alpine (partial - packages only, Rust build not supported on musl)
 #   - Kali Linux
 #   - Parrot OS
 #
@@ -28,9 +27,8 @@ FROM ubuntu:24.04 AS base-ubuntu
 FROM debian:bookworm AS base-debian
 FROM fedora:40 AS base-fedora
 FROM archlinux:latest AS base-arch
-FROM alpine:3.19 AS base-alpine
 FROM kalilinux/kali-rolling:latest AS base-kali
-FROM parrotsec/parrot-core:latest AS base-parrot
+FROM parrotsec/security:latest AS base-parrot
 
 FROM base-${DISTRO} AS base
 
@@ -58,12 +56,11 @@ RUN case "${DISTRO}" in \
     arch) \
     pacman -Sy --noconfirm python python-pip curl ca-certificates git && \
     pacman -Scc --noconfirm ;; \
-    alpine) \
-    apk add --no-cache python3 py3-pip curl ca-certificates git bash ;; \
     esac
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mkdir -p /usr/local/bin && \
     ln -sf /root/.local/bin/uv /usr/local/bin/uv && \
     ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
 
@@ -76,7 +73,6 @@ WORKDIR /app
 COPY pyproject.toml uv.lock LICENSE README.md ./
 COPY python/ ./python/
 COPY rust/ ./rust/
-COPY setup/ ./setup/
 
 RUN uv sync --all-extras
 
@@ -84,10 +80,7 @@ ARG SKIP_MSF=false
 
 # The installer handles ALL distro-specific logic via Ansible
 RUN . .venv/bin/activate && \
-    if [ "${DISTRO}" = "alpine" ]; then \
-    echo "Alpine: packages only (musl incompatible with Rust build)" && \
-    assassinate-setup --install --force --steps packages; \
-    elif [ "${SKIP_MSF}" = "true" ]; then \
+    if [ "${SKIP_MSF}" = "true" ]; then \
     assassinate-setup --install --force --skip-steps msf; \
     else \
     assassinate-setup --install --force; \
@@ -108,8 +101,6 @@ RUN case "${DISTRO}" in \
     dnf clean all ;; \
     arch) \
     pacman -Scc --noconfirm ;; \
-    alpine) \
-    rm -rf /var/cache/apk/* ;; \
     esac
 
 # -----------------------------------------------------------------------------

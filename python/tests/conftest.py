@@ -19,7 +19,7 @@ def daemon_process():
         daemon_path = Path(cargo_target_dir) / "release" / "daemon"
     else:
         daemon_path = (
-            Path(__file__).parent.parent
+            Path(__file__).parent.parent.parent
             / "rust"
             / "daemon"
             / "target"
@@ -32,7 +32,7 @@ def daemon_process():
     if msf_root_env:
         msf_root = Path(msf_root_env)
     else:
-        msf_root = Path(__file__).parent.parent / "metasploit-framework"
+        msf_root = Path(__file__).parent.parent.parent / "metasploit-framework"
 
     if not daemon_path.exists():
         pytest.skip("Daemon not built - run: cargo build --release -p daemon")

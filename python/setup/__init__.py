@@ -8,7 +8,6 @@ Supported Distributions:
     - Ubuntu/Debian (apt)
     - Fedora/RHEL/CentOS (dnf)
     - Arch Linux (pacman)
-    - Alpine Linux (apk) - packages only
     - openSUSE (zypper)
     - macOS (brew)
     - Kali Linux (package MSF)

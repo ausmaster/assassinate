@@ -59,7 +59,23 @@ target-version = "py310"
 select = ["E", "F", "W", "I"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["python/assassinate", "setup"]
+packages = ["python/assassinate", "python/setup"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers --tb=short --color=yes -ra"
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (require daemon)",
+    "slow: Slow tests",
+    "exploit: Tests that involve exploits",
+    "auxiliary: Tests that involve auxiliary modules",
+]
+asyncio_mode = "auto"
+minversion = "3.10"

@@ -97,21 +97,6 @@ services:
     networks:
       - assassinate-net
 
-  alpine:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        DISTRO: alpine
-    image: assassinate:alpine
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
-    networks:
-      - assassinate-net
-
   kali:
     build:
       context: ..
@@ -153,9 +138,20 @@ services:
       args:
         DISTRO: ubuntu
     image: assassinate:ubuntu-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
     volumes:
-      - ../tests:/app/tests:ro
-    command: bash -c "pytest tests/ -v"
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
 
   test-debian:
     build:
@@ -164,9 +160,20 @@ services:
       args:
         DISTRO: debian
     image: assassinate:debian-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
     volumes:
-      - ../tests:/app/tests:ro
-    command: bash -c "pytest tests/ -v"
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
 
   test-fedora:
     build:
@@ -175,9 +182,20 @@ services:
       args:
         DISTRO: fedora
     image: assassinate:fedora-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
     volumes:
-      - ../tests:/app/tests:ro
-    command: bash -c "pytest tests/ -v"
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
 
   test-arch:
     build:
@@ -186,9 +204,20 @@ services:
       args:
         DISTRO: arch
     image: assassinate:arch-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
     volumes:
-      - ../tests:/app/tests:ro
-    command: bash -c "pytest tests/ -v"
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
 
   test-kali:
     build:
@@ -197,9 +226,20 @@ services:
       args:
         DISTRO: kali
     image: assassinate:kali-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /usr/share/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
     volumes:
-      - ../tests:/app/tests:ro
-    command: bash -c "pytest tests/ -v"
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
 
   test-parrot:
     build:
@@ -208,9 +248,20 @@ services:
       args:
         DISTRO: parrot
     image: assassinate:parrot-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /usr/share/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
     volumes:
-      - ../tests:/app/tests:ro
-    command: bash -c "pytest tests/ -v"
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
 
 networks:
   assassinate-net:

@@ -20,7 +20,7 @@
    - ✅ Ruby/Bundler environment setup
    - ✅ MSF installation (package OR git clone)
    - ✅ MSF gem bundle install (for cloned MSF)
-3. Added `ansible>=9.0.0` to dependencies for community.general collection (Alpine APK support)
+3. Added `ansible>=9.0.0` to dependencies for community.general collection
 
 ### Distro Support Status
 
@@ -32,19 +32,11 @@
 - ✅ **Kali Linux**: Package MSF installed, all Rust components built
 - ✅ **Parrot OS**: Package MSF installed, all Rust components built
 
-#### Partial Support
-- ⚠️ **Alpine Linux**: Packages install successfully, but Rust build fails
-  - **Issue**: musl libc incompatibility with Magnus crate (Ruby bindings)
-  - **Error**: "Dynamic loading not supported" when loading libclang
-  - **Status**: This is a fundamental limitation, not fixable without Magnus rewrite
-  - **Use Case**: Can be used for package validation, but not for full Rust builds
-
 ### Key Fixes Applied
 1. ✅ Fixed verify() to check both standard and container target directories
-2. ✅ Fixed Alpine APK package manager support via ansible collections
-3. ✅ Fixed Rust default toolchain conditional to run only when rustup installs
-4. ✅ Added complete MSF git clone and bundle install workflow
-5. ✅ Added Ruby environment setup (xmlrpc gem, bundler, Arch PATH fix)
+2. ✅ Fixed Rust default toolchain conditional to run only when rustup installs
+3. ✅ Added complete MSF git clone and bundle install workflow
+4. ✅ Added Ruby environment setup (xmlrpc gem, bundler, Arch PATH fix)
 
 ### Verified Workflows
 - Local installation: ✅ Working
@@ -64,7 +56,6 @@
 | Debian/Ubuntu | `build-essential` |
 | Fedora/RHEL | `gcc gcc-c++ make` |
 | Arch | `base-devel` |
-| Alpine | `build-base` |
 | openSUSE | `gcc gcc-c++ make` |
 | macOS | Xcode CLI tools (no package needed) |
 
@@ -74,7 +65,6 @@
 | Debian/Ubuntu | `libssl-dev` |
 | Fedora/RHEL | `openssl-devel` |
 | Arch | `openssl` |
-| Alpine | `openssl-dev` |
 | openSUSE | `libopenssl-devel` |
 
 ### libclang (for Rust bindgen)
@@ -83,7 +73,6 @@
 | Debian/Ubuntu | `libclang-dev` |
 | Fedora/RHEL | `clang-devel` |
 | Arch | `clang` |
-| Alpine | `clang-dev clang-static` |
 | openSUSE | `clang-devel` |
 
 ### Cap'n Proto
@@ -92,7 +81,6 @@
 | Debian/Ubuntu | `capnproto libcapnp-dev` | |
 | Fedora/RHEL | `capnproto capnproto-devel` | |
 | Arch | `capnproto` | |
-| Alpine | `capnproto-dev` | **CRITICAL**: Must use `-dev` package! The base `capnproto` only has libs, no `capnp` binary |
 | openSUSE | `capnproto` | |
 
 ### Ruby
@@ -101,7 +89,6 @@
 | Debian/Ubuntu | `ruby-full ruby-dev` |
 | Fedora/RHEL | `ruby ruby-devel` |
 | Arch | `ruby` (headers included) |
-| Alpine | `ruby ruby-dev` |
 | openSUSE | `ruby ruby-devel` |
 
 ### Bundler
@@ -110,7 +97,6 @@
 | Debian/Ubuntu | `ruby-bundler` | |
 | Fedora/RHEL | `rubygem-bundler` | |
 | Arch | `ruby-bundler` | |
-| Alpine | `ruby-bundler` | |
 | Fallback | `gem install bundler` | If package fails |
 
 ### pkg-config
@@ -119,7 +105,6 @@
 | Debian/Ubuntu | `pkg-config` |
 | Fedora/RHEL | `pkgconf-pkg-config` |
 | Arch | `pkgconf` |
-| Alpine | `pkgconf` |
 | openSUSE | `pkg-config` |
 
 ### Ruby Build Dependencies (for native gems)
@@ -257,26 +242,6 @@ sed -i 's/host.*all.*all.*127\.0\.0\.1\/32.*scram-sha-256/host    all           
 
 ---
 
-## Alpine Linux Issues
-
-### musl libc Incompatibility
-**Problem**: Alpine uses musl libc instead of glibc. Some Rust crates don't compile:
-- Magnus (Ruby bindings for Rust) fails
-- Other native extensions may fail
-
-**Current status**: Alpine is "partial support" - packages install but Rust build fails.
-
-**Potential solutions** (not implemented):
-1. Use glibc compatibility layer
-2. Use Alpine-specific Rust target
-3. Mark Alpine as unsupported for full build
-
-### capnproto Package
-**CRITICAL**: Use `capnproto-dev`, NOT `capnproto`!
-The base package only contains libraries, the `-dev` package includes the `capnp` binary.
-
----
-
 ## Container-Specific Issues
 
 ### GLIBC Mismatch
@@ -327,7 +292,7 @@ result = run(
 
 ### Ansible Facts for Distro Detection
 Use these in task conditions:
-- `ansible_facts['os_family']`: 'Debian', 'RedHat', 'Archlinux', 'Alpine', 'Suse', 'Darwin'
+- `ansible_facts['os_family']`: 'Debian', 'RedHat', 'Archlinux', 'Suse', 'Darwin'
 - `ansible_facts['distribution']`: 'Ubuntu', 'Debian', 'Fedora', 'Kali', 'Parrot', etc.
 
 ---
@@ -344,12 +309,8 @@ assassinate/
 │   └── DISTRO_NOTES.md     # This file
 ├── docker/
 │   ├── docker-compose.yml  # Unified compose file
-│   ├── Dockerfile.ubuntu
-│   ├── Dockerfile.debian
-│   ├── Dockerfile.fedora
-│   ├── Dockerfile.alpine
-│   ├── Dockerfile.arch
-│   └── Dockerfile.integration
+│   ├── Dockerfile          # Multi-distro Dockerfile
+│   └── README.md
 ├── scripts/
 │   └── test.sh             # Unified test script
 ├── .github/
@@ -459,17 +420,6 @@ All obsolete files have been removed:
 To complete CI integration:
 
 1. Update `.github/workflows/distro-matrix.yml` to use `assassinate-setup --install`
-2. Consider removing Alpine from full CI matrix (mark as partial support)
-3. Document Alpine limitations in README
-
-### Alpine Decision: Partial Support
-
-**Recommendation**: Mark Alpine as "Partial Support - Packages Only"
-
-- Packages install successfully (good for testing package availability)
-- Rust build fundamentally incompatible (musl + Magnus limitation)
-- Not a bug to fix - architectural incompatibility
-- Users needing full Rust support should use glibc-based distros
 
 ---
 

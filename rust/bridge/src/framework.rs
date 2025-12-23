@@ -1,7 +1,10 @@
 //! Framework types and operations for Metasploit Framework interaction
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, create_framework, is_nil, value_to_string};
+use crate::ruby_bridge::{
+    call_method, create_framework, is_nil, ruby_array_to_strings, to_ruby_str, value_to_bool,
+    value_to_string,
+};
 use magnus::{value::ReprValue, StaticSymbol, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -373,20 +376,115 @@ impl Module {
 
         match call_method(self.ruby_module, "respond_to?", &[method_name]) {
             Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
-                // Get compatible payloads
-                match call_method(self.ruby_module, "compatible_payloads", &[]) {
-                    Ok(payloads_val) => {
-                        // Set payloads_array variable
-                        ruby.eval::<Value>(&format!("$temp_payloads = {:?}", payloads_val))
-                            .ok();
+                // Get compatible payloads - returns array of [name, class] tuples
+                let payloads_val = call_method(self.ruby_module, "compatible_payloads", &[])?;
 
-                        // For now, return empty if we can't easily extract
-                        Ok(vec![])
-                    }
-                    Err(_) => Ok(vec![]),
+                // Get array length
+                let array_len: usize = TryConvert::try_convert(
+                    call_method(payloads_val, "length", &[])?
+                ).map_err(|e: magnus::Error| {
+                    AssassinateError::ConversionError(format!("Failed to get array length: {}", e))
+                })?;
+
+                // Iterate through array and extract first element (payload name) from each tuple
+                let mut result = Vec::with_capacity(array_len);
+                for i in 0..array_len {
+                    let idx_val = ruby.integer_from_i64(i as i64).as_value();
+                    // Get the [name, class] tuple
+                    let tuple_val = call_method(payloads_val, "[]", &[idx_val])?;
+                    // Get the first element (name) from the tuple
+                    let zero_val = ruby.integer_from_i64(0).as_value();
+                    let name_val = call_method(tuple_val, "[]", &[zero_val])?;
+                    let name = value_to_string(name_val)?;
+                    result.push(name);
                 }
+
+                Ok(result)
             }
             _ => Ok(vec![]),
+        }
+    }
+
+    /// Get available actions for this auxiliary/post module
+    /// Returns list of action names
+    pub fn actions(&self) -> Result<Vec<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let method_name = ruby.str_new("actions").as_value();
+
+        // Check if module responds to actions
+        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
+            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+                // Get actions array
+                let actions_val = call_method(self.ruby_module, "actions", &[])?;
+
+                // Get array length
+                let array_len: usize = TryConvert::try_convert(
+                    call_method(actions_val, "length", &[])?
+                ).map_err(|e: magnus::Error| {
+                    AssassinateError::ConversionError(format!("Failed to get actions array length: {}", e))
+                })?;
+
+                // Iterate through actions and extract names
+                let mut result = Vec::with_capacity(array_len);
+                for i in 0..array_len {
+                    let idx_val = ruby.integer_from_i64(i as i64).as_value();
+                    let action_val = call_method(actions_val, "[]", &[idx_val])?;
+                    let name_val = call_method(action_val, "name", &[])?;
+                    let name = value_to_string(name_val)?;
+                    result.push(name);
+                }
+
+                Ok(result)
+            }
+            _ => Ok(vec![]),
+        }
+    }
+
+    /// Get the default action for this auxiliary/post module
+    /// Returns None if module doesn't support actions or has no default
+    pub fn default_action(&self) -> Result<Option<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let method_name = ruby.str_new("default_action").as_value();
+
+        // Check if module responds to default_action
+        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
+            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+                let default_val = call_method(self.ruby_module, "default_action", &[])?;
+
+                if is_nil(default_val) {
+                    Ok(None)
+                } else {
+                    let name = value_to_string(default_val)?;
+                    Ok(Some(name))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Get the current action for this auxiliary/post module
+    /// This looks up datastore['ACTION'] and returns the matching action name
+    /// Falls back to default_action if ACTION is not set
+    /// Returns None if module doesn't support actions
+    pub fn action(&self) -> Result<Option<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let method_name = ruby.str_new("action").as_value();
+
+        // Check if module responds to action
+        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
+            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+                let action_val = call_method(self.ruby_module, "action", &[])?;
+
+                if is_nil(action_val) {
+                    Ok(None)
+                } else {
+                    // action returns an AuxiliaryAction object, get its name
+                    let name_val = call_method(action_val, "name", &[])?;
+                    let name = value_to_string(name_val)?;
+                    Ok(Some(name))
+                }
+            }
+            _ => Ok(None),
         }
     }
 
@@ -981,6 +1079,372 @@ impl Session {
             self.session_type()?,
             self.alive()?
         ))
+    }
+
+    // ========== Meterpreter Extension Helpers (DRY) ==========
+
+    /// Get the fs extension object (caches fs access pattern)
+    fn fs(&self) -> Result<Value> {
+        call_method(self.ruby_session, "fs", &[])
+    }
+
+    /// Get fs.dir for directory operations
+    fn fs_dir_ext(&self) -> Result<Value> {
+        call_method(self.fs()?, "dir", &[])
+    }
+
+    /// Get fs.file for file operations
+    fn fs_file_ext(&self) -> Result<Value> {
+        call_method(self.fs()?, "file", &[])
+    }
+
+    /// Get the sys extension object for system operations
+    fn sys(&self) -> Result<Value> {
+        call_method(self.ruby_session, "sys", &[])
+    }
+
+    /// Get sys.process for process operations
+    fn sys_process(&self) -> Result<Value> {
+        call_method(self.sys()?, "process", &[])
+    }
+
+    /// Get sys.config for system configuration
+    fn sys_config(&self) -> Result<Value> {
+        call_method(self.sys()?, "config", &[])
+    }
+
+    /// Get the net extension object for network operations
+    fn net(&self) -> Result<Value> {
+        call_method(self.ruby_session, "net", &[])
+    }
+
+    /// Get net.config for network configuration
+    fn net_config(&self) -> Result<Value> {
+        call_method(self.net()?, "config", &[])
+    }
+
+    /// Check if this session has a specific extension/method
+    fn has_extension(&self, name: &str) -> Result<bool> {
+        let method_name = to_ruby_str(name)?;
+        let result = call_method(self.ruby_session, "respond_to?", &[method_name])?;
+        value_to_bool(result)
+    }
+
+    // ========== Meterpreter Filesystem Operations ==========
+
+    /// Get current working directory (pwd)
+    /// Only works on Meterpreter sessions
+    pub fn fs_pwd(&self) -> Result<String> {
+        value_to_string(call_method(self.fs_dir_ext()?, "pwd", &[])?)
+    }
+
+    /// Change working directory (chdir)
+    /// Only works on Meterpreter sessions
+    pub fn fs_chdir(&self, path: &str) -> Result<()> {
+        call_method(self.fs_dir_ext()?, "chdir", &[to_ruby_str(path)?])?;
+        Ok(())
+    }
+
+    /// List directory contents
+    /// Returns list of filenames (strings)
+    /// Only works on Meterpreter sessions
+    pub fn fs_ls(&self, path: &str) -> Result<Vec<String>> {
+        let entries = call_method(self.fs_dir_ext()?, "entries", &[to_ruby_str(path)?])?;
+        ruby_array_to_strings(entries)
+    }
+
+    /// Create directory
+    /// Only works on Meterpreter sessions
+    pub fn fs_mkdir(&self, path: &str) -> Result<()> {
+        call_method(self.fs_dir_ext()?, "mkdir", &[to_ruby_str(path)?])?;
+        Ok(())
+    }
+
+    /// Remove directory (must be empty)
+    /// Only works on Meterpreter sessions
+    pub fn fs_rmdir(&self, path: &str) -> Result<()> {
+        call_method(self.fs_dir_ext()?, "rmdir", &[to_ruby_str(path)?])?;
+        Ok(())
+    }
+
+    /// Get file/directory metadata (stat)
+    /// Returns JSON with file info: size, ftype, mtime, is_file, is_directory
+    /// Only works on Meterpreter sessions
+    pub fn fs_stat(&self, path: &str) -> Result<serde_json::Value> {
+        let stat_val = call_method(self.fs_file_ext()?, "stat", &[to_ruby_str(path)?])?;
+
+        // Extract stat attributes
+        let mut stat_obj = serde_json::Map::new();
+
+        // Size
+        if let Ok(size_val) = call_method(stat_val, "size", &[]) {
+            let size: i64 = TryConvert::try_convert(size_val).unwrap_or(0);
+            stat_obj.insert("size".to_string(), serde_json::json!(size));
+        }
+
+        // File type
+        if let Ok(ftype_val) = call_method(stat_val, "ftype", &[]) {
+            if let Ok(ftype) = value_to_string(ftype_val) {
+                stat_obj.insert("ftype".to_string(), serde_json::json!(ftype));
+            }
+        }
+
+        // Modified time
+        if let Ok(mtime_val) = call_method(stat_val, "mtime", &[]) {
+            if let Ok(mtime_str) = value_to_string(call_method(mtime_val, "to_s", &[])?) {
+                stat_obj.insert("mtime".to_string(), serde_json::json!(mtime_str));
+            }
+        }
+
+        // Check type predicates
+        if let Ok(is_file_val) = call_method(stat_val, "file?", &[]) {
+            if let Ok(is_file) = value_to_bool(is_file_val) {
+                stat_obj.insert("is_file".to_string(), serde_json::json!(is_file));
+            }
+        }
+
+        if let Ok(is_dir_val) = call_method(stat_val, "directory?", &[]) {
+            if let Ok(is_dir) = value_to_bool(is_dir_val) {
+                stat_obj.insert("is_directory".to_string(), serde_json::json!(is_dir));
+            }
+        }
+
+        Ok(serde_json::Value::Object(stat_obj))
+    }
+
+    /// Check if file/directory exists
+    /// Only works on Meterpreter sessions
+    pub fn fs_exists(&self, path: &str) -> Result<bool> {
+        let exists_val = call_method(self.fs_file_ext()?, "exist?", &[to_ruby_str(path)?])?;
+        value_to_bool(exists_val)
+    }
+
+    /// Delete file
+    /// Only works on Meterpreter sessions
+    pub fn fs_rm(&self, path: &str) -> Result<()> {
+        call_method(self.fs_file_ext()?, "rm", &[to_ruby_str(path)?])?;
+        Ok(())
+    }
+
+    /// Move/rename file
+    /// Only works on Meterpreter sessions
+    pub fn fs_mv(&self, old_path: &str, new_path: &str) -> Result<()> {
+        call_method(
+            self.fs_file_ext()?,
+            "mv",
+            &[to_ruby_str(old_path)?, to_ruby_str(new_path)?],
+        )?;
+        Ok(())
+    }
+
+    /// Copy file
+    /// Only works on Meterpreter sessions
+    pub fn fs_cp(&self, src_path: &str, dst_path: &str) -> Result<()> {
+        call_method(
+            self.fs_file_ext()?,
+            "cp",
+            &[to_ruby_str(src_path)?, to_ruby_str(dst_path)?],
+        )?;
+        Ok(())
+    }
+
+    /// Get path separator for target system
+    /// Returns "\\" on Windows, "/" on Unix
+    /// Only works on Meterpreter sessions
+    pub fn fs_separator(&self) -> Result<String> {
+        value_to_string(call_method(self.fs_file_ext()?, "separator", &[])?)
+    }
+
+    /// Expand path (resolve environment variables like %appdata%, $HOME)
+    /// Only works on Meterpreter sessions
+    pub fn fs_expand_path(&self, path: &str) -> Result<String> {
+        value_to_string(call_method(
+            self.fs_file_ext()?,
+            "expand_path",
+            &[to_ruby_str(path)?],
+        )?)
+    }
+
+    /// Download file from remote to local
+    /// Only works on Meterpreter sessions
+    pub fn fs_download_file(&self, local_path: &str, remote_path: &str) -> Result<String> {
+        let status_val = call_method(
+            self.fs_file_ext()?,
+            "download_file",
+            &[to_ruby_str(local_path)?, to_ruby_str(remote_path)?],
+        )?;
+        // download_file returns status string: "Completed", "Skipped", etc.
+        value_to_string(status_val)
+    }
+
+    /// Upload file from local to remote
+    /// Only works on Meterpreter sessions
+    pub fn fs_upload_file(&self, remote_path: &str, local_path: &str) -> Result<()> {
+        call_method(
+            self.fs_file_ext()?,
+            "upload_file",
+            &[to_ruby_str(remote_path)?, to_ruby_str(local_path)?],
+        )?;
+        Ok(())
+    }
+
+    // ========== Post Module Execution ==========
+
+    /// Run a post module on this session
+    ///
+    /// This is used for post-exploitation tasks like:
+    /// - Upgrading shell to meterpreter (post/multi/manage/shell_to_meterpreter)
+    /// - Gathering credentials
+    /// - Privilege escalation
+    /// - Persistence
+    ///
+    /// The module will automatically have its SESSION datastore option set to this session.
+    pub fn run_post_module(
+        &self,
+        module_path: &str,
+        options: std::collections::HashMap<String, String>,
+    ) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Get framework
+        let framework = crate::ruby_bridge::create_framework(None)?;
+
+        // Get modules
+        let modules = call_method(framework, "modules", &[])?;
+
+        // Create the post module
+        let module_name = ruby.str_new(module_path).as_value();
+        let module = call_method(modules, "create", &[module_name])?;
+
+        if is_nil(module) {
+            return Err(AssassinateError::ModuleNotFound(module_path.to_string()));
+        }
+
+        // Set SESSION datastore option to this session's ID
+        let datastore = call_method(module, "datastore", &[])?;
+        call_method(
+            datastore,
+            "[]=",
+            &[
+                ruby.str_new("SESSION").as_value(),
+                ruby.integer_from_i64(self.session_id).as_value(),
+            ],
+        )?;
+
+        // Set additional options
+        for (key, value) in options {
+            let key_val = ruby.str_new(&key).as_value();
+            let value_val = ruby.str_new(&value).as_value();
+            call_method(datastore, "[]=", &[key_val, value_val])?;
+        }
+
+        // Run the module
+        let result = call_method(module, "run", &[])?;
+
+        // Check if nil (failure) or has a value (success)
+        Ok(!is_nil(result))
+    }
+
+    // ========== Process Management (Meterpreter) ==========
+
+    /// Get the current process ID (getpid)
+    /// Only works on Meterpreter sessions
+    pub fn process_getpid(&self) -> Result<i64> {
+        let pid_val = call_method(self.sys_process()?, "getpid", &[])?;
+        crate::ruby_bridge::value_to_i64(pid_val)
+    }
+
+    /// List all running processes
+    /// Returns Vec of JSON objects with keys: pid, ppid, name, path, user, session, arch
+    /// Only works on Meterpreter sessions
+    pub fn process_list(&self) -> Result<Vec<serde_json::Value>> {
+        let processes = call_method(self.sys_process()?, "get_processes", &[])?;
+        let len = crate::ruby_bridge::ruby_array_len(processes)?;
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let process = crate::ruby_bridge::ruby_array_get(processes, i)?;
+            let process_json = crate::ruby_bridge::hash_to_json(process)?;
+            result.push(process_json);
+        }
+
+        Ok(result)
+    }
+
+    /// Kill a process by PID
+    /// Only works on Meterpreter sessions
+    pub fn process_kill(&self, pid: i64) -> Result<()> {
+        call_method(
+            self.sys_process()?,
+            "kill",
+            &[crate::ruby_bridge::to_ruby_int(pid)?],
+        )?;
+        Ok(())
+    }
+
+    /// Execute a command and return the process info
+    /// Returns JSON with: pid, handle, channel_id (if channelized)
+    /// Only works on Meterpreter sessions
+    pub fn process_execute(
+        &self,
+        path: &str,
+        args: &str,
+        hidden: bool,
+        channelized: bool,
+    ) -> Result<serde_json::Value> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+        if hidden {
+            call_method(
+                opts_hash.as_value(),
+                "[]=",
+                &[to_ruby_str("Hidden")?, ruby.qtrue().as_value()],
+            )?;
+        }
+        if channelized {
+            call_method(
+                opts_hash.as_value(),
+                "[]=",
+                &[to_ruby_str("Channelized")?, ruby.qtrue().as_value()],
+            )?;
+        }
+
+        // Execute: sys.process.execute(path, args, opts)
+        let process_val = call_method(
+            self.sys_process()?,
+            "execute",
+            &[to_ruby_str(path)?, to_ruby_str(args)?, opts_hash.as_value()],
+        )?;
+
+        // Extract pid from process object
+        let pid_val = call_method(process_val, "pid", &[])?;
+        let pid = crate::ruby_bridge::value_to_i64(pid_val)?;
+
+        // Extract handle
+        let handle_val = call_method(process_val, "handle", &[])?;
+        let handle = if is_nil(handle_val) {
+            0
+        } else {
+            crate::ruby_bridge::value_to_i64(handle_val).unwrap_or(0)
+        };
+
+        // Extract channel if it exists
+        let channel_val = call_method(process_val, "channel", &[])?;
+        let channel_id = if is_nil(channel_val) {
+            None
+        } else {
+            // Get channel ID from channel object
+            let cid_val = call_method(channel_val, "cid", &[])?;
+            Some(crate::ruby_bridge::value_to_i64(cid_val).unwrap_or(0))
+        };
+
+        Ok(serde_json::json!({
+            "pid": pid,
+            "handle": handle,
+            "channel_id": channel_id,
+        }))
     }
 }
 

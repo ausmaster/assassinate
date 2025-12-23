@@ -28,7 +28,7 @@ log = logging.getLogger("assassinate.installer")
 # Constants
 # =============================================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RUST_DIR = PROJECT_ROOT / "rust"
 CACHE_DIR = PROJECT_ROOT / ".installer_cache"
 CARGO_HOME = "/usr/local/cargo"
@@ -129,19 +129,6 @@ DISTRO_PACKAGES: dict[str, DistroPackages] = {
         ruby=("ruby", "ruby-bundler"),
         ruby_build=("libyaml", "libffi", "postgresql-libs"),
         rust=("rust",),
-    ),
-    "Alpine": DistroPackages(
-        build=("build-base", "git", "curl", "cmake"),
-        rust_deps=(
-            "openssl-dev",
-            "pkgconf",
-            "clang-dev",
-            "clang-static",
-            "libpcap-dev",
-        ),
-        capnp=("capnproto-dev",),
-        ruby=("ruby", "ruby-dev", "ruby-bundler"),
-        ruby_build=("yaml-dev", "libffi-dev", "postgresql-dev"),
     ),
     "Suse": DistroPackages(
         build=("gcc", "gcc-c++", "make", "git", "curl", "cmake"),
