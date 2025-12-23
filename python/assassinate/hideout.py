@@ -22,9 +22,9 @@ from subprocess import (
 from time import sleep, time
 from typing import TYPE_CHECKING
 
-from python.assassinate.prep import HideoutPrep, PrepReport
-from python.bridge import Framework, get_version, initialize
-from python.log_config import get_logger
+from assassinate.assassinate.prep import HideoutPrep, PrepReport
+from assassinate.bridge import Framework, get_version, initialize
+from assassinate.log_config import get_logger
 
 if TYPE_CHECKING:
     from types import TracebackType

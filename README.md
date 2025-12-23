@@ -115,7 +115,7 @@ assassinate/
 │   ├── ci.yml              # Main CI (Rust + Python tests)
 │   └── distro-matrix.yml   # Multi-distro validation
 │
-├── TESTING_GUIDE.md        # Complete testing documentation
+├── docker/                  # Docker infrastructure (dev + prod)
 ├── pyproject.toml          # Python project config
 └── README.md               # This file
 ```
@@ -484,7 +484,7 @@ ASSASSINATE_LOG_LEVEL=DEBUG uv run pytest tests/ -v
 ./.github/scripts/test-ci-locally.sh
 ```
 
-See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation.
+See [docker/README.md](docker/README.md) for comprehensive testing documentation and [setup/DISTRO_NOTES.md](setup/DISTRO_NOTES.md) for distribution-specific notes.
 
 ---
 
@@ -555,7 +555,7 @@ This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**
 
 - **Issues**: [GitHub Issues](https://github.com/ausmaster/assassinate/issues)
 - **Discord**: [Join our community](https://discord.com/invite/PZqkgxu5SA)
-- **Documentation**: See [TESTING_GUIDE.md](TESTING_GUIDE.md)
+- **Documentation**: See [docker/README.md](docker/README.md) and [setup/DISTRO_NOTES.md](setup/DISTRO_NOTES.md)
 
 ---
 

@@ -1,0 +1,221 @@
+# =============================================================================
+# Assassinate Multi-Distro Docker Compose
+# =============================================================================
+#
+# Usage:
+#   docker compose build ubuntu
+#   docker compose build fedora
+#   docker compose run --rm ubuntu
+#   docker compose run --rm test-fedora
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: assassinate-db
+    environment:
+      POSTGRES_USER: assassinate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-assassinate_pass}
+      POSTGRES_DB: msf_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - assassinate-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assassinate"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Distro Images
+  # ===========================================================================
+
+  ubuntu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:ubuntu
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  debian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: debian
+    image: assassinate:debian
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  fedora:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: fedora
+    image: assassinate:fedora
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  arch:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: arch
+    image: assassinate:arch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  alpine:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: alpine
+    image: assassinate:alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  kali:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: kali
+    image: assassinate:kali
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  parrot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: parrot
+    image: assassinate:parrot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  # ===========================================================================
+  # Test Services
+  # ===========================================================================
+
+  test-ubuntu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:ubuntu-test
+    volumes:
+      - ../tests:/app/tests:ro
+    command: bash -c "pytest tests/ -v"
+
+  test-debian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: debian
+    image: assassinate:debian-test
+    volumes:
+      - ../tests:/app/tests:ro
+    command: bash -c "pytest tests/ -v"
+
+  test-fedora:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: fedora
+    image: assassinate:fedora-test
+    volumes:
+      - ../tests:/app/tests:ro
+    command: bash -c "pytest tests/ -v"
+
+  test-arch:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: arch
+    image: assassinate:arch-test
+    volumes:
+      - ../tests:/app/tests:ro
+    command: bash -c "pytest tests/ -v"
+
+  test-kali:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: kali
+    image: assassinate:kali-test
+    volumes:
+      - ../tests:/app/tests:ro
+    command: bash -c "pytest tests/ -v"
+
+  test-parrot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: parrot
+    image: assassinate:parrot-test
+    volumes:
+      - ../tests:/app/tests:ro
+    command: bash -c "pytest tests/ -v"
+
+networks:
+  assassinate-net:
+    name: assassinate-network
+
+volumes:
+  postgres_data:
+    name: assassinate-postgres-data

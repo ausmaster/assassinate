@@ -1,24 +1,44 @@
-from .hideout import Hideout
+"""Main entry point for the assassination framework.
+
+This module demonstrates basic hideout operations and framework connectivity.
+"""
+
+from assassinate.assassinate.hideout import Hideout
 
 
-def main():
-    ho = Hideout()
+def main() -> None:
+    """Initialize hideout and demonstrate framework capabilities."""
+    # Establish the hideout (operational headquarters)
+    with Hideout() as hideout:
+        # Verify framework connection
+        if hideout.framework is None:
+            print("❌ Framework connection failed")
+            return
 
-    # List available modules
-    print("Listing modules...")  # noqa: T201
-    exploits = ho.framework.list_modules("exploits")
-    auxiliary = ho.framework.list_modules("auxiliary")
-    payloads = ho.framework.list_modules("payloads")
+        print(f"🎯 Hideout established - Framework v{hideout.version}")
+        print()
 
-    print(f"  Exploits:  {len(exploits)}")  # noqa: T201
-    print(f"  Auxiliary: {len(auxiliary)}")  # noqa: T201
-    print(f"  Payloads:  {len(payloads)}\n")  # noqa: T201
+        # Gather intel on available modules
+        print("📋 Gathering intel on available modules...")
+        exploits = hideout.framework.list_modules("exploits")
+        auxiliary = hideout.framework.list_modules("auxiliary")
+        payloads = hideout.framework.list_modules("payloads")
 
-    # Show first 5 exploits
-    print("Sample exploits:")  # noqa: T201
-    for exploit in exploits[:5]:
-        print(f"  - {exploit}")  # noqa: T201
-    print()  # noqa: T201
+        print(f"  • Exploits:  {len(exploits)} available")
+        print(f"  • Auxiliary: {len(auxiliary)} available")
+        print(f"  • Payloads:  {len(payloads)} available")
+        print()
+
+        # Display sample exploits
+        if exploits:
+            print("🔫 Sample exploits in arsenal:")
+            for exploit in exploits[:5]:
+                print(f"  → {exploit}")
+            if len(exploits) > 5:
+                print(f"  ... and {len(exploits) - 5} more")
+        print()
+
+        print("✓ Mission briefing complete")
 
 
 if __name__ == "__main__":
