@@ -1091,6 +1091,81 @@ impl Daemon {
                 })
             }
 
+            // === Session System Information (Meterpreter) ===
+            "session_sys_sysinfo" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_sysinfo()? }))
+            }),
+            "session_sys_getuid" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_getuid()? }))
+            }),
+            "session_sys_getsid" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_getsid()? }))
+            }),
+            "session_sys_is_system" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_is_system()? }))
+            }),
+            "session_sys_getenv" => {
+                let var_name = get_str_arg(&_args, 1, "var_name")?;
+                self.with_session(&_args, |session| {
+                    Ok(serde_json::json!({ "value": session.sys_getenv(var_name)? }))
+                })
+            }
+            "session_sys_getenvs" => {
+                let var_names = _args.get(1)
+                    .and_then(|v| v.as_array())
+                    .context("Missing var_names array")?
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>();
+                self.with_session(&_args, |session| {
+                    Ok(serde_json::json!({ "value": session.sys_getenvs(var_names)? }))
+                })
+            }
+            "session_sys_localtime" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_localtime()? }))
+            }),
+            "session_sys_getdrivers" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_getdrivers()? }))
+            }),
+            "session_sys_getprivs" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.sys_getprivs()? }))
+            }),
+
+            // === Session Network Configuration (Meterpreter) ===
+            "session_net_get_interfaces" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.net_get_interfaces()? }))
+            }),
+            "session_net_get_routes" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.net_get_routes()? }))
+            }),
+            "session_net_get_arp_table" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.net_get_arp_table()? }))
+            }),
+            "session_net_get_netstat" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.net_get_netstat()? }))
+            }),
+            "session_net_add_route" => {
+                let subnet = get_str_arg(&_args, 1, "subnet")?;
+                let netmask = get_str_arg(&_args, 2, "netmask")?;
+                let gateway = get_str_arg(&_args, 3, "gateway")?;
+                self.with_session(&_args, |session| {
+                    session.net_add_route(subnet, netmask, gateway)?;
+                    Ok(serde_json::json!({}))
+                })
+            }
+            "session_net_remove_route" => {
+                let subnet = get_str_arg(&_args, 1, "subnet")?;
+                let netmask = get_str_arg(&_args, 2, "netmask")?;
+                let gateway = get_str_arg(&_args, 3, "gateway")?;
+                self.with_session(&_args, |session| {
+                    session.net_remove_route(subnet, netmask, gateway)?;
+                    Ok(serde_json::json!({}))
+                })
+            }
+            "session_net_get_proxy_config" => self.with_session(&_args, |session| {
+                Ok(serde_json::json!({ "value": session.net_get_proxy_config()? }))
+            }),
+
             // === Module Execution ===
             "module_exploit" => {
                 let module_id = _args

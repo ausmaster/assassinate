@@ -384,6 +384,45 @@ class MsfClient:
         result = await self._call("module_compatible_payloads", module_id)
         return result["payloads"]
 
+    async def module_actions(self, module_id: str) -> list[str]:
+        """Get available actions for an auxiliary/post module.
+
+        Args:
+            module_id: Module ID (must be auxiliary or post)
+
+        Returns:
+            List of action names
+        """
+        result = await self._call("module_actions", module_id)
+        return result["actions"]
+
+    async def module_default_action(self, module_id: str) -> str | None:
+        """Get the default action for an auxiliary/post module.
+
+        Args:
+            module_id: Module ID (must be auxiliary or post)
+
+        Returns:
+            Default action name, or None if module has no actions
+        """
+        result = await self._call("module_default_action", module_id)
+        return result["default_action"]
+
+    async def module_action(self, module_id: str) -> str | None:
+        """Get the current action for an auxiliary/post module.
+
+        This looks up datastore['ACTION'] and returns the matching action name.
+        Falls back to default_action if ACTION is not set.
+
+        Args:
+            module_id: Module ID (must be auxiliary or post)
+
+        Returns:
+            Current action name, or None if module has no actions
+        """
+        result = await self._call("module_action", module_id)
+        return result["action"]
+
     async def module_exploit(
         self,
         module_id: str,
@@ -973,3 +1012,519 @@ class MsfClient:
         """
         result = await self._call("session_via_payload", session_id)
         return result["via_payload"]
+
+    # ========== Session Filesystem Operations (Meterpreter) ==========
+
+    async def session_fs_pwd(self, session_id: int) -> str:
+        """Get current working directory.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Current working directory path
+        """
+        result = await self._call("session_fs_pwd", session_id)
+        return result["pwd"]
+
+    async def session_fs_chdir(self, session_id: int, path: str) -> None:
+        """Change working directory.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: Directory path to change to
+        """
+        await self._call("session_fs_chdir", session_id, path)
+
+    async def session_fs_ls(self, session_id: int, path: str) -> list[str]:
+        """List directory contents.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: Directory path to list
+
+        Returns:
+            List of filenames
+        """
+        result = await self._call("session_fs_ls", session_id, path)
+        return result["entries"]
+
+    async def session_fs_mkdir(self, session_id: int, path: str) -> None:
+        """Create directory.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: Directory path to create
+        """
+        await self._call("session_fs_mkdir", session_id, path)
+
+    async def session_fs_rmdir(self, session_id: int, path: str) -> None:
+        """Remove directory (must be empty).
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: Directory path to remove
+        """
+        await self._call("session_fs_rmdir", session_id, path)
+
+    async def session_fs_stat(self, session_id: int, path: str) -> dict:
+        """Get file/directory metadata.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: File or directory path
+
+        Returns:
+            Dict with file info: size, ftype, mtime, is_file, is_directory
+        """
+        result = await self._call("session_fs_stat", session_id, path)
+        return result["stat"]
+
+    async def session_fs_exists(self, session_id: int, path: str) -> bool:
+        """Check if file or directory exists.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: File or directory path
+
+        Returns:
+            True if exists, False otherwise
+        """
+        result = await self._call("session_fs_exists", session_id, path)
+        return result["exists"]
+
+    async def session_fs_rm(self, session_id: int, path: str) -> None:
+        """Delete file.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: File path to delete
+        """
+        await self._call("session_fs_rm", session_id, path)
+
+    async def session_fs_mv(self, session_id: int, old_path: str, new_path: str) -> None:
+        """Move/rename file.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            old_path: Source file path
+            new_path: Destination file path
+        """
+        await self._call("session_fs_mv", session_id, old_path, new_path)
+
+    async def session_fs_cp(self, session_id: int, src_path: str, dst_path: str) -> None:
+        """Copy file.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            src_path: Source file path
+            dst_path: Destination file path
+        """
+        await self._call("session_fs_cp", session_id, src_path, dst_path)
+
+    async def session_fs_separator(self, session_id: int) -> str:
+        """Get path separator for target system.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Path separator ("\\" on Windows, "/" on Unix)
+        """
+        result = await self._call("session_fs_separator", session_id)
+        return result["separator"]
+
+    async def session_fs_expand_path(self, session_id: int, path: str) -> str:
+        """Expand path (resolve environment variables).
+
+        Resolves variables like %appdata%, $HOME, etc.
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            path: Path with environment variables
+
+        Returns:
+            Expanded path
+        """
+        result = await self._call("session_fs_expand_path", session_id, path)
+        return result["expanded_path"]
+
+    async def session_fs_download_file(
+        self, session_id: int, local_path: str, remote_path: str
+    ) -> str:
+        """Download file from remote to local.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            local_path: Local file path to save to
+            remote_path: Remote file path to download
+
+        Returns:
+            Status string: "Completed", "Skipped", etc.
+        """
+        result = await self._call(
+            "session_fs_download_file", session_id, local_path, remote_path
+        )
+        return result["status"]
+
+    async def session_fs_upload_file(
+        self, session_id: int, remote_path: str, local_path: str
+    ) -> None:
+        """Upload file from local to remote.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            remote_path: Remote file path to save to
+            local_path: Local file path to upload
+        """
+        await self._call("session_fs_upload_file", session_id, remote_path, local_path)
+
+    # ========== Session Post Module Execution ==========
+
+    async def session_run_post_module(
+        self, session_id: int, module_path: str, options: dict[str, str] | None = None
+    ) -> bool:
+        """Run a post-exploitation module on a session.
+
+        This is used for tasks like:
+        - Upgrading shell to meterpreter: post/multi/manage/shell_to_meterpreter
+        - Gathering credentials
+        - Privilege escalation
+        - Persistence
+
+        The SESSION datastore option is automatically set to the specified session.
+
+        Args:
+            session_id: Session ID to run the module on
+            module_path: Post module path (e.g., "post/multi/manage/shell_to_meterpreter")
+            options: Optional dict of module options (e.g., {"LHOST": "192.168.1.100", "LPORT": "4444"})
+
+        Returns:
+            True if module ran successfully, False otherwise
+
+        Example:
+            # Upgrade a shell session to meterpreter
+            success = await client.session_run_post_module(
+                session_id=1,
+                module_path="post/multi/manage/shell_to_meterpreter",
+                options={"LHOST": "192.168.1.100", "LPORT": "4444"}
+            )
+        """
+        result = await self._call(
+            "session_run_post_module", session_id, module_path, options or {}
+        )
+        return result["success"]
+
+    # ========== System Information Methods ==========
+
+    async def session_sys_sysinfo(self, session_id: int) -> dict[str, Any]:
+        """Get system information from a Meterpreter session.
+
+        Returns information about the target system including OS, architecture,
+        computer name, domain, and logged on users.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Dict with keys: Computer, OS, Architecture, BuildTuple,
+            System Language, Domain, Logged On Users
+
+        Example:
+            info = await client.session_sys_sysinfo(1)
+            print(f"OS: {info['OS']}")
+            print(f"Architecture: {info['Architecture']}")
+            print(f"Computer: {info['Computer']}")
+        """
+        result = await self._call("session_sys_sysinfo", session_id)
+        return result["value"]
+
+    async def session_sys_getuid(self, session_id: int) -> str:
+        """Get the current username the session is running as.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Username string (e.g., "NT AUTHORITY\\SYSTEM" on Windows)
+
+        Example:
+            username = await client.session_sys_getuid(1)
+            print(f"Running as: {username}")
+        """
+        result = await self._call("session_sys_getuid", session_id)
+        return result["value"]
+
+    async def session_sys_getsid(self, session_id: int) -> str:
+        """Get the current process SID (Windows only).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            SID string (e.g., "S-1-5-18" for SYSTEM)
+
+        Example:
+            sid = await client.session_sys_getsid(1)
+            print(f"SID: {sid}")
+        """
+        result = await self._call("session_sys_getsid", session_id)
+        return result["value"]
+
+    async def session_sys_is_system(self, session_id: int) -> bool:
+        """Check if the session is running as SYSTEM (Windows only).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if running as SYSTEM, False otherwise
+
+        Example:
+            if await client.session_sys_is_system(1):
+                print("Running as SYSTEM!")
+        """
+        result = await self._call("session_sys_is_system", session_id)
+        return result["value"]
+
+    async def session_sys_getenv(self, session_id: int, var_name: str) -> str | None:
+        """Get an environment variable value from the target.
+
+        Args:
+            session_id: Session ID
+            var_name: Environment variable name (e.g., "PATH")
+
+        Returns:
+            Variable value if found, None otherwise
+
+        Example:
+            path = await client.session_sys_getenv(1, "PATH")
+            if path:
+                print(f"PATH: {path}")
+        """
+        result = await self._call("session_sys_getenv", session_id, var_name)
+        return result["value"]
+
+    async def session_sys_getenvs(
+        self, session_id: int, var_names: list[str]
+    ) -> dict[str, str]:
+        """Get multiple environment variables from the target.
+
+        Args:
+            session_id: Session ID
+            var_names: List of variable names to retrieve
+
+        Returns:
+            Dict mapping variable names to values (missing vars omitted)
+
+        Example:
+            envs = await client.session_sys_getenvs(1, ["PATH", "HOME", "USER"])
+            for name, value in envs.items():
+                print(f"{name}: {value}")
+        """
+        result = await self._call("session_sys_getenvs", session_id, var_names)
+        return result["value"]
+
+    async def session_sys_localtime(self, session_id: int) -> str:
+        """Get the local time on the target system.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Local time as a string
+
+        Example:
+            time = await client.session_sys_localtime(1)
+            print(f"Target time: {time}")
+        """
+        result = await self._call("session_sys_localtime", session_id)
+        return result["value"]
+
+    async def session_sys_getdrivers(self, session_id: int) -> list[dict[str, str]]:
+        """Get list of loaded drivers (Windows only).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of dicts with keys: basename, filename
+
+        Example:
+            drivers = await client.session_sys_getdrivers(1)
+            for driver in drivers[:5]:
+                print(f"{driver['basename']}: {driver['filename']}")
+        """
+        result = await self._call("session_sys_getdrivers", session_id)
+        return result["value"]
+
+    async def session_sys_getprivs(self, session_id: int) -> list[str]:
+        """Get list of enabled privileges (Windows only).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of privilege names
+
+        Example:
+            privs = await client.session_sys_getprivs(1)
+            print(f"Enabled privileges: {', '.join(privs)}")
+        """
+        result = await self._call("session_sys_getprivs", session_id)
+        return result["value"]
+
+    # ========== Network Configuration Methods ==========
+
+    async def session_net_get_interfaces(self, session_id: int) -> list[dict[str, Any]]:
+        """Get network interfaces from a Meterpreter session.
+
+        Returns information about all network interfaces including IP addresses,
+        MAC addresses, MTUs, and netmasks.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of interface dicts with keys: index, mac_addr, mac_name,
+            mtu, addrs (list), netmasks (list)
+
+        Example:
+            interfaces = await client.session_net_get_interfaces(1)
+            for iface in interfaces:
+                print(f"{iface['mac_name']}: {', '.join(iface['addrs'])}")
+        """
+        result = await self._call("session_net_get_interfaces", session_id)
+        return result["value"]
+
+    async def session_net_get_routes(self, session_id: int) -> list[dict[str, Any]]:
+        """Get the routing table from a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of route dicts with keys: subnet, netmask, gateway,
+            interface, metric
+
+        Example:
+            routes = await client.session_net_get_routes(1)
+            for route in routes:
+                print(f"{route['subnet']} via {route['gateway']}")
+        """
+        result = await self._call("session_net_get_routes", session_id)
+        return result["value"]
+
+    async def session_net_get_arp_table(self, session_id: int) -> list[dict[str, str]]:
+        """Get the ARP cache from a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of ARP entry dicts with keys: ip_addr, mac_addr, interface
+
+        Example:
+            arp_table = await client.session_net_get_arp_table(1)
+            for entry in arp_table:
+                print(f"{entry['ip_addr']} -> {entry['mac_addr']}")
+        """
+        result = await self._call("session_net_get_arp_table", session_id)
+        return result["value"]
+
+    async def session_net_get_netstat(self, session_id: int) -> list[dict[str, Any]]:
+        """Get network connections (netstat) from a Meterpreter session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            List of connection dicts with keys: local_addr, remote_addr,
+            local_port, remote_port, protocol, state
+
+        Example:
+            connections = await client.session_net_get_netstat(1)
+            for conn in connections:
+                print(f"{conn['local_addr']}:{conn['local_port']} -> "
+                      f"{conn['remote_addr']}:{conn['remote_port']} ({conn['state']})")
+        """
+        result = await self._call("session_net_get_netstat", session_id)
+        return result["value"]
+
+    async def session_net_add_route(
+        self, session_id: int, subnet: str, netmask: str, gateway: str
+    ) -> None:
+        """Add a route to the routing table.
+
+        Args:
+            session_id: Session ID
+            subnet: Subnet address (e.g., "192.168.1.0")
+            netmask: Netmask (e.g., "255.255.255.0")
+            gateway: Gateway address (e.g., "192.168.1.1")
+
+        Example:
+            await client.session_net_add_route(1, "10.0.0.0", "255.0.0.0", "192.168.1.1")
+        """
+        await self._call("session_net_add_route", session_id, subnet, netmask, gateway)
+
+    async def session_net_remove_route(
+        self, session_id: int, subnet: str, netmask: str, gateway: str
+    ) -> None:
+        """Remove a route from the routing table.
+
+        Args:
+            session_id: Session ID
+            subnet: Subnet address (e.g., "192.168.1.0")
+            netmask: Netmask (e.g., "255.255.255.0")
+            gateway: Gateway address (e.g., "192.168.1.1")
+
+        Example:
+            await client.session_net_remove_route(1, "10.0.0.0", "255.0.0.0", "192.168.1.1")
+        """
+        await self._call(
+            "session_net_remove_route", session_id, subnet, netmask, gateway
+        )
+
+    async def session_net_get_proxy_config(self, session_id: int) -> dict[str, Any]:
+        """Get proxy configuration (Windows only).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Dict with keys: autodetect, autoconfigurl, proxy, proxybypass
+
+        Example:
+            proxy_config = await client.session_net_get_proxy_config(1)
+            if proxy_config.get('proxy'):
+                print(f"Proxy: {proxy_config['proxy']}")
+        """
+        result = await self._call("session_net_get_proxy_config", session_id)
+        return result["value"]

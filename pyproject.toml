@@ -76,6 +76,7 @@ markers = [
     "slow: Slow tests",
     "exploit: Tests that involve exploits",
     "auxiliary: Tests that involve auxiliary modules",
+    "asyncio: Async tests using pytest-asyncio",
 ]
 asyncio_mode = "auto"
 minversion = "3.10"
