@@ -841,6 +841,65 @@ class MsfClient:
         result = await self._call("db_delete_workspace", workspace_id)
         return result["success"]
 
+    # ========== Database Note Management ==========
+
+    async def db_notes(self, options: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        """List all notes in the current workspace.
+
+        Args:
+            options: Optional filters (e.g., {"host": "192.168.1.1", "type": "host.comments"})
+
+        Returns:
+            List of note dicts with keys: id, ntype, workspace_id, host, service, data, created_at, updated_at
+
+        Example:
+            notes = await client.db_notes()
+            for note in notes:
+                print(f"Note {note['id']}: {note.get('data')}")
+
+            # Filter by host
+            host_notes = await client.db_notes({"host": "192.168.1.100"})
+        """
+        result = await self._call("db_notes", options)
+        return result["notes"]
+
+    async def db_report_note(self, options: dict[str, str]) -> int:
+        """Report/create a note in the database.
+
+        Args:
+            options: Note attributes (required: "host" or "service", "type", "data")
+                    Common types: "host.comments", "host.os.session_fingerprint", etc.
+
+        Returns:
+            Created note ID
+
+        Example:
+            note_id = await client.db_report_note({
+                "host": "192.168.1.100",
+                "type": "host.comments",
+                "data": "Vulnerable web server"
+            })
+            print(f"Created note ID: {note_id}")
+        """
+        result = await self._call("db_report_note", options)
+        return result["note_id"]
+
+    async def db_delete_note(self, note_ids: list[int]) -> int:
+        """Delete notes by IDs.
+
+        Args:
+            note_ids: List of note IDs to delete
+
+        Returns:
+            Number of notes deleted
+
+        Example:
+            count = await client.db_delete_note([123, 456])
+            print(f"Deleted {count} notes")
+        """
+        result = await self._call("db_delete_note", note_ids)
+        return result["count"]
+
     # JobManager operations
     async def job_list(self) -> list[str]:
         """List all active job IDs.

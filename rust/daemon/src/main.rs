@@ -830,6 +830,33 @@ impl Daemon {
                 Ok(serde_json::json!({ "success": success }))
             }
 
+            // === Database Note Management ===
+            "db_notes" => {
+                let db = self.framework.db()?;
+                let notes = db.notes(parse_options(_args.get(0)))?;
+                Ok(serde_json::json!({ "notes": notes }))
+            }
+
+            "db_report_note" => {
+                let db = self.framework.db()?;
+                let opts = parse_options(_args.get(0))
+                    .context("Missing options for report_note")?;
+                let note_id = db.report_note(opts)?;
+                Ok(serde_json::json!({ "note_id": note_id }))
+            }
+
+            "db_delete_note" => {
+                let ids = _args.get(0)
+                    .and_then(|v| v.as_array())
+                    .context("Missing note_ids array")?
+                    .iter()
+                    .filter_map(|v| v.as_i64())
+                    .collect::<Vec<i64>>();
+                let db = self.framework.db()?;
+                let count = db.delete_note(ids)?;
+                Ok(serde_json::json!({ "count": count }))
+            }
+
             // === Job Manager Operations ===
             "job_list" => {
                 let jobs = self.framework.jobs()?;
