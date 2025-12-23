@@ -272,7 +272,6 @@ impl Session {
     }
 
     /// Get net.config for network configuration
-    #[allow(dead_code)]
     fn net_config(&self) -> Result<Value> {
         call_method(self.net()?, "config", &[])
     }
@@ -590,5 +589,348 @@ impl Session {
             "handle": handle,
             "channel_id": channel_id,
         }))
+    }
+
+    // ========== System Information (Meterpreter) ==========
+
+    /// Get system information (OS, architecture, computer name, etc.)
+    /// Returns JSON with keys: Computer, OS, Architecture, BuildTuple, System Language, Domain, Logged On Users
+    /// Only works on Meterpreter sessions
+    pub fn sys_sysinfo(&self) -> Result<serde_json::Value> {
+        let sysinfo_val = call_method(self.sys_config()?, "sysinfo", &[])?;
+        crate::ruby_bridge::hash_to_json(sysinfo_val)
+    }
+
+    /// Get current username
+    /// Only works on Meterpreter sessions
+    pub fn sys_getuid(&self) -> Result<String> {
+        get_string_attr(self.sys_config()?, "getuid")
+    }
+
+    /// Get current process SID (Windows only)
+    /// Only works on Meterpreter sessions
+    pub fn sys_getsid(&self) -> Result<String> {
+        get_string_attr(self.sys_config()?, "getsid")
+    }
+
+    /// Check if running as SYSTEM (Windows only)
+    /// Only works on Meterpreter sessions
+    pub fn sys_is_system(&self) -> Result<bool> {
+        crate::ruby_bridge::get_bool_attr(self.sys_config()?, "is_system?")
+    }
+
+    /// Get environment variable value
+    /// Only works on Meterpreter sessions
+    pub fn sys_getenv(&self, var_name: &str) -> Result<Option<String>> {
+        let result = call_method(self.sys_config()?, "getenv", &[to_ruby_str(var_name)?])?;
+
+        if is_nil(result) {
+            Ok(None)
+        } else {
+            Ok(Some(value_to_string(result)?))
+        }
+    }
+
+    /// Get multiple environment variables
+    /// Returns HashMap of variable name -> value
+    /// Only works on Meterpreter sessions
+    pub fn sys_getenvs(&self, var_names: Vec<String>) -> Result<std::collections::HashMap<String, String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build array of variable names
+        let vars_array = ruby.ary_new();
+        for var_name in var_names {
+            let var_val = ruby.str_new(&var_name).as_value();
+            call_method(vars_array.as_value(), "push", &[var_val])?;
+        }
+
+        // Call getenvs with splatted array
+        let result = call_method(self.sys_config()?, "getenvs", &[vars_array.as_value()])?;
+
+        // Convert hash to JSON then to HashMap
+        let json = crate::ruby_bridge::hash_to_json(result)?;
+        let map: std::collections::HashMap<String, String> = serde_json::from_value(json)
+            .map_err(|e| AssassinateError::ConversionError(format!("Failed to convert envs: {}", e)))?;
+
+        Ok(map)
+    }
+
+    /// Get local time on target system
+    /// Only works on Meterpreter sessions
+    pub fn sys_localtime(&self) -> Result<String> {
+        get_string_attr(self.sys_config()?, "localtime")
+    }
+
+    /// Get list of loaded drivers (Windows only)
+    /// Returns Vec of JSON objects with keys: basename, filename
+    /// Only works on Meterpreter sessions
+    pub fn sys_getdrivers(&self) -> Result<Vec<serde_json::Value>> {
+        let drivers = call_method(self.sys_config()?, "getdrivers", &[])?;
+        let len = crate::ruby_bridge::ruby_array_len(drivers)?;
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let driver = crate::ruby_bridge::ruby_array_get(drivers, i)?;
+            let driver_json = crate::ruby_bridge::hash_to_json(driver)?;
+            result.push(driver_json);
+        }
+
+        Ok(result)
+    }
+
+    /// Get list of enabled privileges (Windows only)
+    /// Only works on Meterpreter sessions
+    pub fn sys_getprivs(&self) -> Result<Vec<String>> {
+        let privs = call_method(self.sys_config()?, "getprivs", &[])?;
+        crate::ruby_bridge::ruby_array_to_strings(privs)
+    }
+
+    // ========== Network Configuration (Meterpreter) ==========
+
+    /// Get network interfaces
+    /// Returns Vec of JSON objects with keys: index, mac_addr, mac_name, mtu, flags, addrs, netmasks, scopes
+    /// Only works on Meterpreter sessions
+    pub fn net_get_interfaces(&self) -> Result<Vec<serde_json::Value>> {
+        let interfaces = call_method(self.net_config()?, "get_interfaces", &[])?;
+        let len = crate::ruby_bridge::ruby_array_len(interfaces)?;
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let iface = crate::ruby_bridge::ruby_array_get(interfaces, i)?;
+
+            // Convert Interface object to hash-like structure
+            let mut iface_obj = serde_json::Map::new();
+
+            // Get index
+            if let Ok(index_val) = call_method(iface, "index", &[]) {
+                if let Ok(index) = crate::ruby_bridge::value_to_i64(index_val) {
+                    iface_obj.insert("index".to_string(), serde_json::json!(index));
+                }
+            }
+
+            // Get MAC address
+            if let Ok(mac_val) = call_method(iface, "mac_addr", &[]) {
+                if let Ok(mac) = value_to_string(mac_val) {
+                    iface_obj.insert("mac_addr".to_string(), serde_json::json!(mac));
+                }
+            }
+
+            // Get MAC name (interface name)
+            if let Ok(name_val) = call_method(iface, "mac_name", &[]) {
+                if let Ok(name) = value_to_string(name_val) {
+                    iface_obj.insert("mac_name".to_string(), serde_json::json!(name));
+                }
+            }
+
+            // Get MTU
+            if let Ok(mtu_val) = call_method(iface, "mtu", &[]) {
+                if let Ok(mtu) = crate::ruby_bridge::value_to_i64(mtu_val) {
+                    iface_obj.insert("mtu".to_string(), serde_json::json!(mtu));
+                }
+            }
+
+            // Get IP addresses
+            if let Ok(addrs_val) = call_method(iface, "addrs", &[]) {
+                if let Ok(addrs) = crate::ruby_bridge::ruby_array_to_strings(addrs_val) {
+                    iface_obj.insert("addrs".to_string(), serde_json::json!(addrs));
+                }
+            }
+
+            // Get netmasks
+            if let Ok(netmasks_val) = call_method(iface, "netmasks", &[]) {
+                if let Ok(netmasks) = crate::ruby_bridge::ruby_array_to_strings(netmasks_val) {
+                    iface_obj.insert("netmasks".to_string(), serde_json::json!(netmasks));
+                }
+            }
+
+            result.push(serde_json::Value::Object(iface_obj));
+        }
+
+        Ok(result)
+    }
+
+    /// Get routing table
+    /// Returns Vec of JSON objects with keys: subnet, netmask, gateway, interface, metric
+    /// Only works on Meterpreter sessions
+    pub fn net_get_routes(&self) -> Result<Vec<serde_json::Value>> {
+        let routes = call_method(self.net_config()?, "get_routes", &[])?;
+        let len = crate::ruby_bridge::ruby_array_len(routes)?;
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let route = crate::ruby_bridge::ruby_array_get(routes, i)?;
+
+            let mut route_obj = serde_json::Map::new();
+
+            // Get subnet
+            if let Ok(subnet_val) = call_method(route, "subnet", &[]) {
+                if let Ok(subnet) = value_to_string(subnet_val) {
+                    route_obj.insert("subnet".to_string(), serde_json::json!(subnet));
+                }
+            }
+
+            // Get netmask
+            if let Ok(netmask_val) = call_method(route, "netmask", &[]) {
+                if let Ok(netmask) = value_to_string(netmask_val) {
+                    route_obj.insert("netmask".to_string(), serde_json::json!(netmask));
+                }
+            }
+
+            // Get gateway
+            if let Ok(gateway_val) = call_method(route, "gateway", &[]) {
+                if let Ok(gateway) = value_to_string(gateway_val) {
+                    route_obj.insert("gateway".to_string(), serde_json::json!(gateway));
+                }
+            }
+
+            // Get interface
+            if let Ok(iface_val) = call_method(route, "interface", &[]) {
+                if let Ok(iface) = value_to_string(iface_val) {
+                    route_obj.insert("interface".to_string(), serde_json::json!(iface));
+                }
+            }
+
+            // Get metric
+            if let Ok(metric_val) = call_method(route, "metric", &[]) {
+                if let Ok(metric) = crate::ruby_bridge::value_to_i64(metric_val) {
+                    route_obj.insert("metric".to_string(), serde_json::json!(metric));
+                }
+            }
+
+            result.push(serde_json::Value::Object(route_obj));
+        }
+
+        Ok(result)
+    }
+
+    /// Get ARP table
+    /// Returns Vec of JSON objects with keys: ip_addr, mac_addr, interface
+    /// Only works on Meterpreter sessions
+    pub fn net_get_arp_table(&self) -> Result<Vec<serde_json::Value>> {
+        let arps = call_method(self.net_config()?, "get_arp_table", &[])?;
+        let len = crate::ruby_bridge::ruby_array_len(arps)?;
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let arp = crate::ruby_bridge::ruby_array_get(arps, i)?;
+
+            let mut arp_obj = serde_json::Map::new();
+
+            // Get IP address
+            if let Ok(ip_val) = call_method(arp, "ip_addr", &[]) {
+                if let Ok(ip) = value_to_string(ip_val) {
+                    arp_obj.insert("ip_addr".to_string(), serde_json::json!(ip));
+                }
+            }
+
+            // Get MAC address
+            if let Ok(mac_val) = call_method(arp, "mac_addr", &[]) {
+                if let Ok(mac) = value_to_string(mac_val) {
+                    arp_obj.insert("mac_addr".to_string(), serde_json::json!(mac));
+                }
+            }
+
+            // Get interface
+            if let Ok(iface_val) = call_method(arp, "interface", &[]) {
+                if let Ok(iface) = value_to_string(iface_val) {
+                    arp_obj.insert("interface".to_string(), serde_json::json!(iface));
+                }
+            }
+
+            result.push(serde_json::Value::Object(arp_obj));
+        }
+
+        Ok(result)
+    }
+
+    /// Get network statistics (netstat)
+    /// Returns Vec of JSON objects with connection information
+    /// Only works on Meterpreter sessions
+    pub fn net_get_netstat(&self) -> Result<Vec<serde_json::Value>> {
+        let netstat = call_method(self.net_config()?, "get_netstat", &[])?;
+        let len = crate::ruby_bridge::ruby_array_len(netstat)?;
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let conn = crate::ruby_bridge::ruby_array_get(netstat, i)?;
+
+            let mut conn_obj = serde_json::Map::new();
+
+            // Get local address
+            if let Ok(local_val) = call_method(conn, "local_addr", &[]) {
+                if let Ok(local) = value_to_string(local_val) {
+                    conn_obj.insert("local_addr".to_string(), serde_json::json!(local));
+                }
+            }
+
+            // Get remote address
+            if let Ok(remote_val) = call_method(conn, "remote_addr", &[]) {
+                if let Ok(remote) = value_to_string(remote_val) {
+                    conn_obj.insert("remote_addr".to_string(), serde_json::json!(remote));
+                }
+            }
+
+            // Get local port
+            if let Ok(lport_val) = call_method(conn, "local_port", &[]) {
+                if let Ok(lport) = crate::ruby_bridge::value_to_i64(lport_val) {
+                    conn_obj.insert("local_port".to_string(), serde_json::json!(lport));
+                }
+            }
+
+            // Get remote port
+            if let Ok(rport_val) = call_method(conn, "remote_port", &[]) {
+                if let Ok(rport) = crate::ruby_bridge::value_to_i64(rport_val) {
+                    conn_obj.insert("remote_port".to_string(), serde_json::json!(rport));
+                }
+            }
+
+            // Get protocol
+            if let Ok(proto_val) = call_method(conn, "protocol", &[]) {
+                if let Ok(proto) = value_to_string(proto_val) {
+                    conn_obj.insert("protocol".to_string(), serde_json::json!(proto));
+                }
+            }
+
+            // Get state
+            if let Ok(state_val) = call_method(conn, "state", &[]) {
+                if let Ok(state) = value_to_string(state_val) {
+                    conn_obj.insert("state".to_string(), serde_json::json!(state));
+                }
+            }
+
+            result.push(serde_json::Value::Object(conn_obj));
+        }
+
+        Ok(result)
+    }
+
+    /// Add a route to the routing table
+    /// Only works on Meterpreter sessions
+    pub fn net_add_route(&self, subnet: &str, netmask: &str, gateway: &str) -> Result<()> {
+        call_method(
+            self.net_config()?,
+            "add_route",
+            &[to_ruby_str(subnet)?, to_ruby_str(netmask)?, to_ruby_str(gateway)?],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a route from the routing table
+    /// Only works on Meterpreter sessions
+    pub fn net_remove_route(&self, subnet: &str, netmask: &str, gateway: &str) -> Result<()> {
+        call_method(
+            self.net_config()?,
+            "remove_route",
+            &[to_ruby_str(subnet)?, to_ruby_str(netmask)?, to_ruby_str(gateway)?],
+        )?;
+        Ok(())
+    }
+
+    /// Get proxy configuration (Windows only)
+    /// Returns JSON with keys: autodetect, autoconfigurl, proxy, proxybypass
+    /// Only works on Meterpreter sessions
+    pub fn net_get_proxy_config(&self) -> Result<serde_json::Value> {
+        let proxy_config = call_method(self.net_config()?, "get_proxy_config", &[])?;
+        crate::ruby_bridge::hash_to_json(proxy_config)
     }
 }
