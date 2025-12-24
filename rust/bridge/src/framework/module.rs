@@ -464,6 +464,133 @@ impl Module {
         Ok(notes)
     }
 
+    // ========== Module Option Validation ==========
+
+    /// Get structured options with full details (type, required, default, description)
+    pub fn options_structured(&self) -> Result<HashMap<String, serde_json::Value>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let options_val = call_method(self.ruby_module, "options", &[])?;
+
+        if is_nil(options_val) {
+            return Ok(HashMap::new());
+        }
+
+        // Get option names
+        let keys_val = call_method(options_val, "keys", &[])?;
+        let keys: Vec<String> = TryConvert::try_convert(keys_val)
+            .map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to get option keys: {}", e))
+            })?;
+
+        let mut structured_options = HashMap::new();
+
+        // Iterate through each option and extract attributes
+        for opt_name in keys {
+            let opt_name_val = ruby.str_new(&opt_name).as_value();
+            let opt_obj = call_method(options_val, "[]", &[opt_name_val])?;
+
+            if is_nil(opt_obj) {
+                continue;
+            }
+
+            let mut opt_details = serde_json::Map::new();
+
+            // Extract required attribute
+            if let Ok(required_val) = call_method(opt_obj, "required", &[]) {
+                if let Ok(required_bool) = crate::ruby_bridge::value_to_bool(required_val) {
+                    opt_details.insert("required".to_string(), serde_json::json!(required_bool));
+                }
+            }
+
+            // Extract description
+            if let Ok(desc_val) = call_method(opt_obj, "desc", &[]) {
+                if !is_nil(desc_val) {
+                    if let Ok(desc_str) = value_to_string(desc_val) {
+                        opt_details.insert("desc".to_string(), serde_json::json!(desc_str));
+                    }
+                }
+            }
+
+            // Extract default value
+            if let Ok(default_val) = call_method(opt_obj, "default", &[]) {
+                if is_nil(default_val) {
+                    opt_details.insert("default".to_string(), serde_json::Value::Null);
+                } else if let Ok(default_str) = value_to_string(default_val) {
+                    opt_details.insert("default".to_string(), serde_json::json!(default_str));
+                }
+            }
+
+            // Extract type (class name)
+            if let Ok(type_val) = call_method(opt_obj, "type", &[]) {
+                if !is_nil(type_val) {
+                    if let Ok(type_str) = value_to_string(type_val) {
+                        opt_details.insert("type".to_string(), serde_json::json!(type_str));
+                    }
+                }
+            }
+
+            structured_options.insert(opt_name, serde_json::Value::Object(opt_details));
+        }
+
+        Ok(structured_options)
+    }
+
+    /// Get list of missing required options
+    pub fn missing_required(&self) -> Result<Vec<String>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let options_val = call_method(self.ruby_module, "options", &[])?;
+
+        if is_nil(options_val) {
+            return Ok(Vec::new());
+        }
+
+        let mut missing = Vec::new();
+
+        // Get option names
+        let keys_val = call_method(options_val, "keys", &[])?;
+        let keys: Vec<String> = TryConvert::try_convert(keys_val)
+            .map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!("Failed to get option keys: {}", e))
+            })?;
+
+        // Get datastore once
+        let datastore_val = call_method(self.ruby_module, "datastore", &[])?;
+
+        // Iterate through each option
+        for opt_name in keys {
+            let opt_name_val = ruby.str_new(&opt_name).as_value();
+            let opt_obj = call_method(options_val, "[]", &[opt_name_val])?;
+
+            if is_nil(opt_obj) {
+                continue;
+            }
+
+            // Check if required
+            let is_required = match call_method(opt_obj, "required", &[]) {
+                Ok(required_val) => {
+                    crate::ruby_bridge::value_to_bool(required_val).unwrap_or(false)
+                }
+                Err(_) => false,
+            };
+
+            if is_required {
+                // Check if the option has a value set in the module's datastore
+                let current_val = call_method(datastore_val, "[]", &[opt_name_val])?;
+
+                // If nil or empty string, it's missing
+                if is_nil(current_val) {
+                    missing.push(opt_name);
+                } else if let Ok(val_str) = value_to_string(current_val) {
+                    if val_str.is_empty() {
+                        missing.push(opt_name);
+                    }
+                }
+            }
+        }
+
+        Ok(missing)
+    }
+
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
             "<Module name='{}' type='{}'>",

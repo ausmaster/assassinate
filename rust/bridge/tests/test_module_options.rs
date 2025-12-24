@@ -82,3 +82,98 @@ fn it_reads_module_options_and_actions() {
         }
     }
 }
+
+#[test]
+fn it_gets_structured_options() {
+    let (ruby, framework) = common::init_framework();
+
+    let modules = ruby_bridge::call_method(framework, "modules", &[])
+        .expect("Failed to get modules");
+
+    // Create a module with known required options
+    let module_name = ruby.str_new("auxiliary/scanner/portscan/tcp").as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+
+    // Get options as hash
+    let options = ruby_bridge::call_method(module, "options", &[])
+        .expect("Failed to get options");
+    let options_hash = ruby_bridge::call_method(options, "to_h", &[])
+        .expect("Failed to convert options to hash");
+
+    // Convert to JSON to inspect structure
+    let json = ruby_bridge::hash_to_json(options_hash)
+        .expect("Failed to convert options hash to JSON");
+
+    println!("✓ Structured options JSON has {} keys", json.as_object().map(|o| o.len()).unwrap_or(0));
+
+    // Check that we can extract option details
+    if let Some(opts_obj) = json.as_object() {
+        for (opt_name, opt_val) in opts_obj {
+            if opt_name == "RHOSTS" || opt_name == "RHOST" {
+                println!("  {} option details: {}", opt_name, opt_val);
+                // Should have required, desc, type fields
+                if let Some(opt_obj) = opt_val.as_object() {
+                    assert!(opt_obj.contains_key("required") || opt_obj.contains_key("desc"),
+                        "Option should have metadata");
+                }
+                break;
+            }
+        }
+    }
+}
+
+#[test]
+fn it_detects_missing_required_options() {
+    let (ruby, framework) = common::init_framework();
+
+    let modules = ruby_bridge::call_method(framework, "modules", &[])
+        .expect("Failed to get modules");
+
+    // Create a module with required options
+    let module_name = ruby.str_new("auxiliary/scanner/portscan/tcp").as_value();
+    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+        .expect("Failed to create module");
+
+    // Get options
+    let options = ruby_bridge::call_method(module, "options", &[])
+        .expect("Failed to get options");
+    let options_hash = ruby_bridge::call_method(options, "to_h", &[])
+        .expect("Failed to convert options to hash");
+    let json = ruby_bridge::hash_to_json(options_hash)
+        .expect("Failed to convert to JSON");
+
+    // Check for missing required options
+    let datastore = ruby_bridge::call_method(module, "datastore", &[])
+        .expect("Failed to get datastore");
+
+    let mut missing = Vec::new();
+
+    if let Some(opts_obj) = json.as_object() {
+        for (opt_name, opt_val) in opts_obj {
+            if let Some(opt_obj) = opt_val.as_object() {
+                let is_required = opt_obj
+                    .get("required")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                if is_required {
+                    let opt_name_val = ruby.str_new(opt_name).as_value();
+                    let current_val = ruby_bridge::call_method(datastore, "[]", &[opt_name_val])
+                        .expect("Failed to get datastore value");
+
+                    if ruby_bridge::is_nil(current_val) {
+                        missing.push(opt_name.clone());
+                    } else if let Ok(val_str) = ruby_bridge::value_to_string(current_val) {
+                        if val_str.is_empty() {
+                            missing.push(opt_name.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    println!("✓ Missing required options: {:?}", missing);
+    assert!(!missing.is_empty(), "Module should have missing required options when unconfigured");
+}

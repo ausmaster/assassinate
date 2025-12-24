@@ -207,6 +207,78 @@ impl Framework {
         crate::ruby_bridge::value_to_bool(threads_val)
     }
 
+    // ========== Framework Management Operations ==========
+
+    /// Hot reload all framework modules
+    ///
+    /// Returns module counts by type after reloading
+    pub fn reload_modules(&self) -> Result<HashMap<String, i64>> {
+        let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
+
+        // Call reload_modules which returns a hash of counts by type
+        let result_val = call_method(modules_manager, "reload_modules", &[])?;
+
+        // Convert Ruby hash to JSON then to HashMap
+        let json = crate::ruby_bridge::hash_to_json(result_val)?;
+        let stats: HashMap<String, i64> = serde_json::from_value(json)
+            .map_err(|e| AssassinateError::ConversionError(format!("Failed to convert reload stats: {}", e)))?;
+
+        Ok(stats)
+    }
+
+    /// Save framework configuration to disk
+    pub fn save(&self) -> Result<()> {
+        call_method(self.ruby_framework, "save_config", &[])?;
+        Ok(())
+    }
+
+    /// Add a new module path to the framework
+    ///
+    /// The path must be accessible and contain top-level directories for module types
+    /// (exploits, auxiliary, post, encoders, nops, payloads, evasion)
+    pub fn add_module_path(&self, path: &str) -> Result<HashMap<String, i64>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
+
+        let path_val = ruby.str_new(path).as_value();
+
+        // add_module_path returns a hash of counts by type
+        let result_val = call_method(modules_manager, "add_module_path", &[path_val])?;
+
+        // Convert Ruby hash to JSON then to HashMap
+        let json = crate::ruby_bridge::hash_to_json(result_val)?;
+        let stats: HashMap<String, i64> = serde_json::from_value(json)
+            .map_err(|e| AssassinateError::ConversionError(format!("Failed to convert module path stats: {}", e)))?;
+
+        Ok(stats)
+    }
+
+    /// Get module statistics (counts by type)
+    pub fn module_stats(&self) -> Result<HashMap<String, i64>> {
+        let stats_val = call_method(self.ruby_framework, "stats", &[])?;
+
+        let mut stats = HashMap::new();
+
+        // Extract each stat count
+        let exploits_val = call_method(stats_val, "num_exploits", &[])?;
+        let auxiliary_val = call_method(stats_val, "num_auxiliary", &[])?;
+        let post_val = call_method(stats_val, "num_post", &[])?;
+        let encoders_val = call_method(stats_val, "num_encoders", &[])?;
+        let nops_val = call_method(stats_val, "num_nops", &[])?;
+        let payloads_val = call_method(stats_val, "num_payloads", &[])?;
+        let evasions_val = call_method(stats_val, "num_evasion", &[])?;
+
+        stats.insert("exploits".to_string(), TryConvert::try_convert(exploits_val).unwrap_or(0));
+        stats.insert("auxiliary".to_string(), TryConvert::try_convert(auxiliary_val).unwrap_or(0));
+        stats.insert("post".to_string(), TryConvert::try_convert(post_val).unwrap_or(0));
+        stats.insert("encoders".to_string(), TryConvert::try_convert(encoders_val).unwrap_or(0));
+        stats.insert("nops".to_string(), TryConvert::try_convert(nops_val).unwrap_or(0));
+        stats.insert("payloads".to_string(), TryConvert::try_convert(payloads_val).unwrap_or(0));
+        stats.insert("evasions".to_string(), TryConvert::try_convert(evasions_val).unwrap_or(0));
+
+        Ok(stats)
+    }
+
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<Framework version={}>", self.version()?))
     }

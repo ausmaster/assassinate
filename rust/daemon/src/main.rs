@@ -586,6 +586,62 @@ impl Daemon {
                 Ok(serde_json::json!({ "notes": notes }))
             }
 
+            "module_options_structured" => {
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let options = module.options_structured()?;
+
+                Ok(serde_json::json!({ "options": options }))
+            }
+
+            "module_missing_required" => {
+                let module_id = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing module_id")?;
+
+                let modules = self.modules.lock();
+                let module = modules.get(module_id).context("Module not found")?;
+                let missing = module.missing_required()?;
+
+                Ok(serde_json::json!({ "missing": missing }))
+            }
+
+            // === Framework Management Operations ===
+            "framework_reload_modules" => {
+                let stats = self.framework.reload_modules()
+                    .context("Failed to reload modules")?;
+                Ok(serde_json::json!({ "stats": stats }))
+            }
+
+            "framework_save" => {
+                self.framework.save()
+                    .context("Failed to save framework config")?;
+                Ok(serde_json::json!({ "result": "success" }))
+            }
+
+            "framework_add_module_path" => {
+                let path = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing path argument")?;
+
+                let stats = self.framework.add_module_path(path)
+                    .context("Failed to add module path")?;
+                Ok(serde_json::json!({ "stats": stats }))
+            }
+
+            "framework_module_stats" => {
+                let stats = self.framework.module_stats()
+                    .context("Failed to get module stats")?;
+                Ok(serde_json::json!({ "stats": stats }))
+            }
+
             // === Framework-level DataStore Operations ===
             "framework_get_option" => {
                 let key = _args

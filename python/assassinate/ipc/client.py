@@ -372,6 +372,39 @@ class MsfClient:
         result = await self._call("module_validate", module_id)
         return result["valid"]
 
+    async def module_options_structured(self, module_id: str) -> dict[str, dict]:
+        """Get module options with full details (type, required, default, description).
+
+        Args:
+            module_id: Module ID
+
+        Returns:
+            Dictionary mapping option names to option details:
+            {
+                "RHOST": {
+                    "type": "address",
+                    "required": true,
+                    "default": null,
+                    "desc": "Target host"
+                },
+                ...
+            }
+        """
+        result = await self._call("module_options_structured", module_id)
+        return result["options"]
+
+    async def module_missing_required(self, module_id: str) -> list[str]:
+        """Get list of missing required options for a module.
+
+        Args:
+            module_id: Module ID
+
+        Returns:
+            List of option names that are required but not set
+        """
+        result = await self._call("module_missing_required", module_id)
+        return result["missing"]
+
     async def module_compatible_payloads(self, module_id: str) -> list[str]:
         """Get compatible payloads for an exploit.
 
@@ -551,6 +584,41 @@ class MsfClient:
     async def framework_clear_datastore(self) -> None:
         """Clear all framework datastore options."""
         await self._call("framework_clear_datastore")
+
+    # Framework Management operations
+    async def framework_reload_modules(self) -> dict[str, int]:
+        """Hot reload all framework modules.
+
+        Returns:
+            Module counts by type after reloading
+        """
+        result = await self._call("framework_reload_modules")
+        return result["stats"]
+
+    async def framework_save(self) -> None:
+        """Save framework configuration to disk."""
+        await self._call("framework_save")
+
+    async def framework_add_module_path(self, path: str) -> dict[str, int]:
+        """Add a new module path to the framework.
+
+        Args:
+            path: Path to directory containing module directories (exploits, auxiliary, etc.)
+
+        Returns:
+            Module counts by type after adding path
+        """
+        result = await self._call("framework_add_module_path", path)
+        return result["stats"]
+
+    async def framework_module_stats(self) -> dict[str, int]:
+        """Get module statistics (counts by type).
+
+        Returns:
+            Dictionary with module counts: exploits, auxiliary, post, encoders, nops, payloads, evasions
+        """
+        result = await self._call("framework_module_stats")
+        return result["stats"]
 
     async def module_datastore_to_dict(self, module_id: str) -> dict[str, str]:
         """Get all module datastore options as dict."""
