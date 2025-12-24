@@ -399,19 +399,21 @@ impl DbManager {
     pub fn add_workspace(&self, name: &str) -> Result<serde_json::Value> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash with :name
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
-
-        let name_sym = magnus::StaticSymbol::new("name");
-        call_method(
-            opts_val,
-            "[]=",
-            &[name_sym.as_value(), ruby.str_new(name).as_value()],
+        // WorkspaceDataProxy.add_workspace takes a STRING (workspace name), not a hash.
+        // The proxy internally converts it to { name: workspace_name } before calling
+        // the underlying data service. This matches find_workspace's signature.
+        let workspace_obj = call_method(
+            self.ruby_db,
+            "add_workspace",
+            &[ruby.str_new(name).as_value()],
         )?;
 
-        let workspace_obj = call_method(self.ruby_db, "add_workspace", &[opts_val])?;
+        // Check if nil
+        if is_nil(workspace_obj) {
+            return Err(AssassinateError::RubyError(
+                "add_workspace returned nil - workspace creation failed".to_string(),
+            ));
+        }
 
         // Extract workspace info
         let mut ws_map = serde_json::Map::new();
@@ -594,9 +596,36 @@ impl DbManager {
 
         let result_val = call_method(self.ruby_db, "report_note", &[opts_val])?;
 
-        // report_note returns a hash with :note key
-        let note_sym = magnus::StaticSymbol::new("note");
-        let note_obj = call_method(result_val, "[]", &[note_sym.as_value()])?;
+        // Check if the result is nil
+        if is_nil(result_val) {
+            return Err(AssassinateError::RubyError(
+                "report_note returned nil - note creation failed (database may not be active or workspace not set)".to_string(),
+            ));
+        }
+
+        // report_note might return the note object directly or a hash with :note key
+        // Try to get ID directly first
+        let note_obj = if let Ok(id_test) = call_method(result_val, "id", &[]) {
+            if !is_nil(id_test) {
+                // result_val is the note object directly
+                result_val
+            } else {
+                // Try hash with :note key
+                let note_sym = magnus::StaticSymbol::new("note");
+                call_method(result_val, "[]", &[note_sym.as_value()])?
+            }
+        } else {
+            // Try hash with :note key
+            let note_sym = magnus::StaticSymbol::new("note");
+            call_method(result_val, "[]", &[note_sym.as_value()])?
+        };
+
+        // Check if note object is nil
+        if is_nil(note_obj) {
+            return Err(AssassinateError::RubyError(
+                "Note object is nil - failed to create or retrieve note".to_string(),
+            ));
+        }
 
         // Get the note ID
         let id_val = call_method(note_obj, "id", &[])?;
