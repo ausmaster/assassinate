@@ -354,6 +354,32 @@ impl Daemon {
                 Ok(serde_json::json!({ "session_ids": session_ids }))
             }
 
+            "create_shell_session" => {
+                let host = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing host")?;
+                let port = _args
+                    .get(1)
+                    .and_then(|v| v.as_u64())
+                    .context("Missing port")? as u16;
+                let timeout = _args
+                    .get(2)
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10) as u32;
+
+                let session_manager = self
+                    .framework
+                    .sessions()
+                    .context("Failed to get session manager")?;
+
+                let session_id = session_manager
+                    .create_shell_session(host, port, timeout)
+                    .context("Failed to create shell session")?;
+
+                Ok(serde_json::json!({ "session_id": session_id }))
+            }
+
             // === Module Instance Management ===
             "create_module" => {
                 let module_path = _args
@@ -1325,6 +1351,62 @@ impl Daemon {
                     .context("Missing lport")? as u16;
                 self.with_session(&_args, |session| {
                     let success = session.shell_to_meterpreter(lhost, lport)?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
+            // === Meterpreter Client Core Operations ===
+            "session_meterpreter_shutdown" => self.with_session(&_args, |session| {
+                let success = session.meterpreter_shutdown()?;
+                Ok(serde_json::json!({ "success": success }))
+            }),
+
+            "session_meterpreter_machine_id" => {
+                let timeout = _args.get(1).and_then(|v| v.as_u64()).map(|t| t as u32);
+                self.with_session(&_args, |session| {
+                    let machine_id = session.meterpreter_machine_id(timeout)?;
+                    Ok(serde_json::json!({ "machine_id": machine_id }))
+                })
+            },
+
+            "session_meterpreter_native_arch" => {
+                let timeout = _args.get(1).and_then(|v| v.as_u64()).map(|t| t as u32);
+                self.with_session(&_args, |session| {
+                    let arch = session.meterpreter_native_arch(timeout)?;
+                    Ok(serde_json::json!({ "arch": arch }))
+                })
+            },
+
+            "session_meterpreter_session_guid" => {
+                let timeout = _args.get(1).and_then(|v| v.as_u64()).map(|t| t as u32);
+                self.with_session(&_args, |session| {
+                    let guid = session.meterpreter_session_guid(timeout)?;
+                    Ok(serde_json::json!({ "guid": guid }))
+                })
+            },
+
+            "session_meterpreter_use" => {
+                let extension_name = get_str_arg(&_args, 1, "extension_name")?;
+                self.with_session(&_args, |session| {
+                    let success = session.meterpreter_use(extension_name)?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
+            "session_meterpreter_secure" => self.with_session(&_args, |session| {
+                let success = session.meterpreter_secure()?;
+                Ok(serde_json::json!({ "success": success }))
+            }),
+
+            "session_meterpreter_migrate" => {
+                let target_pid = _args
+                    .get(1)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing target_pid")?;
+                let writable_dir = _args.get(2).and_then(|v| v.as_str());
+                let timeout = _args.get(3).and_then(|v| v.as_u64()).map(|t| t as u32);
+                self.with_session(&_args, |session| {
+                    let success = session.meterpreter_migrate(target_pid, writable_dir, timeout)?;
                     Ok(serde_json::json!({ "success": success }))
                 })
             },

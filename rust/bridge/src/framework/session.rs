@@ -87,6 +87,92 @@ impl SessionManager {
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<SessionManager count={}>", self.list()?.len()))
     }
+
+    /// Create a shell session by connecting to a listening shell (e.g., socat, netcat)
+    ///
+    /// This method:
+    /// 1. Creates a Rex::Socket::Tcp connection to the target
+    /// 2. Wraps it in an Msf::Sessions::CommandShell
+    /// 3. Registers the session with the framework
+    ///
+    /// Use this for connecting to raw shells that don't speak MSF payload protocol.
+    pub fn create_shell_session(&self, host: &str, port: u16, timeout: u32) -> Result<i64> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Get Rex::Socket::Tcp class
+        let rex_socket_tcp = ruby.eval::<Value>("Rex::Socket::Tcp").map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to get Rex::Socket::Tcp: {}", e))
+        })?;
+
+        // Build options hash for connection
+        let opts = ruby.hash_new().as_value();
+
+        let peer_host_key = ruby.str_new("PeerHost").as_value();
+        let peer_host_val = ruby.str_new(host).as_value();
+        call_method(opts, "[]=", &[peer_host_key, peer_host_val])?;
+
+        let peer_port_key = ruby.str_new("PeerPort").as_value();
+        let peer_port_val = ruby.integer_from_i64(port as i64).as_value();
+        call_method(opts, "[]=", &[peer_port_key, peer_port_val])?;
+
+        let timeout_key = ruby.str_new("Timeout").as_value();
+        let timeout_val = ruby.integer_from_i64(timeout as i64).as_value();
+        call_method(opts, "[]=", &[timeout_key, timeout_val])?;
+
+        // Create the socket connection
+        let socket = call_method(rex_socket_tcp, "create", &[opts])?;
+
+        if is_nil(socket) {
+            return Err(AssassinateError::RubyError(format!(
+                "Failed to connect to {}:{}",
+                host, port
+            )));
+        }
+
+        // Get Msf::Sessions::CommandShell class
+        let cmd_shell_class = ruby
+            .eval::<Value>("Msf::Sessions::CommandShell")
+            .map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to get CommandShell class: {}", e))
+            })?;
+
+        // Create CommandShell session from socket
+        let session = call_method(cmd_shell_class, "new", &[socket])?;
+
+        if is_nil(session) {
+            return Err(AssassinateError::RubyError(
+                "Failed to create CommandShell session".to_string(),
+            ));
+        }
+
+        // Set the platform to 'linux' (for shell_to_meterpreter compatibility)
+        // This is needed because direct socket sessions don't have exploit context
+        // The platform attr_accessor expects a string like 'linux', 'windows', 'osx'
+        let platform_val = ruby.str_new("linux").as_value();
+        call_method(session, "platform=", &[platform_val])?;
+
+        // Set the arch to x64 (common for modern Linux)
+        let arch_val = ruby.str_new("x64").as_value();
+        call_method(session, "arch=", &[arch_val])?;
+
+        // Set exploit_datastore to empty hash (for shell_to_meterpreter compatibility)
+        // Direct socket sessions don't have an exploit, but post modules may try to access
+        // session.exploit_datastore['SomeOption'] which would fail on nil.
+        let empty_hash = ruby.hash_new().as_value();
+        call_method(session, "exploit_datastore=", &[empty_hash])?;
+
+        // Register the session with framework
+        call_method(self.ruby_sessions, "register", &[session])?;
+
+        // Get the session ID - it's assigned during registration
+        // The session's sid attribute will be set
+        let sid_val = call_method(session, "sid", &[])?;
+        let session_id: i64 = TryConvert::try_convert(sid_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to get session ID: {}", e))
+        })?;
+
+        Ok(session_id)
+    }
 }
 
 /// Individual session with FS, Process, and Post module operations
@@ -265,37 +351,14 @@ impl Session {
     /// This runs the post/multi/manage/shell_to_meterpreter module
     /// Only works for command shell sessions
     pub fn shell_to_meterpreter(&self, lhost: &str, lport: u16) -> Result<bool> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
+        // Use run_post_module which properly handles module creation and options
+        // HANDLER=true tells the module to start its own handler
+        let mut options = std::collections::HashMap::new();
+        options.insert("LHOST".to_string(), lhost.to_string());
+        options.insert("LPORT".to_string(), lport.to_string());
+        options.insert("HANDLER".to_string(), "true".to_string());
 
-        // Get exploit_datastore
-        let exploit_ds = call_method(self.ruby_session, "exploit_datastore", &[])?;
-
-        // Set LHOST
-        call_method(
-            exploit_ds,
-            "[]=",
-            &[
-                ruby.str_new("LHOST").as_value(),
-                ruby.str_new(lhost).as_value(),
-            ],
-        )?;
-
-        // Set LPORT
-        call_method(
-            exploit_ds,
-            "[]=",
-            &[
-                ruby.str_new("LPORT").as_value(),
-                ruby.integer_from_i64(lport as i64).as_value(),
-            ],
-        )?;
-
-        // Execute the shell_to_meterpreter post module
-        let script_path = ruby.str_new("post/multi/manage/shell_to_meterpreter").as_value();
-        match call_method(self.ruby_session, "execute_script", &[script_path]) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        self.run_post_module("post/multi/manage/shell_to_meterpreter", options)
     }
 
     // ========== Meterpreter Extension Helpers (DRY) ==========
@@ -348,6 +411,12 @@ impl Session {
         let method_name = to_ruby_str(name)?;
         let result = call_method(self.ruby_session, "respond_to?", &[method_name])?;
         value_to_bool(result)
+    }
+
+    /// Get the core extension object for Meterpreter client core operations
+    /// This provides access to migrate, use, shutdown, machine_id, etc.
+    fn core(&self) -> Result<Value> {
+        call_method(self.ruby_session, "core", &[])
     }
 
     // ========== Meterpreter Filesystem Operations ==========
@@ -516,11 +585,25 @@ impl Session {
     ) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Get framework
-        let framework = crate::ruby_bridge::create_framework(None)?;
+        // Get framework from the session (NOT a new framework!)
+        // The session's framework has this session registered in its sessions collection.
+        // Creating a new framework would result in an empty sessions collection.
+        let framework = call_method(self.ruby_session, "framework", &[])?;
+
+        if is_nil(framework) {
+            return Err(AssassinateError::RubyError(
+                "Session has no framework reference - was it registered properly?".to_string(),
+            ));
+        }
 
         // Get modules
         let modules = call_method(framework, "modules", &[])?;
+
+        if is_nil(modules) {
+            return Err(AssassinateError::RubyError(
+                "Framework has no modules collection".to_string(),
+            ));
+        }
 
         // Create the post module
         let module_name = ruby.str_new(module_path).as_value();
@@ -532,6 +615,12 @@ impl Session {
 
         // Set SESSION datastore option to this session's ID
         let datastore = call_method(module, "datastore", &[])?;
+
+        if is_nil(datastore) {
+            return Err(AssassinateError::RubyError(
+                "Module has no datastore".to_string(),
+            ));
+        }
         call_method(
             datastore,
             "[]=",
@@ -548,8 +637,15 @@ impl Session {
             call_method(datastore, "[]=", &[key_val, value_val])?;
         }
 
+        // Call setup() first - this initializes the session reference from the datastore
+        // Without setup(), module.session would be nil and cmd_exec wouldn't work
+        call_method(module, "setup", &[])?;
+
         // Run the module
         let result = call_method(module, "run", &[])?;
+
+        // Call cleanup() to release any resources
+        let _ = call_method(module, "cleanup", &[]);
 
         // Check if nil (failure) or has a value (success)
         Ok(!is_nil(result))
@@ -998,5 +1094,160 @@ impl Session {
     pub fn net_get_proxy_config(&self) -> Result<serde_json::Value> {
         let proxy_config = call_method(self.net_config()?, "get_proxy_config", &[])?;
         crate::ruby_bridge::hash_to_json(proxy_config)
+    }
+
+    // ========== Meterpreter Client Core Operations ==========
+
+    /// Shutdown the Meterpreter session
+    ///
+    /// This sends a shutdown packet to terminate the Meterpreter cleanly.
+    /// Only works on Meterpreter sessions.
+    pub fn meterpreter_shutdown(&self) -> Result<bool> {
+        call_method(self.core()?, "shutdown", &[])?;
+        Ok(true)
+    }
+
+    /// Get the machine ID of the target
+    ///
+    /// Returns an MD5 hash that uniquely identifies the machine.
+    /// This is useful for tracking sessions across reconnects.
+    /// Only works on Meterpreter sessions.
+    pub fn meterpreter_machine_id(&self, timeout: Option<u32>) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        let result = if let Some(t) = timeout {
+            let timeout_val = ruby.integer_from_i64(t as i64).as_value();
+            call_method(self.core()?, "machine_id", &[timeout_val])?
+        } else {
+            call_method(self.core()?, "machine_id", &[])?
+        };
+
+        if is_nil(result) {
+            Ok(String::new())
+        } else {
+            value_to_string(result)
+        }
+    }
+
+    /// Get the native architecture of the target process
+    ///
+    /// Returns architecture string like "x86" or "x64".
+    /// Only works on Meterpreter sessions.
+    pub fn meterpreter_native_arch(&self, timeout: Option<u32>) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        let result = if let Some(t) = timeout {
+            let timeout_val = ruby.integer_from_i64(t as i64).as_value();
+            call_method(self.core()?, "native_arch", &[timeout_val])?
+        } else {
+            call_method(self.core()?, "native_arch", &[])?
+        };
+
+        if is_nil(result) {
+            Ok(String::new())
+        } else {
+            value_to_string(result)
+        }
+    }
+
+    /// Get the session GUID
+    ///
+    /// Returns the unique identifier for this Meterpreter session.
+    /// Only works on Meterpreter sessions.
+    pub fn meterpreter_session_guid(&self, timeout: Option<u32>) -> Result<String> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        let result = if let Some(t) = timeout {
+            let timeout_val = ruby.integer_from_i64(t as i64).as_value();
+            call_method(self.core()?, "get_session_guid", &[timeout_val])?
+        } else {
+            call_method(self.core()?, "get_session_guid", &[])?
+        };
+
+        if is_nil(result) {
+            Ok(String::new())
+        } else {
+            // GUID is returned as binary bytes, use Ruby's unpack to convert to hex
+            // This avoids UTF-8 encoding issues with raw binary data
+            let format = ruby.str_new("H*").as_value();
+            let hex_array = call_method(result, "unpack", &[format])?;
+            let hex_val = crate::ruby_bridge::ruby_array_get(hex_array, 0)?;
+            value_to_string(hex_val)
+        }
+    }
+
+    /// Load a Meterpreter extension dynamically
+    ///
+    /// This loads an extension like "stdapi", "priv", "incognito", etc.
+    /// Extensions provide additional functionality to the Meterpreter session.
+    /// Only works on Meterpreter sessions.
+    ///
+    /// # Arguments
+    /// * `extension_name` - Name of the extension to load (e.g., "stdapi", "priv")
+    pub fn meterpreter_use(&self, extension_name: &str) -> Result<bool> {
+        let ext_val = to_ruby_str(extension_name)?;
+        call_method(self.core()?, "use", &[ext_val])?;
+        Ok(true)
+    }
+
+    /// Enable secure mode (TLV encryption)
+    ///
+    /// This negotiates encryption for the Meterpreter session.
+    /// Returns true if encryption was successfully enabled.
+    /// Only works on Meterpreter sessions.
+    pub fn meterpreter_secure(&self) -> Result<bool> {
+        let result = call_method(self.core()?, "secure", &[])?;
+        // secure() returns a hash with :key, :type, :weak_key? keys
+        // If :key is present and not nil, encryption was enabled
+        if is_nil(result) {
+            return Ok(false);
+        }
+
+        let key_sym = crate::ruby_bridge::get_ruby()?.to_symbol("key");
+        let key_val = call_method(result, "[]", &[key_sym.as_value()])?;
+        Ok(!is_nil(key_val))
+    }
+
+    /// Migrate the Meterpreter to a different process
+    ///
+    /// This moves the Meterpreter payload into another process, which is useful for:
+    /// - Persistence (migrate to a stable process)
+    /// - Stealth (migrate away from suspicious process)
+    /// - Architecture change (migrate from 32-bit to 64-bit process)
+    ///
+    /// Only works on Meterpreter sessions, primarily Windows.
+    ///
+    /// # Arguments
+    /// * `target_pid` - PID of the process to migrate into
+    /// * `writable_dir` - Optional writable directory for migration files
+    /// * `timeout` - Optional timeout in seconds (default 60)
+    pub fn meterpreter_migrate(
+        &self,
+        target_pid: i64,
+        writable_dir: Option<&str>,
+        timeout: Option<u32>,
+    ) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+
+        if let Some(t) = timeout {
+            let timeout_sym = ruby.to_symbol("timeout");
+            let timeout_val = ruby.integer_from_i64(t as i64).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[timeout_sym.as_value(), timeout_val])?;
+        }
+
+        let pid_val = ruby.integer_from_i64(target_pid).as_value();
+
+        let result = if let Some(dir) = writable_dir {
+            let dir_val = ruby.str_new(dir).as_value();
+            call_method(self.core()?, "migrate", &[pid_val, dir_val, opts_hash.as_value()])?
+        } else {
+            let nil_val = ruby.qnil().as_value();
+            call_method(self.core()?, "migrate", &[pid_val, nil_val, opts_hash.as_value()])?
+        };
+
+        value_to_bool(result)
     }
 }

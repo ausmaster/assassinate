@@ -372,7 +372,9 @@ class MsfClient:
         result = await self._call("module_validate", module_id)
         return result["valid"]
 
-    async def module_options_structured(self, module_id: str) -> dict[str, dict]:
+    async def module_options_structured(
+        self, module_id: str
+    ) -> dict[str, dict]:
         """Get module options with full details (type, required, default, description).
 
         Args:
@@ -461,6 +463,7 @@ class MsfClient:
         module_id: str,
         payload: str,
         options: dict[str, str] | None = None,
+        timeout: float = 30.0,
     ) -> int | None:
         """Execute an exploit module.
 
@@ -468,11 +471,14 @@ class MsfClient:
             module_id: Module ID (must be exploit)
             payload: Payload to use
             options: Additional options to set before execution
+            timeout: Timeout in seconds (default: 30s for exploit execution)
 
         Returns:
             Session ID if successful, None otherwise
         """
-        result = await self._call("module_exploit", module_id, payload, options)
+        result = await self._call(
+            "module_exploit", module_id, payload, options, timeout=timeout
+        )
         return result.get("session_id")
 
     async def module_run(
@@ -911,7 +917,9 @@ class MsfClient:
 
     # ========== Database Note Management ==========
 
-    async def db_notes(self, options: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    async def db_notes(
+        self, options: dict[str, str] | None = None
+    ) -> list[dict[str, Any]]:
         """List all notes in the current workspace.
 
         Args:
@@ -1268,6 +1276,31 @@ class MsfClient:
         result = await self._call("session_via_payload", session_id)
         return result["via_payload"]
 
+    async def sessions_list(self) -> list[int]:
+        """Get list of all session IDs"""
+        result = await self._call("list_sessions")
+        return result.get("session_ids", [])
+
+    async def create_shell_session(
+        self, host: str, port: int, timeout: int = 10
+    ) -> int:
+        """Create a shell session by connecting to a listening shell.
+
+        This connects to a raw shell listener (e.g., socat, netcat) and creates
+        an MSF CommandShell session. Use this for shells that don't speak the
+        MSF payload protocol.
+
+        Args:
+            host: Target host with shell listener
+            port: Port the shell is listening on
+            timeout: Connection timeout in seconds (default: 10)
+
+        Returns:
+            Session ID of the created shell session
+        """
+        result = await self._call("create_shell_session", host, port, timeout)
+        return result["session_id"]
+
     # ========== Session Filesystem Operations (Meterpreter) ==========
 
     async def session_fs_pwd(self, session_id: int) -> str:
@@ -1373,7 +1406,9 @@ class MsfClient:
         """
         await self._call("session_fs_rm", session_id, path)
 
-    async def session_fs_mv(self, session_id: int, old_path: str, new_path: str) -> None:
+    async def session_fs_mv(
+        self, session_id: int, old_path: str, new_path: str
+    ) -> None:
         """Move/rename file.
 
         Only works on Meterpreter sessions.
@@ -1385,7 +1420,9 @@ class MsfClient:
         """
         await self._call("session_fs_mv", session_id, old_path, new_path)
 
-    async def session_fs_cp(self, session_id: int, src_path: str, dst_path: str) -> None:
+    async def session_fs_cp(
+        self, session_id: int, src_path: str, dst_path: str
+    ) -> None:
         """Copy file.
 
         Only works on Meterpreter sessions.
@@ -1459,12 +1496,17 @@ class MsfClient:
             remote_path: Remote file path to save to
             local_path: Local file path to upload
         """
-        await self._call("session_fs_upload_file", session_id, remote_path, local_path)
+        await self._call(
+            "session_fs_upload_file", session_id, remote_path, local_path
+        )
 
     # ========== Session Post Module Execution ==========
 
     async def session_run_post_module(
-        self, session_id: int, module_path: str, options: dict[str, str] | None = None
+        self,
+        session_id: int,
+        module_path: str,
+        options: dict[str, str] | None = None,
     ) -> bool:
         """Run a post-exploitation module on a session.
 
@@ -1569,7 +1611,9 @@ class MsfClient:
         result = await self._call("session_sys_is_system", session_id)
         return result["value"]
 
-    async def session_sys_getenv(self, session_id: int, var_name: str) -> str | None:
+    async def session_sys_getenv(
+        self, session_id: int, var_name: str
+    ) -> str | None:
         """Get an environment variable value from the target.
 
         Args:
@@ -1623,7 +1667,9 @@ class MsfClient:
         result = await self._call("session_sys_localtime", session_id)
         return result["value"]
 
-    async def session_sys_getdrivers(self, session_id: int) -> list[dict[str, str]]:
+    async def session_sys_getdrivers(
+        self, session_id: int
+    ) -> list[dict[str, str]]:
         """Get list of loaded drivers (Windows only).
 
         Args:
@@ -1677,7 +1723,9 @@ class MsfClient:
         result = await self._call("session_process_getpid", session_id)
         return result["pid"]
 
-    async def session_process_list(self, session_id: int) -> list[dict[str, Any]]:
+    async def session_process_list(
+        self, session_id: int
+    ) -> list[dict[str, Any]]:
         """List all running processes from a Meterpreter session.
 
         Args:
@@ -1743,13 +1791,20 @@ class MsfClient:
             print(f"Started PID {proc_info['pid']}, channel {proc_info.get('channel_id')}")
         """
         result = await self._call(
-            "session_process_execute", session_id, path, args, hidden, channelized
+            "session_process_execute",
+            session_id,
+            path,
+            args,
+            hidden,
+            channelized,
         )
         return result["value"]
 
     # ========== Network Configuration Methods ==========
 
-    async def session_net_get_interfaces(self, session_id: int) -> list[dict[str, Any]]:
+    async def session_net_get_interfaces(
+        self, session_id: int
+    ) -> list[dict[str, Any]]:
         """Get network interfaces from a Meterpreter session.
 
         Returns information about all network interfaces including IP addresses,
@@ -1770,7 +1825,9 @@ class MsfClient:
         result = await self._call("session_net_get_interfaces", session_id)
         return result["value"]
 
-    async def session_net_get_routes(self, session_id: int) -> list[dict[str, Any]]:
+    async def session_net_get_routes(
+        self, session_id: int
+    ) -> list[dict[str, Any]]:
         """Get the routing table from a Meterpreter session.
 
         Args:
@@ -1788,7 +1845,9 @@ class MsfClient:
         result = await self._call("session_net_get_routes", session_id)
         return result["value"]
 
-    async def session_net_get_arp_table(self, session_id: int) -> list[dict[str, str]]:
+    async def session_net_get_arp_table(
+        self, session_id: int
+    ) -> list[dict[str, str]]:
         """Get the ARP cache from a Meterpreter session.
 
         Args:
@@ -1805,7 +1864,9 @@ class MsfClient:
         result = await self._call("session_net_get_arp_table", session_id)
         return result["value"]
 
-    async def session_net_get_netstat(self, session_id: int) -> list[dict[str, Any]]:
+    async def session_net_get_netstat(
+        self, session_id: int
+    ) -> list[dict[str, Any]]:
         """Get network connections (netstat) from a Meterpreter session.
 
         Args:
@@ -1838,7 +1899,9 @@ class MsfClient:
         Example:
             await client.session_net_add_route(1, "10.0.0.0", "255.0.0.0", "192.168.1.1")
         """
-        await self._call("session_net_add_route", session_id, subnet, netmask, gateway)
+        await self._call(
+            "session_net_add_route", session_id, subnet, netmask, gateway
+        )
 
     async def session_net_remove_route(
         self, session_id: int, subnet: str, netmask: str, gateway: str
@@ -1858,7 +1921,9 @@ class MsfClient:
             "session_net_remove_route", session_id, subnet, netmask, gateway
         )
 
-    async def session_net_get_proxy_config(self, session_id: int) -> dict[str, Any]:
+    async def session_net_get_proxy_config(
+        self, session_id: int
+    ) -> dict[str, Any]:
         """Get proxy configuration (Windows only).
 
         Args:
@@ -1911,14 +1976,24 @@ class MsfClient:
         return result["bytes_written"]
 
     async def session_shell_to_meterpreter(
-        self, session_id: int, lhost: str, lport: int
+        self, session_id: int, lhost: str, lport: int, timeout: float = 120.0
     ) -> bool:
         """Upgrade shell session to Meterpreter.
 
+        This operation involves:
+        1. Detecting the target platform
+        2. Generating an appropriate Meterpreter payload
+        3. Starting a handler to receive the connection
+        4. Transferring and executing the payload on the target
+
+        This process can take 30-120+ seconds depending on network speed
+        and target system.
+
         Args:
             session_id: Session ID
-            lhost: Local host IP for reverse connection
+            lhost: Local host IP for reverse connection (must be an IP, not hostname)
             lport: Local port for reverse connection
+            timeout: Timeout in seconds (default 120s due to payload generation/transfer)
 
         Returns:
             True if upgrade was initiated successfully
@@ -1928,5 +2003,197 @@ class MsfClient:
             if success:
                 print("Shell upgrade initiated")
         """
-        result = await self._call("session_shell_to_meterpreter", session_id, lhost, lport)
+        result = await self._call(
+            "session_shell_to_meterpreter", session_id, lhost, lport, timeout=timeout
+        )
+        return result["success"]
+
+    # =========================================================================
+    # Session: Meterpreter Client Core Operations
+    # =========================================================================
+
+    async def session_meterpreter_shutdown(self, session_id: int) -> bool:
+        """Shutdown the Meterpreter session cleanly.
+
+        This sends a shutdown packet to terminate the Meterpreter.
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if shutdown was initiated
+
+        Example:
+            await client.session_meterpreter_shutdown(1)
+        """
+        result = await self._call("session_meterpreter_shutdown", session_id)
+        return result["success"]
+
+    async def session_meterpreter_machine_id(
+        self, session_id: int, timeout: int | None = None
+    ) -> str:
+        """Get the machine ID of the target.
+
+        Returns an MD5 hash that uniquely identifies the machine.
+        Useful for tracking sessions across reconnects.
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            timeout: Optional timeout in seconds
+
+        Returns:
+            Machine ID as MD5 hash string (32 hex chars)
+
+        Example:
+            machine_id = await client.session_meterpreter_machine_id(1)
+            print(f"Machine: {machine_id}")
+        """
+        # Pass timeout to daemon as arg AND to _call as keyword
+        # The daemon uses the timeout for the Meterpreter operation
+        # The _call timeout controls how long we wait for daemon response
+        result = await self._call(
+            "session_meterpreter_machine_id", session_id, timeout,
+            timeout=timeout if timeout else 30.0
+        )
+        return result["machine_id"]
+
+    async def session_meterpreter_native_arch(
+        self, session_id: int, timeout: int | None = None
+    ) -> str:
+        """Get the native architecture of the target process.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            timeout: Optional timeout in seconds
+
+        Returns:
+            Architecture string (e.g., "x86", "x64", "aarch64")
+
+        Example:
+            arch = await client.session_meterpreter_native_arch(1)
+            print(f"Architecture: {arch}")
+        """
+        result = await self._call(
+            "session_meterpreter_native_arch", session_id, timeout,
+            timeout=timeout if timeout else 30.0
+        )
+        return result["arch"]
+
+    async def session_meterpreter_session_guid(
+        self, session_id: int, timeout: int | None = None
+    ) -> str:
+        """Get the session GUID.
+
+        Returns the unique identifier for this Meterpreter session.
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            timeout: Optional timeout in seconds
+
+        Returns:
+            Session GUID as hex string
+
+        Example:
+            guid = await client.session_meterpreter_session_guid(1)
+            print(f"Session GUID: {guid}")
+        """
+        result = await self._call(
+            "session_meterpreter_session_guid", session_id, timeout,
+            timeout=timeout if timeout else 30.0
+        )
+        return result["guid"]
+
+    async def session_meterpreter_use(
+        self, session_id: int, extension_name: str
+    ) -> bool:
+        """Load a Meterpreter extension dynamically.
+
+        Extensions provide additional functionality:
+        - stdapi: Standard API (filesystem, process, network)
+        - priv: Privilege escalation (getsystem, hashdump)
+        - incognito: Token manipulation
+        - kiwi: Mimikatz integration
+        - etc.
+
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+            extension_name: Name of extension (e.g., "stdapi", "priv")
+
+        Returns:
+            True if extension was loaded successfully
+
+        Example:
+            await client.session_meterpreter_use(1, "priv")
+            # Now priv extension commands are available
+        """
+        result = await self._call(
+            "session_meterpreter_use", session_id, extension_name
+        )
+        return result["success"]
+
+    async def session_meterpreter_secure(self, session_id: int) -> bool:
+        """Enable secure mode (TLV encryption).
+
+        Negotiates encryption for the Meterpreter session.
+        Only works on Meterpreter sessions.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if encryption was successfully enabled
+
+        Example:
+            secured = await client.session_meterpreter_secure(1)
+            if secured:
+                print("Session is now encrypted")
+        """
+        result = await self._call("session_meterpreter_secure", session_id)
+        return result["success"]
+
+    async def session_meterpreter_migrate(
+        self,
+        session_id: int,
+        target_pid: int,
+        writable_dir: str | None = None,
+        timeout: int | None = None,
+    ) -> bool:
+        """Migrate the Meterpreter to a different process.
+
+        Process migration moves the Meterpreter payload into another process:
+        - Persistence: migrate to a stable system process
+        - Stealth: migrate away from suspicious process
+        - Architecture: migrate from 32-bit to 64-bit process
+
+        Only works on Meterpreter sessions, primarily Windows.
+
+        Args:
+            session_id: Session ID
+            target_pid: PID of target process to migrate into
+            writable_dir: Optional writable directory for migration files
+            timeout: Optional timeout in seconds (default 60)
+
+        Returns:
+            True if migration was successful
+
+        Example:
+            # Migrate to explorer.exe (PID 1234)
+            success = await client.session_meterpreter_migrate(1, 1234)
+            if success:
+                print("Successfully migrated to new process")
+        """
+        result = await self._call(
+            "session_meterpreter_migrate",
+            session_id,
+            target_pid,
+            writable_dir,
+            timeout,
+        )
         return result["success"]

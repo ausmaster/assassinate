@@ -88,6 +88,13 @@ impl SharedMemory {
     fn create_shm(name: &str, size: usize) -> Result<Self> {
         use shared_memory::ShmemConf;
 
+        // Try to remove any stale shared memory from previous runs
+        // This handles the case where daemon crashed/was killed without cleanup
+        let shm_path = format!("/dev/shm{}", name);
+        if std::path::Path::new(&shm_path).exists() {
+            let _ = std::fs::remove_file(&shm_path);
+        }
+
         let shmem = ShmemConf::new()
             .size(size)
             .os_id(name) // Use OS-level shared memory ID (POSIX shm_open)
