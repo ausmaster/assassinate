@@ -2,7 +2,7 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, get_string_attr, value_to_string};
-use magnus::{value::ReprValue, StaticSymbol, TryConvert, Value};
+use magnus::{value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
 /// Database manager
@@ -233,8 +233,8 @@ impl DbManager {
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
-                // Convert string key to symbol using intern
-                let key_sym = StaticSymbol::new(key);
+                // Convert string key to symbol
+                let key_sym = ruby.to_symbol(&key);
                 let value_val = ruby.str_new(&value).as_value();
                 call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
             }
@@ -263,7 +263,7 @@ impl DbManager {
                 let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
                     AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
                 })?;
-                let name_sym = StaticSymbol::new("name");
+                let name_sym = ruby.to_symbol("name");
                 call_method(
                     add_opts,
                     "[]=",
@@ -276,7 +276,7 @@ impl DbManager {
             }
 
             // Inject workspace object into options hash
-            let workspace_sym = StaticSymbol::new("workspace");
+            let workspace_sym = ruby.to_symbol("workspace");
             call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace_obj])?;
         }
 
@@ -482,7 +482,7 @@ impl DbManager {
             &[ruby.integer_from_i64(workspace_id).as_value()],
         )?;
 
-        let ids_sym = magnus::StaticSymbol::new("ids");
+        let ids_sym = ruby.to_symbol("ids");
         call_method(opts_val, "[]=", &[ids_sym.as_value(), ids_array.as_value()])?;
 
         // Call delete_workspaces
@@ -505,7 +505,7 @@ impl DbManager {
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
-                let key_sym = magnus::StaticSymbol::new(key);
+                let key_sym = ruby.to_symbol(&key);
                 let value_val = ruby.str_new(&value).as_value();
                 call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
             }
@@ -589,7 +589,7 @@ impl DbManager {
         })?;
 
         for (key, value) in opts {
-            let key_sym = magnus::StaticSymbol::new(key);
+            let key_sym = ruby.to_symbol(&key);
             let value_val = ruby.str_new(&value).as_value();
             call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
         }
@@ -611,12 +611,12 @@ impl DbManager {
                 result_val
             } else {
                 // Try hash with :note key
-                let note_sym = magnus::StaticSymbol::new("note");
+                let note_sym = ruby.to_symbol("note");
                 call_method(result_val, "[]", &[note_sym.as_value()])?
             }
         } else {
             // Try hash with :note key
-            let note_sym = magnus::StaticSymbol::new("note");
+            let note_sym = ruby.to_symbol("note");
             call_method(result_val, "[]", &[note_sym.as_value()])?
         };
 
@@ -653,7 +653,7 @@ impl DbManager {
             )?;
         }
 
-        let ids_sym = magnus::StaticSymbol::new("ids");
+        let ids_sym = ruby.to_symbol("ids");
         call_method(opts_val, "[]=", &[ids_sym.as_value(), ids_array.as_value()])?;
 
         // Call delete_note

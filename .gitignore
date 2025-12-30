@@ -140,3 +140,5 @@ test_python_ruby_poc.py
 
 # Claude Code documentation (developer-specific)
 CLAUDE.local.md
+MAGNUS_REFERENCE.md
+rustdoc-magnus-*/

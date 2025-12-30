@@ -1,8 +1,8 @@
 use crate::error::{AssassinateError, Result};
 use magnus::{
-    class, embed, exception,
-    value::{qnil, IntoId, ReprValue},
-    IntoValue, RArray, RHash, RString, Ruby, Symbol, TryConvert, Value,
+    embed,
+    value::{IntoId, ReprValue},
+    IntoValue, RArray, RHash, RString, Ruby, TryConvert, Value,
 };
 use std::mem;
 use std::sync::Once;
@@ -203,7 +203,7 @@ pub fn init_metasploit(msf_path: &str) -> Result<Value> {
     ruby.eval::<Value>(&code)
         .map_err(|e| AssassinateError::RubyInitError(e.to_string()))?;
 
-    Ok(qnil().as_value())
+    Ok(ruby.qnil().as_value())
 }
 
 /// Create a new Metasploit Framework instance
@@ -694,94 +694,109 @@ where
 
 /// Get Ruby's StandardError exception class
 pub fn standard_error() -> magnus::ExceptionClass {
-    exception::standard_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_standard_error()
 }
 
 /// Get Ruby's RuntimeError exception class
 pub fn runtime_error() -> magnus::ExceptionClass {
-    exception::runtime_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_runtime_error()
 }
 
 /// Get Ruby's ArgumentError exception class
 pub fn arg_error() -> magnus::ExceptionClass {
-    exception::arg_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_arg_error()
 }
 
 /// Get Ruby's TypeError exception class
 pub fn type_error() -> magnus::ExceptionClass {
-    exception::type_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_type_error()
 }
 
 /// Get Ruby's IOError exception class
 pub fn io_error() -> magnus::ExceptionClass {
-    exception::io_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_io_error()
 }
 
 /// Get Ruby's SystemCallError exception class
 pub fn system_call_error() -> magnus::ExceptionClass {
-    exception::system_call_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_system_call_error()
 }
 
 /// Get Ruby's NoMethodError exception class
 pub fn no_method_error() -> magnus::ExceptionClass {
-    exception::no_method_error()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.exception_no_method_error()
 }
 
 // ========== Built-in Class Accessors ==========
 
 /// Get Ruby's String class
 pub fn string_class() -> magnus::RClass {
-    class::string()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_string()
 }
 
 /// Get Ruby's Array class
 pub fn array_class() -> magnus::RClass {
-    class::array()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_array()
 }
 
 /// Get Ruby's Hash class
 pub fn hash_class() -> magnus::RClass {
-    class::hash()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_hash()
 }
 
 /// Get Ruby's Integer class
 pub fn integer_class() -> magnus::RClass {
-    class::integer()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_integer()
 }
 
 /// Get Ruby's Float class
 pub fn float_class() -> magnus::RClass {
-    class::float()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_float()
 }
 
 /// Get Ruby's NilClass
 pub fn nil_class() -> magnus::RClass {
-    class::nil_class()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_nil_class()
 }
 
 /// Get Ruby's TrueClass
 pub fn true_class() -> magnus::RClass {
-    class::true_class()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_true_class()
 }
 
 /// Get Ruby's FalseClass
 pub fn false_class() -> magnus::RClass {
-    class::false_class()
+    let ruby = Ruby::get().expect("Ruby VM not initialized");
+    ruby.class_false_class()
 }
 
 // ========== Symbol Creation ==========
 
 /// Create a dynamic Ruby Symbol
-/// Use StaticSymbol for symbols known at compile time
-pub fn make_symbol(name: &str) -> Result<Symbol> {
-    // Ensure Ruby is initialized
-    let _ = get_ruby()?;
-    Ok(Symbol::new(name))
+/// Use LazyId for symbols known at compile time
+pub fn make_symbol(name: &str) -> Result<magnus::Symbol> {
+    let ruby = get_ruby()?;
+    Ok(ruby.to_symbol(name))
 }
 
 /// Create a Ruby Symbol value
 pub fn symbol_value(name: &str) -> Result<Value> {
-    Ok(Symbol::new(name).as_value())
+    let ruby = get_ruby()?;
+    Ok(ruby.to_symbol(name).as_value())
 }
 
 // ========== Array Creation and Manipulation ==========

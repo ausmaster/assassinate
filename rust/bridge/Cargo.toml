@@ -12,7 +12,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 # Magnus for Ruby FFI with embed feature for proper VM initialization
-magnus = { version = "0.7", features = ["embed"] }
+magnus = { version = "0.8", features = ["embed"] }
 rb-sys = "0.9"
 
 # Error handling
