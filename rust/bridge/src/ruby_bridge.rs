@@ -143,6 +143,23 @@ pub mod sym {
     pub static EXT: LazyId = LazyId::new("ext");
     pub static ALIASES: LazyId = LazyId::new("aliases");
     pub static HAS_KEY: LazyId = LazyId::new("has_key?");
+
+    // Transport configuration (used in session transport methods)
+    pub static SESSION_EXP: LazyId = LazyId::new("session_exp");
+    pub static COMM_TIMEOUT: LazyId = LazyId::new("comm_timeout");
+    pub static RETRY_TOTAL: LazyId = LazyId::new("retry_total");
+    pub static RETRY_WAIT: LazyId = LazyId::new("retry_wait");
+    pub static LPORT: LazyId = LazyId::new("lport");
+    pub static LHOST: LazyId = LazyId::new("lhost");
+    pub static UA: LazyId = LazyId::new("ua");
+    pub static TRANSPORT: LazyId = LazyId::new("transport");
+    pub static TRANSPORTS: LazyId = LazyId::new("transports");
+    pub static TIMEOUT: LazyId = LazyId::new("timeout");
+
+    // Hash key symbols (used for building option hashes)
+    pub static KEY: LazyId = LazyId::new("key");
+    pub static IDS: LazyId = LazyId::new("ids");
+    pub static NOTE: LazyId = LazyId::new("note");
 }
 
 // ========== Ruby VM Initialization ==========
@@ -274,95 +291,85 @@ pub fn value_to_i64(val: Value) -> Result<i64> {
 }
 
 /// Convert Ruby Hash to JSON
-/// Uses Magnus RHash iteration for efficiency
+/// Uses serde_magnus for simple types, falls back to manual conversion for complex Ruby objects
 pub fn hash_to_json(hash: Value) -> Result<serde_json::Value> {
-    // Try to convert to RHash for direct access
-    if let Some(rhash) = RHash::from_value(hash) {
-        let mut map = serde_json::Map::new();
-
-        // Use foreach to iterate over hash entries
-        rhash
-            .foreach(|key: Value, value: Value| {
-                let key_str = value_to_string(key).unwrap_or_else(|_| "unknown".to_string());
-                let json_val = ruby_value_to_json(value);
-                map.insert(key_str, json_val);
-                Ok(magnus::r_hash::ForEach::Continue)
-            })
-            .map_err(|e| {
-                AssassinateError::ConversionError(format!("Failed to iterate hash: {}", e))
-            })?;
-
-        return Ok(serde_json::Value::Object(map));
+    // Handle nil explicitly
+    if hash.is_nil() {
+        return Ok(serde_json::Value::Null);
     }
 
-    // Fallback to Ruby JSON generation for non-standard hash objects
+    // Get Ruby handle
     let ruby = get_ruby()?;
-    let json_val: Value = ruby
-        .eval::<Value>(&format!("require 'json'; JSON.generate({:?})", hash))
-        .map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to convert Hash to JSON: {}", e))
-        })?;
 
-    let json_str: String = TryConvert::try_convert(json_val).map_err(|e: magnus::Error| {
-        AssassinateError::ConversionError(format!("Failed to parse JSON string: {}", e))
-    })?;
-
-    serde_json::from_str(&json_str)
-        .map_err(|e| AssassinateError::ConversionError(format!("Failed to parse JSON: {}", e)))
+    // Try serde_magnus first (fast path for simple Ruby types)
+    // Falls back to manual conversion for complex Ruby objects (e.g., Msf::OptString)
+    match serde_magnus::deserialize(&ruby, hash) {
+        Ok(json) => Ok(json),
+        Err(_) => {
+            // Fallback: manual conversion for complex Ruby objects
+            ruby_value_to_json_manual(hash)
+        }
+    }
 }
 
-/// Convert a Ruby value to a serde_json::Value
-fn ruby_value_to_json(val: Value) -> serde_json::Value {
+/// Manual conversion of Ruby value to JSON (handles complex Ruby objects)
+fn ruby_value_to_json_manual(val: Value) -> Result<serde_json::Value> {
     if val.is_nil() {
-        return serde_json::Value::Null;
+        return Ok(serde_json::Value::Null);
     }
 
     // Try integer
     if let Ok(i) = i64::try_convert(val) {
-        return serde_json::Value::Number(i.into());
+        return Ok(serde_json::Value::Number(i.into()));
     }
 
     // Try float
     if let Ok(f) = f64::try_convert(val) {
         if let Some(n) = serde_json::Number::from_f64(f) {
-            return serde_json::Value::Number(n);
+            return Ok(serde_json::Value::Number(n));
         }
     }
 
-    // Try bool - check for true/false specifically
+    // Try bool
     if let Ok(b) = bool::try_convert(val) {
-        return serde_json::Value::Bool(b);
+        return Ok(serde_json::Value::Bool(b));
     }
 
-    // Try string
+    // Try string (also converts symbols and objects with to_s)
     if let Ok(s) = value_to_string(val) {
-        return serde_json::Value::String(s);
+        return Ok(serde_json::Value::String(s));
     }
 
     // Try array
     if let Some(arr) = RArray::from_value(val) {
-        let vec: Vec<serde_json::Value> = (0..arr.len())
-            .filter_map(|i| arr.entry::<Value>(i as isize).ok())
-            .map(ruby_value_to_json)
-            .collect();
-        return serde_json::Value::Array(vec);
+        let mut vec = Vec::with_capacity(arr.len());
+        for i in 0..arr.len() {
+            if let Ok(elem) = arr.entry::<Value>(i as isize) {
+                vec.push(ruby_value_to_json_manual(elem)?);
+            }
+        }
+        return Ok(serde_json::Value::Array(vec));
     }
 
     // Try hash
     if let Some(hash) = RHash::from_value(val) {
         let mut map = serde_json::Map::new();
-        let _ = hash.foreach(|k: Value, v: Value| {
+        hash.foreach(|k: Value, v: Value| {
             let key = value_to_string(k).unwrap_or_else(|_| "unknown".to_string());
-            map.insert(key, ruby_value_to_json(v));
+            // Use recursive manual conversion (complex objects in hash values)
+            if let Ok(json_val) = ruby_value_to_json_manual(v) {
+                map.insert(key, json_val);
+            }
             Ok(magnus::r_hash::ForEach::Continue)
-        });
-        return serde_json::Value::Object(map);
+        })
+        .map_err(|e| AssassinateError::ConversionError(format!("Hash iteration failed: {}", e)))?;
+        return Ok(serde_json::Value::Object(map));
     }
 
-    // Fallback to string representation
-    value_to_string(val)
+    // Fallback: convert to string representation
+    Ok(value_to_string(val)
         .map(serde_json::Value::String)
-        .unwrap_or(serde_json::Value::Null)
+        .unwrap_or(serde_json::Value::Null))
 }
 
 // ========== Ruby Value Creation ==========

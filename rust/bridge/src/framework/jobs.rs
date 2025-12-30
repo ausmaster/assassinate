@@ -89,9 +89,7 @@ impl PluginManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        let opts_val = ruby.hash_new().as_value();
 
         if let Some(opts_map) = options {
             for (key, value) in opts_map {

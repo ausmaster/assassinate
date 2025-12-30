@@ -1,8 +1,8 @@
 //! Database manager for Metasploit's database operations
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, get_string_attr, value_to_string};
-use magnus::{value::ReprValue, TryConvert, Value};
+use crate::ruby_bridge::{call_method, get_string_attr, sym, value_to_string};
+use magnus::{value::ReprValue, RArray, RHash, TryConvert, Value};
 use std::collections::HashMap;
 
 /// Database manager
@@ -14,8 +14,6 @@ pub struct DbManager {
 impl DbManager {
     /// Get all hosts
     pub fn hosts(&self) -> Result<Vec<String>> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-
         // MSF hosts() returns an ActiveRecord relation of Mdm::Host objects
         // We need to convert each host to a string representation (IP address)
         let hosts_val = call_method(self.ruby_db, "hosts", &[])?;
@@ -25,15 +23,19 @@ impl DbManager {
             return Ok(Vec::new());
         }
 
-        // Convert to array by calling to_a on the relation, then map to get addresses
-        let hosts_array = call_method(hosts_val, "to_a", &[])?;
-        let hosts_len: i64 =
-            TryConvert::try_convert(call_method(hosts_array, "length", &[])?).unwrap_or(0);
+        // Convert to array by calling to_a on the relation
+        let hosts_array_val = call_method(hosts_val, "to_a", &[])?;
 
-        let mut result = Vec::new();
-        for i in 0..hosts_len {
-            let idx_val = ruby.integer_from_i64(i).as_value();
-            let host_obj = call_method(hosts_array, "[]", &[idx_val])?;
+        // Use RArray for efficient iteration
+        let hosts_array = RArray::from_value(hosts_array_val).ok_or_else(|| {
+            AssassinateError::ConversionError("hosts.to_a did not return an array".to_string())
+        })?;
+
+        let mut result = Vec::with_capacity(hosts_array.len());
+        for i in 0..hosts_array.len() {
+            let host_obj: Value = hosts_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get host at {}: {}", i, e))
+            })?;
             // Get the address attribute from the Mdm::Host object
             let addr = call_method(host_obj, "address", &[])?;
             if let Ok(addr_str) = value_to_string(addr) {
@@ -46,8 +48,6 @@ impl DbManager {
 
     /// Get all services
     pub fn services(&self) -> Result<Vec<String>> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-
         let services_val = call_method(self.ruby_db, "services", &[])?;
 
         // Check if nil (database might be empty or not configured)
@@ -56,14 +56,18 @@ impl DbManager {
         }
 
         // Convert to array - MSF returns Mdm::Service objects
-        let services_array = call_method(services_val, "to_a", &[])?;
-        let services_len: i64 =
-            TryConvert::try_convert(call_method(services_array, "length", &[])?).unwrap_or(0);
+        let services_array_val = call_method(services_val, "to_a", &[])?;
 
-        let mut result = Vec::new();
-        for i in 0..services_len {
-            let idx_val = ruby.integer_from_i64(i).as_value();
-            let service_obj = call_method(services_array, "[]", &[idx_val])?;
+        // Use RArray for efficient iteration
+        let services_array = RArray::from_value(services_array_val).ok_or_else(|| {
+            AssassinateError::ConversionError("services.to_a did not return an array".to_string())
+        })?;
+
+        let mut result = Vec::with_capacity(services_array.len());
+        for i in 0..services_array.len() {
+            let service_obj: Value = services_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get service at {}: {}", i, e))
+            })?;
             // Get host address and port from service object
             let host_obj = call_method(service_obj, "host", &[])?;
             let host_addr = call_method(host_obj, "address", &[])?;
@@ -138,9 +142,7 @@ impl DbManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // MSF vulns() expects a workspace parameter, use empty hash for default workspace
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        let opts_val = ruby.hash_new().as_value();
 
         let vulns_val = call_method(self.ruby_db, "vulns", &[opts_val])?;
 
@@ -150,14 +152,18 @@ impl DbManager {
         }
 
         // Convert to array - MSF returns Mdm::Vuln objects
-        let vulns_array = call_method(vulns_val, "to_a", &[])?;
-        let vulns_len: i64 =
-            TryConvert::try_convert(call_method(vulns_array, "length", &[])?).unwrap_or(0);
+        let vulns_array_val = call_method(vulns_val, "to_a", &[])?;
 
-        let mut result = Vec::new();
-        for i in 0..vulns_len {
-            let idx_val = ruby.integer_from_i64(i).as_value();
-            let vuln_obj = call_method(vulns_array, "[]", &[idx_val])?;
+        // Use RArray for efficient iteration
+        let vulns_array = RArray::from_value(vulns_array_val).ok_or_else(|| {
+            AssassinateError::ConversionError("vulns.to_a did not return an array".to_string())
+        })?;
+
+        let mut result = Vec::with_capacity(vulns_array.len());
+        for i in 0..vulns_array.len() {
+            let vuln_obj: Value = vulns_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get vuln at {}: {}", i, e))
+            })?;
             // Get vuln name from object
             let name = call_method(vuln_obj, "name", &[])?;
             if let Ok(name_str) = value_to_string(name) {
@@ -227,9 +233,7 @@ impl DbManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash with symbol keys (MSF expects symbol keys like :host, not string keys)
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        let opts_val = ruby.hash_new().as_value();
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
@@ -260,9 +264,7 @@ impl DbManager {
 
             // If workspace doesn't exist, create it
             if workspace_obj.is_nil() {
-                let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
-                    AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-                })?;
+                let add_opts = ruby.hash_new().as_value();
                 let name_sym = ruby.to_symbol("name");
                 call_method(
                     add_opts,
@@ -292,9 +294,7 @@ impl DbManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Create empty opts hash
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        let opts_val = ruby.hash_new().as_value();
 
         let workspaces_val = call_method(self.ruby_db, "workspaces", &[opts_val])?;
 
@@ -304,14 +304,18 @@ impl DbManager {
         }
 
         // Convert to array
-        let workspaces_array = call_method(workspaces_val, "to_a", &[])?;
-        let len: i64 =
-            TryConvert::try_convert(call_method(workspaces_array, "length", &[])?).unwrap_or(0);
+        let workspaces_array_val = call_method(workspaces_val, "to_a", &[])?;
 
-        let mut result = Vec::new();
-        for i in 0..len {
-            let idx_val = ruby.integer_from_i64(i).as_value();
-            let workspace_obj = call_method(workspaces_array, "[]", &[idx_val])?;
+        // Use RArray for efficient iteration
+        let workspaces_array = RArray::from_value(workspaces_array_val).ok_or_else(|| {
+            AssassinateError::ConversionError("workspaces.to_a did not return an array".to_string())
+        })?;
+
+        let mut result = Vec::with_capacity(workspaces_array.len());
+        for i in 0..workspaces_array.len() {
+            let workspace_obj: Value = workspaces_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get workspace at {}: {}", i, e))
+            })?;
 
             // Extract workspace attributes
             let mut ws_map = serde_json::Map::new();
@@ -469,24 +473,21 @@ impl DbManager {
     pub fn delete_workspace(&self, workspace_id: i64) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash with :ids array
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
+        // Build options hash with :ids array using RHash::aset and LazyId
+        let opts_hash = ruby.hash_new();
+
+        // Create array with single ID using RArray::push
+        let ids_array = ruby.ary_new();
+        ids_array.push(ruby.integer_from_i64(workspace_id)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to push ID to array: {}", e))
         })?;
 
-        // Create array with single ID
-        let ids_array = ruby.ary_new();
-        call_method(
-            ids_array.as_value(),
-            "push",
-            &[ruby.integer_from_i64(workspace_id).as_value()],
-        )?;
-
-        let ids_sym = ruby.to_symbol("ids");
-        call_method(opts_val, "[]=", &[ids_sym.as_value(), ids_array.as_value()])?;
+        opts_hash.aset(*sym::IDS, ids_array).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set ids: {}", e))
+        })?;
 
         // Call delete_workspaces
-        match call_method(self.ruby_db, "delete_workspaces", &[opts_val]) {
+        match call_method(self.ruby_db, "delete_workspaces", &[opts_hash.as_value()]) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -498,34 +499,37 @@ impl DbManager {
     pub fn notes(&self, opts: Option<HashMap<String, String>>) -> Result<Vec<serde_json::Value>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        // Build options hash using RHash::aset
+        let opts_hash = ruby.hash_new();
 
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
                 let key_sym = ruby.to_symbol(&key);
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
+                opts_hash.aset(key_sym, ruby.str_new(&value)).map_err(|e| {
+                    AssassinateError::RubyError(format!("Failed to set option: {}", e))
+                })?;
             }
         }
 
-        let notes_val = call_method(self.ruby_db, "notes", &[opts_val])?;
+        let notes_val = call_method(self.ruby_db, "notes", &[opts_hash.as_value()])?;
 
         if notes_val.is_nil() {
             return Ok(Vec::new());
         }
 
         // Convert to array
-        let notes_array = call_method(notes_val, "to_a", &[])?;
-        let len: i64 =
-            TryConvert::try_convert(call_method(notes_array, "length", &[])?).unwrap_or(0);
+        let notes_array_val = call_method(notes_val, "to_a", &[])?;
 
-        let mut result = Vec::new();
-        for i in 0..len {
-            let idx_val = ruby.integer_from_i64(i).as_value();
-            let note_obj = call_method(notes_array, "[]", &[idx_val])?;
+        // Use RArray for efficient iteration
+        let notes_array = RArray::from_value(notes_array_val).ok_or_else(|| {
+            AssassinateError::ConversionError("notes.to_a did not return an array".to_string())
+        })?;
+
+        let mut result = Vec::with_capacity(notes_array.len());
+        for i in 0..notes_array.len() {
+            let note_obj: Value = notes_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get note at {}: {}", i, e))
+            })?;
 
             let mut note_map = serde_json::Map::new();
 
@@ -583,18 +587,17 @@ impl DbManager {
     pub fn report_note(&self, opts: HashMap<String, String>) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash with symbol keys
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        // Build options hash with symbol keys using RHash::aset
+        let opts_hash = ruby.hash_new();
 
         for (key, value) in opts {
             let key_sym = ruby.to_symbol(&key);
-            let value_val = ruby.str_new(&value).as_value();
-            call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
+            opts_hash.aset(key_sym, ruby.str_new(&value)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set option: {}", e))
+            })?;
         }
 
-        let result_val = call_method(self.ruby_db, "report_note", &[opts_val])?;
+        let result_val = call_method(self.ruby_db, "report_note", &[opts_hash.as_value()])?;
 
         // Check if the result is nil
         if result_val.is_nil() {
@@ -610,14 +613,28 @@ impl DbManager {
                 // result_val is the note object directly
                 result_val
             } else {
-                // Try hash with :note key
-                let note_sym = ruby.to_symbol("note");
-                call_method(result_val, "[]", &[note_sym.as_value()])?
+                // Try hash with :note key using RHash::aref with LazyId
+                if let Some(result_hash) = RHash::from_value(result_val) {
+                    result_hash.aref(*sym::NOTE).map_err(|e| {
+                        AssassinateError::RubyError(format!("Failed to get note: {}", e))
+                    })?
+                } else {
+                    return Err(AssassinateError::RubyError(
+                        "Result is not a hash".to_string(),
+                    ));
+                }
             }
         } else {
-            // Try hash with :note key
-            let note_sym = ruby.to_symbol("note");
-            call_method(result_val, "[]", &[note_sym.as_value()])?
+            // Try hash with :note key using RHash::aref with LazyId
+            if let Some(result_hash) = RHash::from_value(result_val) {
+                result_hash.aref(*sym::NOTE).map_err(|e| {
+                    AssassinateError::RubyError(format!("Failed to get note: {}", e))
+                })?
+            } else {
+                return Err(AssassinateError::RubyError(
+                    "Result is not a hash".to_string(),
+                ));
+            }
         };
 
         // Check if note object is nil
@@ -638,32 +655,30 @@ impl DbManager {
     pub fn delete_note(&self, note_ids: Vec<i64>) -> Result<usize> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash with :ids array
-        let opts_val = ruby.eval::<Value>("{}").map_err(|e| {
-            AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
-        })?;
+        // Build options hash with :ids array using RHash::aset and LazyId
+        let opts_hash = ruby.hash_new();
 
-        // Create array of IDs
+        // Create array of IDs using RArray::push
         let ids_array = ruby.ary_new();
         for id in note_ids {
-            call_method(
-                ids_array.as_value(),
-                "push",
-                &[ruby.integer_from_i64(id).as_value()],
-            )?;
+            ids_array.push(ruby.integer_from_i64(id)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to push ID to array: {}", e))
+            })?;
         }
 
-        let ids_sym = ruby.to_symbol("ids");
-        call_method(opts_val, "[]=", &[ids_sym.as_value(), ids_array.as_value()])?;
+        opts_hash.aset(*sym::IDS, ids_array).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set ids: {}", e))
+        })?;
 
         // Call delete_note
-        let deleted_val = call_method(self.ruby_db, "delete_note", &[opts_val])?;
+        let deleted_val = call_method(self.ruby_db, "delete_note", &[opts_hash.as_value()])?;
 
-        // Returns array of deleted notes
-        let len: i64 =
-            TryConvert::try_convert(call_method(deleted_val, "length", &[])?).unwrap_or(0);
-
-        Ok(len as usize)
+        // Returns array of deleted notes - use RArray::len() for efficient length
+        if let Some(deleted_array) = RArray::from_value(deleted_val) {
+            Ok(deleted_array.len())
+        } else {
+            Ok(0)
+        }
     }
 
     // ========== Database Status ==========

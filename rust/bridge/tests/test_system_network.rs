@@ -34,8 +34,7 @@ fn it_gets_system_and_network_info() {
 
     // Get the first session
     let session_id = session_ids[0];
-    let id_val = ruby.eval::<magnus::Value>(&format!("{}", session_id))
-        .expect("Failed to convert session ID");
+    let id_val = ruby.integer_from_i64(session_id).as_value();
     let session_val = ruby_bridge::call_method(sessions_val, "[]", &[id_val])
         .expect("Failed to get session");
 

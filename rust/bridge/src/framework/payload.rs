@@ -104,9 +104,7 @@ impl PayloadGenerator {
         // Set iterations if provided
         if let Some(iter) = iterations {
             let iter_key = ruby.str_new("Iterations").as_value();
-            let iter_val = ruby
-                .eval::<Value>(&format!("{}", iter))
-                .map_err(|e| AssassinateError::ConversionError(e.to_string()))?;
+            let iter_val = ruby.integer_from_i64(iter as i64).as_value();
             call_method(datastore, "[]=", &[iter_key, iter_val])?;
         }
 
