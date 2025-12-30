@@ -21,7 +21,7 @@ fn it_reads_module_options_and_actions() {
     // Test options
     let options = ruby_bridge::call_method(module, "options", &[])
         .expect("Failed to get options");
-    assert!(!ruby_bridge::is_nil(options), "Options should not be nil");
+    assert!(!options.is_nil(), "Options should not be nil");
 
     let option_keys = ruby_bridge::call_method(options, "keys", &[])
         .expect("Failed to get option keys");
@@ -52,7 +52,7 @@ fn it_reads_module_options_and_actions() {
 
     // Test aliases
     if let Ok(aliases) = ruby_bridge::call_method(module, "aliases", &[]) {
-        if !ruby_bridge::is_nil(aliases) {
+        if !aliases.is_nil() {
             let alias_vec: Vec<String> = TryConvert::try_convert(aliases)
                 .unwrap_or_else(|_| Vec::new());
             println!("✓ Aliases: {:?}", alias_vec);
@@ -62,7 +62,7 @@ fn it_reads_module_options_and_actions() {
     // Now test a module with actions (auxiliary/scanner/smb/smb_ms17_010)
     let action_module_name = ruby.str_new("auxiliary/scanner/smb/smb_ms17_010").as_value();
     if let Ok(action_module) = ruby_bridge::call_method(modules, "create", &[action_module_name]) {
-        if !ruby_bridge::is_nil(action_module) {
+        if !action_module.is_nil() {
             println!("✓ Created auxiliary/scanner/smb/smb_ms17_010");
 
             // Test actions
@@ -73,7 +73,7 @@ fn it_reads_module_options_and_actions() {
 
             // Test default_action
             if let Ok(default_action) = ruby_bridge::call_method(action_module, "default_action", &[]) {
-                if !ruby_bridge::is_nil(default_action) {
+                if !default_action.is_nil() {
                     if let Ok(action_str) = ruby_bridge::value_to_string(default_action) {
                         println!("✓ Default action: {}", action_str);
                     }
@@ -162,7 +162,7 @@ fn it_detects_missing_required_options() {
                     let current_val = ruby_bridge::call_method(datastore, "[]", &[opt_name_val])
                         .expect("Failed to get datastore value");
 
-                    if ruby_bridge::is_nil(current_val) {
+                    if current_val.is_nil() {
                         missing.push(opt_name.clone());
                     } else if let Ok(val_str) = ruby_bridge::value_to_string(current_val) {
                         if val_str.is_empty() {

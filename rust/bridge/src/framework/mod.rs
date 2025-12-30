@@ -23,7 +23,7 @@ pub use payload::PayloadGenerator;
 pub use session::{Session, SessionManager};
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, create_framework, is_nil, value_to_string};
+use crate::ruby_bridge::{call_method, create_framework, value_to_string};
 use magnus::{value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -93,7 +93,7 @@ impl Framework {
         let module_instance = call_method(modules_manager, "create", &[name_val])?;
 
         // Check if module is nil
-        if is_nil(module_instance) {
+        if module_instance.is_nil() {
             return Err(AssassinateError::ModuleNotFound(module_name.to_string()));
         }
 
@@ -204,7 +204,7 @@ impl Framework {
     /// Check if framework has threads configured
     pub fn threads_enabled(&self) -> Result<bool> {
         let threads_val = call_method(self.ruby_framework, "threads?", &[])?;
-        crate::ruby_bridge::value_to_bool(threads_val)
+        Ok(threads_val.to_bool())
     }
 
     // ========== Framework Management Operations ==========
@@ -308,7 +308,7 @@ impl DataStore {
         let result = call_method(self.ruby_datastore, "[]", &[key_val])?;
 
         // Check if nil
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(None)
         } else {
             Ok(Some(value_to_string(result)?))

@@ -1,7 +1,7 @@
 //! Database manager for Metasploit's database operations
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, get_string_attr, is_nil, value_to_string};
+use crate::ruby_bridge::{call_method, get_string_attr, value_to_string};
 use magnus::{value::ReprValue, StaticSymbol, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ impl DbManager {
         let hosts_val = call_method(self.ruby_db, "hosts", &[])?;
 
         // Check if nil (database might be empty or not configured)
-        if is_nil(hosts_val) {
+        if hosts_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -51,7 +51,7 @@ impl DbManager {
         let services_val = call_method(self.ruby_db, "services", &[])?;
 
         // Check if nil (database might be empty or not configured)
-        if is_nil(services_val) {
+        if services_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -145,7 +145,7 @@ impl DbManager {
         let vulns_val = call_method(self.ruby_db, "vulns", &[opts_val])?;
 
         // Check if nil (database might be empty or not configured)
-        if is_nil(vulns_val) {
+        if vulns_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -173,7 +173,7 @@ impl DbManager {
         let creds_val = call_method(self.ruby_db, "creds", &[])?;
 
         // Check if nil (database might be empty or not configured)
-        if is_nil(creds_val) {
+        if creds_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -191,7 +191,7 @@ impl DbManager {
         let loot_val = call_method(self.ruby_db, "loot", &[])?;
 
         // Check if nil (database might be empty or not configured)
-        if is_nil(loot_val) {
+        if loot_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -259,7 +259,7 @@ impl DbManager {
             )?;
 
             // If workspace doesn't exist, create it
-            if is_nil(workspace_obj) {
+            if workspace_obj.is_nil() {
                 let add_opts = ruby.eval::<Value>("{}").map_err(|e| {
                     AssassinateError::ConversionError(format!("Failed to create hash: {}", e))
                 })?;
@@ -299,7 +299,7 @@ impl DbManager {
         let workspaces_val = call_method(self.ruby_db, "workspaces", &[opts_val])?;
 
         // Check if nil
-        if is_nil(workspaces_val) {
+        if workspaces_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -349,7 +349,7 @@ impl DbManager {
     pub fn workspace(&self) -> Result<serde_json::Value> {
         let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
 
-        if is_nil(workspace_obj) {
+        if workspace_obj.is_nil() {
             return Ok(serde_json::json!(null));
         }
 
@@ -382,7 +382,7 @@ impl DbManager {
             &[ruby.str_new(name).as_value()],
         )?;
 
-        if is_nil(workspace_obj) {
+        if workspace_obj.is_nil() {
             return Err(AssassinateError::NotFound(format!(
                 "Workspace '{}' not found",
                 name
@@ -409,7 +409,7 @@ impl DbManager {
         )?;
 
         // Check if nil
-        if is_nil(workspace_obj) {
+        if workspace_obj.is_nil() {
             return Err(AssassinateError::RubyError(
                 "add_workspace returned nil - workspace creation failed".to_string(),
             ));
@@ -443,7 +443,7 @@ impl DbManager {
             &[ruby.str_new(name).as_value()],
         )?;
 
-        if is_nil(workspace_obj) {
+        if workspace_obj.is_nil() {
             return Ok(None);
         }
 
@@ -513,7 +513,7 @@ impl DbManager {
 
         let notes_val = call_method(self.ruby_db, "notes", &[opts_val])?;
 
-        if is_nil(notes_val) {
+        if notes_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -545,7 +545,7 @@ impl DbManager {
 
             // Get data (serialized)
             if let Ok(data_val) = call_method(note_obj, "data", &[]) {
-                if !is_nil(data_val) {
+                if !data_val.is_nil() {
                     // Try to convert to JSON
                     if let Ok(data_json) = crate::ruby_bridge::hash_to_json(data_val) {
                         note_map.insert("data".to_string(), data_json);
@@ -555,7 +555,7 @@ impl DbManager {
 
             // Get host if present
             if let Ok(host_val) = call_method(note_obj, "host", &[]) {
-                if !is_nil(host_val) {
+                if !host_val.is_nil() {
                     if let Ok(addr_val) = call_method(host_val, "address", &[]) {
                         if let Ok(addr) = value_to_string(addr_val) {
                             note_map.insert("host".to_string(), serde_json::json!(addr));
@@ -597,7 +597,7 @@ impl DbManager {
         let result_val = call_method(self.ruby_db, "report_note", &[opts_val])?;
 
         // Check if the result is nil
-        if is_nil(result_val) {
+        if result_val.is_nil() {
             return Err(AssassinateError::RubyError(
                 "report_note returned nil - note creation failed (database may not be active or workspace not set)".to_string(),
             ));
@@ -606,7 +606,7 @@ impl DbManager {
         // report_note might return the note object directly or a hash with :note key
         // Try to get ID directly first
         let note_obj = if let Ok(id_test) = call_method(result_val, "id", &[]) {
-            if !is_nil(id_test) {
+            if !id_test.is_nil() {
                 // result_val is the note object directly
                 result_val
             } else {
@@ -621,7 +621,7 @@ impl DbManager {
         };
 
         // Check if note object is nil
-        if is_nil(note_obj) {
+        if note_obj.is_nil() {
             return Err(AssassinateError::RubyError(
                 "Note object is nil - failed to create or retrieve note".to_string(),
             ));

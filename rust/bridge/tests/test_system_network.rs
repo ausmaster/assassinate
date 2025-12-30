@@ -39,7 +39,7 @@ fn it_gets_system_and_network_info() {
     let session_val = ruby_bridge::call_method(sessions_val, "[]", &[id_val])
         .expect("Failed to get session");
 
-    if ruby_bridge::is_nil(session_val) {
+    if session_val.is_nil() {
         println!("⚠ Session not found - skipping test");
         return;
     }

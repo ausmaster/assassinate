@@ -17,7 +17,7 @@ fn it_initializes_framework_and_gets_version() {
     println!("✓ Framework created");
 
     // Verify framework is not nil
-    assert!(!ruby_bridge::is_nil(framework), "Framework is nil");
+    assert!(!framework.is_nil(), "Framework is nil");
 
     // Get version
     let version = ruby_bridge::call_method(framework, "version", &[])
@@ -30,7 +30,7 @@ fn it_initializes_framework_and_gets_version() {
     // Access module manager
     let modules = ruby_bridge::call_method(framework, "modules", &[])
         .expect("Failed to get module manager");
-    assert!(!ruby_bridge::is_nil(modules), "Module manager is nil");
+    assert!(!modules.is_nil(), "Module manager is nil");
     println!("✓ Module manager accessible");
 
     // Verify we can get the Ruby handle (confirms VM is working)

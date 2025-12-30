@@ -34,7 +34,7 @@ fn it_tests_post_module_execution() {
         .expect("Failed to get session");
 
     // Verify session is valid
-    assert!(!ruby_bridge::is_nil(session_val), "Session should not be nil");
+    assert!(!session_val.is_nil(), "Session should not be nil");
 
     // Check session type
     let type_val = ruby_bridge::call_method(session_val, "type", &[])

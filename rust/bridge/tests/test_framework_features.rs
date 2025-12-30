@@ -12,7 +12,7 @@ fn it_accesses_framework_features() {
     // Test threads
     let threads = ruby_bridge::call_method(framework, "threads", &[])
         .expect("Failed to get threads");
-    assert!(!ruby_bridge::is_nil(threads), "Threads should not be nil");
+    assert!(!threads.is_nil(), "Threads should not be nil");
     println!("✓ Threads accessible");
 
     // Test search
@@ -25,7 +25,7 @@ fn it_accesses_framework_features() {
     // Test jobs
     let jobs = ruby_bridge::call_method(framework, "jobs", &[])
         .expect("Failed to get jobs");
-    assert!(!ruby_bridge::is_nil(jobs), "Jobs should not be nil");
+    assert!(!jobs.is_nil(), "Jobs should not be nil");
     let job_keys = ruby_bridge::call_method(jobs, "keys", &[])
         .expect("Failed to get job keys");
     let job_keys_vec: Vec<String> = TryConvert::try_convert(job_keys)
@@ -35,13 +35,13 @@ fn it_accesses_framework_features() {
     // Test database
     let db = ruby_bridge::call_method(framework, "db", &[])
         .expect("Failed to get db");
-    assert!(!ruby_bridge::is_nil(db), "DB should not be nil");
+    assert!(!db.is_nil(), "DB should not be nil");
     println!("✓ Database accessible");
 
     // Test session manager
     let sessions = ruby_bridge::call_method(framework, "sessions", &[])
         .expect("Failed to get sessions");
-    assert!(!ruby_bridge::is_nil(sessions), "Sessions should not be nil");
+    assert!(!sessions.is_nil(), "Sessions should not be nil");
     let session_keys = ruby_bridge::call_method(sessions, "keys", &[])
         .expect("Failed to get session keys");
     let session_ids: Vec<i64> = TryConvert::try_convert(session_keys)
@@ -56,7 +56,7 @@ fn it_gets_module_stats() {
     // Get stats object
     let stats = ruby_bridge::call_method(framework, "stats", &[])
         .expect("Failed to get stats");
-    assert!(!ruby_bridge::is_nil(stats), "Stats should not be nil");
+    assert!(!stats.is_nil(), "Stats should not be nil");
 
     // Test each stat method
     let exploits = ruby_bridge::call_method(stats, "num_exploits", &[])

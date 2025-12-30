@@ -1349,8 +1349,17 @@ impl Daemon {
                     .get(2)
                     .and_then(|v| v.as_u64())
                     .context("Missing lport")? as u16;
+                // Optional extra_options as a map (for PAYLOAD_OVERRIDE, PLATFORM_OVERRIDE, etc.)
+                let extra_options: Option<std::collections::HashMap<String, String>> = _args
+                    .get(3)
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect()
+                    });
                 self.with_session(&_args, |session| {
-                    let success = session.shell_to_meterpreter(lhost, lport)?;
+                    let success = session.shell_to_meterpreter(lhost, lport, extra_options)?;
                     Ok(serde_json::json!({ "success": success }))
                 })
             },
@@ -1410,6 +1419,81 @@ impl Daemon {
                     Ok(serde_json::json!({ "success": success }))
                 })
             },
+
+            // === Meterpreter Transport Management ===
+            "session_transport_list" => self.with_session(&_args, |session| {
+                let transport_info = session.transport_list()?;
+                Ok(serde_json::json!({ "transport_info": transport_info }))
+            }),
+
+            "session_set_transport_timeouts" => {
+                let session_exp = _args.get(1).and_then(|v| v.as_i64());
+                let comm_timeout = _args.get(2).and_then(|v| v.as_i64());
+                let retry_total = _args.get(3).and_then(|v| v.as_i64());
+                let retry_wait = _args.get(4).and_then(|v| v.as_i64());
+                self.with_session(&_args, |session| {
+                    let timeouts = session.set_transport_timeouts(
+                        session_exp, comm_timeout, retry_total, retry_wait
+                    )?;
+                    Ok(serde_json::json!({ "timeouts": timeouts }))
+                })
+            },
+
+            "session_transport_add" => {
+                let transport = get_str_arg(&_args, 1, "transport")?;
+                let lhost = _args.get(2).and_then(|v| v.as_str());
+                let lport = _args.get(3).and_then(|v| v.as_u64()).context("Missing lport")? as u16;
+                let ua = _args.get(4).and_then(|v| v.as_str());
+                let comm_timeout = _args.get(5).and_then(|v| v.as_i64());
+                let session_exp = _args.get(6).and_then(|v| v.as_i64());
+                let retry_total = _args.get(7).and_then(|v| v.as_i64());
+                let retry_wait = _args.get(8).and_then(|v| v.as_i64());
+                self.with_session(&_args, |session| {
+                    let success = session.transport_add(
+                        transport, lhost, lport, ua,
+                        comm_timeout, session_exp, retry_total, retry_wait
+                    )?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
+            "session_transport_remove" => {
+                let transport = get_str_arg(&_args, 1, "transport")?;
+                let lhost = _args.get(2).and_then(|v| v.as_str());
+                let lport = _args.get(3).and_then(|v| v.as_u64()).context("Missing lport")? as u16;
+                self.with_session(&_args, |session| {
+                    let success = session.transport_remove(transport, lhost, lport)?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
+            "session_transport_change" => {
+                let transport = get_str_arg(&_args, 1, "transport")?;
+                let lhost = _args.get(2).and_then(|v| v.as_str());
+                let lport = _args.get(3).and_then(|v| v.as_u64()).context("Missing lport")? as u16;
+                self.with_session(&_args, |session| {
+                    let success = session.transport_change(transport, lhost, lport)?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
+            "session_transport_sleep" => {
+                let seconds = _args.get(1).and_then(|v| v.as_u64()).context("Missing seconds")? as u32;
+                self.with_session(&_args, |session| {
+                    let success = session.transport_sleep(seconds)?;
+                    Ok(serde_json::json!({ "success": success }))
+                })
+            },
+
+            "session_transport_next" => self.with_session(&_args, |session| {
+                let success = session.transport_next()?;
+                Ok(serde_json::json!({ "success": success }))
+            }),
+
+            "session_transport_prev" => self.with_session(&_args, |session| {
+                let success = session.transport_prev()?;
+                Ok(serde_json::json!({ "success": success }))
+            }),
 
             // === Module Execution ===
             "module_exploit" => {

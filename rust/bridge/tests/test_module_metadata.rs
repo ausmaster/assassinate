@@ -16,7 +16,7 @@ fn it_creates_module_and_reads_metadata() {
     let module_name = ruby.str_new("exploit/multi/handler").as_value();
     let module = ruby_bridge::call_method(modules, "create", &[module_name])
         .expect("Failed to create module");
-    assert!(!ruby_bridge::is_nil(module), "Module is nil");
+    assert!(!module.is_nil(), "Module is nil");
     println!("✓ Module created: exploit/multi/handler");
 
     // Test module metadata

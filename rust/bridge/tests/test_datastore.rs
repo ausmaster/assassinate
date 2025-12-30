@@ -38,7 +38,7 @@ fn it_manages_datastore() {
     // Test to_h (hash conversion)
     let hash = ruby_bridge::call_method(datastore, "to_h", &[])
         .expect("Failed to call to_h");
-    assert!(!ruby_bridge::is_nil(hash), "Hash should not be nil");
+    assert!(!hash.is_nil(), "Hash should not be nil");
     println!("✓ DataStore to_h works");
 
     // Test keys
@@ -54,7 +54,7 @@ fn it_manages_datastore() {
         .expect("Failed to delete key");
     let after_delete = ruby_bridge::call_method(datastore, "[]", &[key])
         .expect("Failed to get after delete");
-    assert!(ruby_bridge::is_nil(after_delete), "Value should be nil after delete");
+    assert!(after_delete.is_nil(), "Value should be nil after delete");
     println!("✓ Delete works");
 
     // Test clear

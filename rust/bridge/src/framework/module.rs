@@ -2,7 +2,7 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
-    build_quiet_opts, call_method, get_bool_attr, get_string_attr, is_nil, value_to_string,
+    build_quiet_opts, call_method, get_bool_attr, get_string_attr, value_to_string,
 };
 use magnus::{value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
@@ -102,7 +102,7 @@ impl Module {
         // Call exploit_simple on the module
         let session_val = call_method(self.ruby_module, "exploit_simple", &[opts_val])?;
 
-        if is_nil(session_val) {
+        if session_val.is_nil() {
             Ok(None)
         } else {
             // Get session ID
@@ -152,7 +152,7 @@ impl Module {
     /// Check if module has check method
     pub fn has_check(&self) -> Result<bool> {
         let result = call_method(self.ruby_module, "has_check?", &[])?;
-        crate::ruby_bridge::value_to_bool(result)
+        Ok(result.to_bool())
     }
 
     /// Get available payloads for this exploit
@@ -162,7 +162,7 @@ impl Module {
         let method_name = ruby.str_new("compatible_payloads").as_value();
 
         match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+            Ok(responds) if responds.to_bool() => {
                 // Get compatible payloads - returns array of [name, class] tuples
                 let payloads_val = call_method(self.ruby_module, "compatible_payloads", &[])?;
 
@@ -203,7 +203,7 @@ impl Module {
 
         // Check if module responds to actions
         match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+            Ok(responds) if responds.to_bool() => {
                 // Get actions array
                 let actions_val = call_method(self.ruby_module, "actions", &[])?;
 
@@ -244,10 +244,10 @@ impl Module {
 
         // Check if module responds to default_action
         match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+            Ok(responds) if responds.to_bool() => {
                 let default_val = call_method(self.ruby_module, "default_action", &[])?;
 
-                if is_nil(default_val) {
+                if default_val.is_nil() {
                     Ok(None)
                 } else {
                     let name = value_to_string(default_val)?;
@@ -268,10 +268,10 @@ impl Module {
 
         // Check if module responds to action
         match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+            Ok(responds) if responds.to_bool() => {
                 let action_val = call_method(self.ruby_module, "action", &[])?;
 
-                if is_nil(action_val) {
+                if action_val.is_nil() {
                     Ok(None)
                 } else {
                     // action returns an AuxiliaryAction object, get its name
@@ -319,7 +319,7 @@ impl Module {
         let platform_val = call_method(self.ruby_module, "platform", &[])?;
 
         // Platform can be PlatformList or nil
-        if is_nil(platform_val) {
+        if platform_val.is_nil() {
             return Ok(vec![]);
         }
 
@@ -337,7 +337,7 @@ impl Module {
         let arch_val = call_method(self.ruby_module, "arch", &[])?;
 
         // Arch can be an array or nil
-        if is_nil(arch_val) {
+        if arch_val.is_nil() {
             return Ok(vec![]);
         }
 
@@ -357,10 +357,10 @@ impl Module {
         let method_name = ruby.str_new("targets").as_value();
 
         match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if crate::ruby_bridge::value_to_bool(responds)? => {
+            Ok(responds) if responds.to_bool() => {
                 let targets_val = call_method(self.ruby_module, "targets", &[])?;
 
-                if is_nil(targets_val) {
+                if targets_val.is_nil() {
                     return Ok(vec![]);
                 }
 
@@ -391,7 +391,7 @@ impl Module {
     pub fn disclosure_date(&self) -> Result<Option<String>> {
         let date_val = call_method(self.ruby_module, "disclosure_date", &[])?;
 
-        if is_nil(date_val) {
+        if date_val.is_nil() {
             Ok(None)
         } else {
             Ok(Some(value_to_string(date_val)?))
@@ -430,7 +430,7 @@ impl Module {
     pub fn notes(&self) -> Result<HashMap<String, String>> {
         let notes_val = call_method(self.ruby_module, "notes", &[])?;
 
-        if is_nil(notes_val) {
+        if notes_val.is_nil() {
             return Ok(HashMap::new());
         }
 
@@ -471,7 +471,7 @@ impl Module {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let options_val = call_method(self.ruby_module, "options", &[])?;
 
-        if is_nil(options_val) {
+        if options_val.is_nil() {
             return Ok(HashMap::new());
         }
 
@@ -489,7 +489,7 @@ impl Module {
             let opt_name_val = ruby.str_new(&opt_name).as_value();
             let opt_obj = call_method(options_val, "[]", &[opt_name_val])?;
 
-            if is_nil(opt_obj) {
+            if opt_obj.is_nil() {
                 continue;
             }
 
@@ -497,14 +497,13 @@ impl Module {
 
             // Extract required attribute
             if let Ok(required_val) = call_method(opt_obj, "required", &[]) {
-                if let Ok(required_bool) = crate::ruby_bridge::value_to_bool(required_val) {
-                    opt_details.insert("required".to_string(), serde_json::json!(required_bool));
-                }
+                let required_bool = required_val.to_bool();
+                opt_details.insert("required".to_string(), serde_json::json!(required_bool));
             }
 
             // Extract description
             if let Ok(desc_val) = call_method(opt_obj, "desc", &[]) {
-                if !is_nil(desc_val) {
+                if !desc_val.is_nil() {
                     if let Ok(desc_str) = value_to_string(desc_val) {
                         opt_details.insert("desc".to_string(), serde_json::json!(desc_str));
                     }
@@ -513,7 +512,7 @@ impl Module {
 
             // Extract default value
             if let Ok(default_val) = call_method(opt_obj, "default", &[]) {
-                if is_nil(default_val) {
+                if default_val.is_nil() {
                     opt_details.insert("default".to_string(), serde_json::Value::Null);
                 } else if let Ok(default_str) = value_to_string(default_val) {
                     opt_details.insert("default".to_string(), serde_json::json!(default_str));
@@ -522,7 +521,7 @@ impl Module {
 
             // Extract type (class name)
             if let Ok(type_val) = call_method(opt_obj, "type", &[]) {
-                if !is_nil(type_val) {
+                if !type_val.is_nil() {
                     if let Ok(type_str) = value_to_string(type_val) {
                         opt_details.insert("type".to_string(), serde_json::json!(type_str));
                     }
@@ -540,7 +539,7 @@ impl Module {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let options_val = call_method(self.ruby_module, "options", &[])?;
 
-        if is_nil(options_val) {
+        if options_val.is_nil() {
             return Ok(Vec::new());
         }
 
@@ -561,15 +560,13 @@ impl Module {
             let opt_name_val = ruby.str_new(&opt_name).as_value();
             let opt_obj = call_method(options_val, "[]", &[opt_name_val])?;
 
-            if is_nil(opt_obj) {
+            if opt_obj.is_nil() {
                 continue;
             }
 
             // Check if required
             let is_required = match call_method(opt_obj, "required", &[]) {
-                Ok(required_val) => {
-                    crate::ruby_bridge::value_to_bool(required_val).unwrap_or(false)
-                }
+                Ok(required_val) => required_val.to_bool(),
                 Err(_) => false,
             };
 
@@ -578,7 +575,7 @@ impl Module {
                 let current_val = call_method(datastore_val, "[]", &[opt_name_val])?;
 
                 // If nil or empty string, it's missing
-                if is_nil(current_val) {
+                if current_val.is_nil() {
                     missing.push(opt_name);
                 } else if let Ok(val_str) = value_to_string(current_val) {
                     if val_str.is_empty() {

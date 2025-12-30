@@ -1,7 +1,7 @@
 //! Payload generation for Metasploit Framework
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, is_nil};
+use crate::ruby_bridge::{call_method};
 use magnus::{value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -31,7 +31,7 @@ impl PayloadGenerator {
         let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
-        if is_nil(payload) {
+        if payload.is_nil() {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
@@ -51,7 +51,7 @@ impl PayloadGenerator {
         // Generate the payload
         let generated = call_method(payload, "generate", &[])?;
 
-        if is_nil(generated) {
+        if generated.is_nil() {
             return Err(AssassinateError::PayloadError(
                 "Failed to generate payload".to_string(),
             ));
@@ -84,7 +84,7 @@ impl PayloadGenerator {
         let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
-        if is_nil(payload) {
+        if payload.is_nil() {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
@@ -122,7 +122,7 @@ impl PayloadGenerator {
         // Generate the payload
         let generated = call_method(payload, "generate", &[])?;
 
-        if is_nil(generated) {
+        if generated.is_nil() {
             return Err(AssassinateError::PayloadError(
                 "Failed to generate payload".to_string(),
             ));
@@ -169,7 +169,7 @@ impl PayloadGenerator {
         let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
-        if is_nil(payload) {
+        if payload.is_nil() {
             return Err(AssassinateError::PayloadError(format!(
                 "Payload not found: {}",
                 payload_name
@@ -200,7 +200,7 @@ impl PayloadGenerator {
         // Generate the raw payload
         let raw_payload = call_method(payload, "generate", &[])?;
 
-        if is_nil(raw_payload) {
+        if raw_payload.is_nil() {
             return Err(AssassinateError::PayloadError(
                 "Failed to generate payload".to_string(),
             ));
@@ -238,7 +238,7 @@ impl PayloadGenerator {
             )
             .map_err(|e| AssassinateError::RubyError(format!("to_executable failed: {}", e)))?;
 
-        if is_nil(exe) {
+        if exe.is_nil() {
             return Err(AssassinateError::PayloadError(format!(
                 "to_executable returned nil for arch={}, platform={}",
                 arch, platform
