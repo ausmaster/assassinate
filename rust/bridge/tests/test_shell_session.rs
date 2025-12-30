@@ -3,7 +3,7 @@
 
 mod common;
 
-use bridge::ruby_bridge;
+use bridge::ruby_bridge::{self, responds_to_public};
 use magnus::{TryConvert, value::ReprValue};
 
 #[test]
@@ -62,92 +62,67 @@ fn it_tests_shell_session_operations() {
 
     println!("\n📝 Testing shell session operations");
 
-    // Test 1: shell_write - Check if method exists (don't actually write to avoid breaking session)
+    // Test 1: shell_write - Check if method exists using Magnus built-in
     println!("\n1. Testing shell_write capability");
-    match ruby_bridge::call_method(session_val, "respond_to?", &[ruby.str_new("shell_write").as_value()]) {
-        Ok(result) => {
-            let has_method = result.to_bool();
-            if has_method {
-                println!("   ✓ Session has shell_write method");
+    if responds_to_public(session_val, "shell_write") {
+        println!("   ✓ Session has shell_write method");
 
-                // Test writing a newline (minimal impact)
-                match session.shell_write("\n") {
-                    Ok(bytes) => {
-                        println!("   ✓ shell_write() works - wrote {} bytes", bytes);
-                        assert!(bytes > 0, "Should write at least 1 byte");
-                    }
-                    Err(e) => {
-                        println!("   ⚠ shell_write() failed: {}", e);
-                    }
-                }
-            } else {
-                println!("   ⚠ Session does not have shell_write method");
+        // Test writing a newline (minimal impact)
+        match session.shell_write("\n") {
+            Ok(bytes) => {
+                println!("   ✓ shell_write() works - wrote {} bytes", bytes);
+                assert!(bytes > 0, "Should write at least 1 byte");
+            }
+            Err(e) => {
+                println!("   ⚠ shell_write() failed: {}", e);
             }
         }
-        Err(e) => {
-            println!("   ⚠ Failed to check for shell_write: {}", e);
-        }
+    } else {
+        println!("   ⚠ Session does not have shell_write method");
     }
 
-    // Test 2: shell_read - Read any available output
+    // Test 2: shell_read - Read any available output using Magnus built-in
     println!("\n2. Testing shell_read capability");
-    match ruby_bridge::call_method(session_val, "respond_to?", &[ruby.str_new("shell_read").as_value()]) {
-        Ok(result) => {
-            let has_method = result.to_bool();
-            if has_method {
-                println!("   ✓ Session has shell_read method");
+    if responds_to_public(session_val, "shell_read") {
+        println!("   ✓ Session has shell_read method");
 
-                match session.shell_read() {
-                    Ok(output) => {
-                        println!("   ✓ shell_read() works - got {} bytes", output.len());
-                        if !output.is_empty() {
-                            println!("   Output preview: {:?}", &output[..output.len().min(50)]);
-                        }
-                    }
-                    Err(e) => {
-                        println!("   ⚠ shell_read() failed: {}", e);
-                    }
+        match session.shell_read() {
+            Ok(output) => {
+                println!("   ✓ shell_read() works - got {} bytes", output.len());
+                if !output.is_empty() {
+                    println!("   Output preview: {:?}", &output[..output.len().min(50)]);
                 }
-            } else {
-                println!("   ⚠ Session does not have shell_read method");
+            }
+            Err(e) => {
+                println!("   ⚠ shell_read() failed: {}", e);
             }
         }
-        Err(e) => {
-            println!("   ⚠ Failed to check for shell_read: {}", e);
-        }
+    } else {
+        println!("   ⚠ Session does not have shell_read method");
     }
 
-    // Test 3: shell_to_meterpreter - Check if upgrade method exists (don't actually upgrade)
+    // Test 3: shell_to_meterpreter - Check if upgrade method exists using Magnus built-in
     println!("\n3. Testing shell_to_meterpreter capability");
-    match ruby_bridge::call_method(session_val, "respond_to?", &[ruby.str_new("execute_script").as_value()]) {
-        Ok(result) => {
-            let has_method = result.to_bool();
-            if has_method {
-                println!("   ✓ Session has execute_script method (needed for upgrade)");
-                println!("   ℹ Not actually running upgrade to preserve session");
-                println!("   ℹ Upgrade would run: post/multi/manage/shell_to_meterpreter");
+    if responds_to_public(session_val, "execute_script") {
+        println!("   ✓ Session has execute_script method (needed for upgrade)");
+        println!("   ℹ Not actually running upgrade to preserve session");
+        println!("   ℹ Upgrade would run: post/multi/manage/shell_to_meterpreter");
 
-                // Just verify the method signature works (check datastore exists)
-                match ruby_bridge::call_method(session_val, "exploit_datastore", &[]) {
-                    Ok(ds) => {
-                        let is_nil = ds.is_nil();
-                        if !is_nil {
-                            println!("   ✓ Session has exploit_datastore for LHOST/LPORT configuration");
-                        } else {
-                            println!("   ⚠ exploit_datastore is nil");
-                        }
-                    }
-                    Err(e) => {
-                        println!("   ⚠ Failed to get exploit_datastore: {}", e);
-                    }
+        // Just verify the method signature works (check datastore exists)
+        match ruby_bridge::call_method(session_val, "exploit_datastore", &[]) {
+            Ok(ds) => {
+                if !ds.is_nil() {
+                    println!("   ✓ Session has exploit_datastore for LHOST/LPORT configuration");
+                } else {
+                    println!("   ⚠ exploit_datastore is nil");
                 }
-            } else {
-                println!("   ⚠ Session does not have execute_script method");
+            }
+            Err(e) => {
+                println!("   ⚠ Failed to get exploit_datastore: {}", e);
             }
         }
-        Err(e) => {
-            println!("   ⚠ Failed to check for execute_script: {}", e);
-        }
+    } else {
+        println!("   ⚠ Session does not have execute_script method");
     }
 
     println!("\n✅ Shell session operations test completed");

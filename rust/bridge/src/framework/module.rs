@@ -2,9 +2,10 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
-    build_quiet_opts, call_method, get_bool_attr, get_string_attr, value_to_string,
+    build_quiet_opts, call_method, get_bool_attr, get_string_attr, responds_to_public, sym,
+    value_to_string,
 };
-use magnus::{value::ReprValue, TryConvert, Value};
+use magnus::{value::ReprValue, RArray, TryConvert, Value};
 use std::collections::HashMap;
 
 use super::DataStore;
@@ -157,104 +158,85 @@ impl Module {
 
     /// Get available payloads for this exploit
     pub fn compatible_payloads(&self) -> Result<Vec<String>> {
-        // Check if module responds to compatible_payloads
-        let ruby = crate::ruby_bridge::get_ruby()?;
-        let method_name = ruby.str_new("compatible_payloads").as_value();
-
-        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if responds.to_bool() => {
-                // Get compatible payloads - returns array of [name, class] tuples
-                let payloads_val = call_method(self.ruby_module, "compatible_payloads", &[])?;
-
-                // Get array length
-                let array_len: usize = TryConvert::try_convert(call_method(
-                    payloads_val,
-                    "length",
-                    &[],
-                )?)
-                .map_err(|e: magnus::Error| {
-                    AssassinateError::ConversionError(format!("Failed to get array length: {}", e))
-                })?;
-
-                // Iterate through array and extract first element (payload name) from each tuple
-                let mut result = Vec::with_capacity(array_len);
-                for i in 0..array_len {
-                    let idx_val = ruby.integer_from_i64(i as i64).as_value();
-                    // Get the [name, class] tuple
-                    let tuple_val = call_method(payloads_val, "[]", &[idx_val])?;
-                    // Get the first element (name) from the tuple
-                    let zero_val = ruby.integer_from_i64(0).as_value();
-                    let name_val = call_method(tuple_val, "[]", &[zero_val])?;
-                    let name = value_to_string(name_val)?;
-                    result.push(name);
-                }
-
-                Ok(result)
-            }
-            _ => Ok(vec![]),
+        // Check if module responds to compatible_payloads using Magnus built-in
+        if !responds_to_public(self.ruby_module, "compatible_payloads") {
+            return Ok(vec![]);
         }
+
+        // Get compatible payloads - returns array of [name, class] tuples
+        let payloads_val = call_method(self.ruby_module, "compatible_payloads", &[])?;
+
+        // Use RArray for efficient array access
+        let payloads_array = RArray::from_value(payloads_val).ok_or_else(|| {
+            AssassinateError::ConversionError("compatible_payloads did not return an array".into())
+        })?;
+
+        // Iterate through array and extract first element (payload name) from each tuple
+        let mut result = Vec::with_capacity(payloads_array.len());
+        for i in 0..payloads_array.len() {
+            // Get the [name, class] tuple
+            let tuple_val: Value = payloads_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get tuple at {}: {}", i, e))
+            })?;
+
+            // Use RArray to get first element efficiently
+            if let Some(tuple_array) = RArray::from_value(tuple_val) {
+                let name_val: Value = tuple_array.entry(0).map_err(|e| {
+                    AssassinateError::ConversionError(format!("Failed to get name from tuple: {}", e))
+                })?;
+                result.push(value_to_string(name_val)?);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get available actions for this auxiliary/post module
     /// Returns list of action names
     pub fn actions(&self) -> Result<Vec<String>> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-        let method_name = ruby.str_new("actions").as_value();
-
-        // Check if module responds to actions
-        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if responds.to_bool() => {
-                // Get actions array
-                let actions_val = call_method(self.ruby_module, "actions", &[])?;
-
-                // Get array length
-                let array_len: usize = TryConvert::try_convert(call_method(
-                    actions_val,
-                    "length",
-                    &[],
-                )?)
-                .map_err(|e: magnus::Error| {
-                    AssassinateError::ConversionError(format!(
-                        "Failed to get actions array length: {}",
-                        e
-                    ))
-                })?;
-
-                // Iterate through actions and extract names
-                let mut result = Vec::with_capacity(array_len);
-                for i in 0..array_len {
-                    let idx_val = ruby.integer_from_i64(i as i64).as_value();
-                    let action_val = call_method(actions_val, "[]", &[idx_val])?;
-                    let name_val = call_method(action_val, "name", &[])?;
-                    let name = value_to_string(name_val)?;
-                    result.push(name);
-                }
-
-                Ok(result)
-            }
-            _ => Ok(vec![]),
+        // Check if module responds to actions using Magnus built-in
+        if !responds_to_public(self.ruby_module, "actions") {
+            return Ok(vec![]);
         }
+
+        // Get actions array
+        let actions_val = call_method(self.ruby_module, "actions", &[])?;
+
+        // Use RArray for efficient array access
+        let actions_array = RArray::from_value(actions_val).ok_or_else(|| {
+            AssassinateError::ConversionError("actions did not return an array".into())
+        })?;
+
+        // Iterate through actions and extract names
+        let mut result = Vec::with_capacity(actions_array.len());
+        for i in 0..actions_array.len() {
+            let action_val: Value = actions_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get action at {}: {}", i, e))
+            })?;
+            // Use LazyId for efficient method call (dereference to get OpaqueId)
+            let name_val: Value = action_val.funcall(*sym::NAME, ()).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to get action name: {}", e))
+            })?;
+            result.push(value_to_string(name_val)?);
+        }
+
+        Ok(result)
     }
 
     /// Get the default action for this auxiliary/post module
     /// Returns None if module doesn't support actions or has no default
     pub fn default_action(&self) -> Result<Option<String>> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-        let method_name = ruby.str_new("default_action").as_value();
+        // Check if module responds to default_action using Magnus built-in
+        if !responds_to_public(self.ruby_module, "default_action") {
+            return Ok(None);
+        }
 
-        // Check if module responds to default_action
-        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if responds.to_bool() => {
-                let default_val = call_method(self.ruby_module, "default_action", &[])?;
+        let default_val = call_method(self.ruby_module, "default_action", &[])?;
 
-                if default_val.is_nil() {
-                    Ok(None)
-                } else {
-                    let name = value_to_string(default_val)?;
-                    Ok(Some(name))
-                }
-            }
-            _ => Ok(None),
+        if default_val.is_nil() {
+            Ok(None)
+        } else {
+            Ok(Some(value_to_string(default_val)?))
         }
     }
 
@@ -263,24 +245,21 @@ impl Module {
     /// Falls back to default_action if ACTION is not set
     /// Returns None if module doesn't support actions
     pub fn action(&self) -> Result<Option<String>> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
-        let method_name = ruby.str_new("action").as_value();
+        // Check if module responds to action using Magnus built-in
+        if !responds_to_public(self.ruby_module, "action") {
+            return Ok(None);
+        }
 
-        // Check if module responds to action
-        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if responds.to_bool() => {
-                let action_val = call_method(self.ruby_module, "action", &[])?;
+        let action_val = call_method(self.ruby_module, "action", &[])?;
 
-                if action_val.is_nil() {
-                    Ok(None)
-                } else {
-                    // action returns an AuxiliaryAction object, get its name
-                    let name_val = call_method(action_val, "name", &[])?;
-                    let name = value_to_string(name_val)?;
-                    Ok(Some(name))
-                }
-            }
-            _ => Ok(None),
+        if action_val.is_nil() {
+            Ok(None)
+        } else {
+            // action returns an AuxiliaryAction object, get its name using LazyId
+            let name_val: Value = action_val.funcall(*sym::NAME, ()).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to get action name: {}", e))
+            })?;
+            Ok(Some(value_to_string(name_val)?))
         }
     }
 
@@ -352,39 +331,35 @@ impl Module {
 
     /// Get exploit targets (for exploit modules only)
     pub fn targets(&self) -> Result<Vec<String>> {
-        // Check if module responds to targets
-        let ruby = crate::ruby_bridge::get_ruby()?;
-        let method_name = ruby.str_new("targets").as_value();
-
-        match call_method(self.ruby_module, "respond_to?", &[method_name]) {
-            Ok(responds) if responds.to_bool() => {
-                let targets_val = call_method(self.ruby_module, "targets", &[])?;
-
-                if targets_val.is_nil() {
-                    return Ok(vec![]);
-                }
-
-                // Targets is an array of Target objects - extract name from each
-                let targets_array: magnus::RArray =
-                    TryConvert::try_convert(targets_val).map_err(|e: magnus::Error| {
-                        AssassinateError::ConversionError(format!(
-                            "Failed to convert targets to array: {}",
-                            e
-                        ))
-                    })?;
-
-                let mut target_names = Vec::new();
-                for target_obj in targets_array.into_iter() {
-                    // Extract name from target object
-                    let name_val = call_method(target_obj, "name", &[])?;
-                    let name = value_to_string(name_val)?;
-                    target_names.push(name);
-                }
-
-                Ok(target_names)
-            }
-            _ => Ok(vec![]),
+        // Check if module responds to targets using Magnus built-in
+        if !responds_to_public(self.ruby_module, "targets") {
+            return Ok(vec![]);
         }
+
+        let targets_val = call_method(self.ruby_module, "targets", &[])?;
+
+        if targets_val.is_nil() {
+            return Ok(vec![]);
+        }
+
+        // Use RArray for efficient array access
+        let targets_array = RArray::from_value(targets_val).ok_or_else(|| {
+            AssassinateError::ConversionError("targets did not return an array".into())
+        })?;
+
+        // Extract name from each target object using StaticSymbol
+        let mut target_names = Vec::with_capacity(targets_array.len());
+        for i in 0..targets_array.len() {
+            let target_obj: Value = targets_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get target at {}: {}", i, e))
+            })?;
+            let name_val: Value = target_obj.funcall(*sym::NAME, ()).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to get target name: {}", e))
+            })?;
+            target_names.push(value_to_string(name_val)?);
+        }
+
+        Ok(target_names)
     }
 
     /// Get vulnerability disclosure date

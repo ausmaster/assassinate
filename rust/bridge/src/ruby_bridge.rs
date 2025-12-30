@@ -1,13 +1,149 @@
 use crate::error::{AssassinateError, Result};
 use magnus::{
-    embed,
-    value::{qnil, ReprValue},
-    IntoValue, RArray, RHash, RString, Ruby, TryConvert, Value,
+    class, embed, exception,
+    value::{qnil, IntoId, ReprValue},
+    IntoValue, RArray, RHash, RString, Ruby, Symbol, TryConvert, Value,
 };
 use std::mem;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
+
+// ========== Lazy Symbols for Common Method Names ==========
+// LazyId provides thread-safe, lazily-initialized symbol IDs
+// Use *sym::NAME to dereference and get the OpaqueId for funcall
+
+/// Common Ruby method symbols used throughout the bridge
+/// These are lazily initialized on first use and cached
+pub mod sym {
+    use magnus::value::LazyId;
+
+    // Collection access
+    pub static KEYS: LazyId = LazyId::new("keys");
+    pub static LENGTH: LazyId = LazyId::new("length");
+    pub static TO_A: LazyId = LazyId::new("to_a");
+    pub static TO_S: LazyId = LazyId::new("to_s");
+    pub static EACH: LazyId = LazyId::new("each");
+
+    // Hash operations
+    pub static AREF: LazyId = LazyId::new("[]");
+    pub static ASET: LazyId = LazyId::new("[]=");
+    pub static DELETE: LazyId = LazyId::new("delete");
+    pub static FETCH: LazyId = LazyId::new("fetch");
+
+    // Session methods
+    pub static SESSIONS: LazyId = LazyId::new("sessions");
+    pub static TYPE: LazyId = LazyId::new("type");
+    pub static INFO: LazyId = LazyId::new("info");
+    pub static ALIVE: LazyId = LazyId::new("alive?");
+    pub static KILL: LazyId = LazyId::new("kill");
+    pub static READ: LazyId = LazyId::new("read");
+    pub static WRITE: LazyId = LazyId::new("write");
+    pub static RUN_CMD: LazyId = LazyId::new("run_cmd");
+    pub static SHELL_READ: LazyId = LazyId::new("shell_read");
+    pub static SHELL_WRITE: LazyId = LazyId::new("shell_write");
+
+    // Framework methods
+    pub static MODULES: LazyId = LazyId::new("modules");
+    pub static CREATE: LazyId = LazyId::new("create");
+    pub static JOBS: LazyId = LazyId::new("jobs");
+    pub static PLUGINS: LazyId = LazyId::new("plugins");
+    pub static DB: LazyId = LazyId::new("db");
+    pub static DATASTORE: LazyId = LazyId::new("datastore");
+    pub static VERSION: LazyId = LazyId::new("version");
+    pub static THREADS: LazyId = LazyId::new("threads");
+
+    // Module methods
+    pub static NAME: LazyId = LazyId::new("name");
+    pub static FULLNAME: LazyId = LazyId::new("fullname");
+    pub static DESCRIPTION: LazyId = LazyId::new("description");
+    pub static RUN: LazyId = LazyId::new("run");
+    pub static SETUP: LazyId = LazyId::new("setup");
+    pub static CLEANUP: LazyId = LazyId::new("cleanup");
+    pub static EXPLOIT: LazyId = LazyId::new("exploit");
+    pub static CHECK: LazyId = LazyId::new("check");
+    pub static OPTIONS: LazyId = LazyId::new("options");
+    pub static VALIDATE: LazyId = LazyId::new("validate");
+    pub static TARGETS: LazyId = LazyId::new("targets");
+    pub static ACTIONS: LazyId = LazyId::new("actions");
+
+    // Database methods
+    pub static HOSTS: LazyId = LazyId::new("hosts");
+    pub static SERVICES: LazyId = LazyId::new("services");
+    pub static VULNS: LazyId = LazyId::new("vulns");
+    pub static CREDS: LazyId = LazyId::new("creds");
+    pub static LOOT: LazyId = LazyId::new("loot");
+    pub static NOTES: LazyId = LazyId::new("notes");
+    pub static WORKSPACES: LazyId = LazyId::new("workspaces");
+    pub static WORKSPACE: LazyId = LazyId::new("workspace");
+
+    // Filesystem methods
+    pub static PWD: LazyId = LazyId::new("pwd");
+    pub static CHDIR: LazyId = LazyId::new("chdir");
+    pub static LS: LazyId = LazyId::new("ls");
+    pub static MKDIR: LazyId = LazyId::new("mkdir");
+    pub static RMDIR: LazyId = LazyId::new("rmdir");
+    pub static STAT: LazyId = LazyId::new("stat");
+    pub static FILE_EXIST: LazyId = LazyId::new("file?");
+    pub static RM: LazyId = LazyId::new("rm");
+    pub static MV: LazyId = LazyId::new("mv");
+    pub static CP: LazyId = LazyId::new("cp");
+    pub static DOWNLOAD: LazyId = LazyId::new("download");
+    pub static UPLOAD: LazyId = LazyId::new("upload");
+
+    // Process methods
+    pub static GETPID: LazyId = LazyId::new("getpid");
+    pub static PS: LazyId = LazyId::new("ps");
+
+    // System methods
+    pub static SYSINFO: LazyId = LazyId::new("sysinfo");
+    pub static GETUID: LazyId = LazyId::new("getuid");
+    pub static GETENV: LazyId = LazyId::new("getenv");
+
+    // Object introspection
+    pub static ID: LazyId = LazyId::new("id");
+    pub static CLASS: LazyId = LazyId::new("class");
+    pub static ADDRESS: LazyId = LazyId::new("address");
+    pub static PORT: LazyId = LazyId::new("port");
+    pub static PROTO: LazyId = LazyId::new("proto");
+    pub static HOST: LazyId = LazyId::new("host");
+    pub static DATA: LazyId = LazyId::new("data");
+    pub static NTYPE: LazyId = LazyId::new("ntype");
+    pub static CREATED_AT: LazyId = LazyId::new("created_at");
+
+    // Transport methods
+    pub static CORE: LazyId = LazyId::new("core");
+    pub static TRANSPORT_LIST: LazyId = LazyId::new("transport_list");
+    pub static TRANSPORT_ADD: LazyId = LazyId::new("transport_add");
+    pub static TRANSPORT_REMOVE: LazyId = LazyId::new("transport_remove");
+    pub static TRANSPORT_CHANGE: LazyId = LazyId::new("transport_change");
+    pub static TRANSPORT_SLEEP: LazyId = LazyId::new("transport_sleep");
+    pub static TRANSPORT_NEXT: LazyId = LazyId::new("transport_next");
+    pub static TRANSPORT_PREV: LazyId = LazyId::new("transport_prev");
+    pub static SET_TRANSPORT_TIMEOUTS: LazyId = LazyId::new("set_transport_timeouts");
+
+    // Client core methods
+    pub static MIGRATE: LazyId = LazyId::new("migrate");
+    pub static USE: LazyId = LazyId::new("use");
+    pub static SHUTDOWN: LazyId = LazyId::new("shutdown");
+    pub static MACHINE_ID: LazyId = LazyId::new("machine_id");
+    pub static NATIVE_ARCH: LazyId = LazyId::new("native_arch");
+    pub static SESSION_GUID: LazyId = LazyId::new("session_guid");
+    pub static SECURE: LazyId = LazyId::new("secure");
+
+    // Meterpreter extensions
+    pub static STDAPI: LazyId = LazyId::new("stdapi");
+    pub static FS: LazyId = LazyId::new("fs");
+    pub static SYS: LazyId = LazyId::new("sys");
+    pub static NET: LazyId = LazyId::new("net");
+    pub static CONFIG: LazyId = LazyId::new("config");
+    pub static PROCESS: LazyId = LazyId::new("process");
+
+    // Extension check
+    pub static EXT: LazyId = LazyId::new("ext");
+    pub static ALIASES: LazyId = LazyId::new("aliases");
+    pub static HAS_KEY: LazyId = LazyId::new("has_key?");
+}
 
 // ========== Ruby VM Initialization ==========
 
@@ -447,6 +583,269 @@ pub fn hash_get<K: IntoValue, V: TryConvert>(hash: RHash, key: K) -> Result<V> {
     hash.aref(key).map_err(|e| {
         AssassinateError::RubyError(format!("Failed to get hash key: {}", e))
     })
+}
+
+// ========== Object Introspection (using Magnus built-ins) ==========
+
+/// Check if a Ruby object responds to a method using Magnus's built-in respond_to()
+/// This is more efficient than calling the Ruby respond_to? method
+///
+/// # Arguments
+/// * `obj` - The Ruby object to check
+/// * `method` - The method name to check for
+/// * `include_private` - Whether to include private methods (usually false)
+pub fn responds_to(obj: Value, method: &str, include_private: bool) -> bool {
+    obj.respond_to(method, include_private).unwrap_or(false)
+}
+
+/// Check if a Ruby object responds to a method (public only)
+/// Shorthand for responds_to(obj, method, false)
+pub fn responds_to_public(obj: Value, method: &str) -> bool {
+    responds_to(obj, method, false)
+}
+
+/// Check if a Ruby value is an instance of a specific class using Magnus is_kind_of()
+/// This is more efficient than calling Ruby's is_a? method
+///
+/// # Arguments
+/// * `obj` - The Ruby object to check
+/// * `class` - The Ruby class to check against
+pub fn is_kind_of<T: magnus::Module>(obj: Value, class: T) -> bool {
+    obj.is_kind_of(class)
+}
+
+/// Check if value is a Ruby String
+pub fn is_string(val: Value) -> bool {
+    RString::from_value(val).is_some()
+}
+
+/// Check if value is a Ruby Array
+pub fn is_array(val: Value) -> bool {
+    RArray::from_value(val).is_some()
+}
+
+/// Check if value is a Ruby Hash
+pub fn is_hash(val: Value) -> bool {
+    RHash::from_value(val).is_some()
+}
+
+/// Check if value is a Ruby Integer
+pub fn is_integer(val: Value) -> bool {
+    i64::try_convert(val).is_ok()
+}
+
+/// Check if value is a Ruby Float
+pub fn is_float(val: Value) -> bool {
+    f64::try_convert(val).is_ok()
+}
+
+/// Get the class of a Ruby object using Magnus class accessor
+pub fn get_class(val: Value) -> Result<Value> {
+    val.funcall(*sym::CLASS, ()).map_err(|e| {
+        AssassinateError::RubyError(format!("Failed to get class: {}", e))
+    })
+}
+
+/// Get the class name of a Ruby object
+pub fn class_name(val: Value) -> Result<String> {
+    let cls = get_class(val)?;
+    value_to_string(cls.funcall(*sym::NAME, ()).map_err(|e| {
+        AssassinateError::RubyError(format!("Failed to get class name: {}", e))
+    })?)
+}
+
+// ========== Protected Calls (Exception Safety) ==========
+
+/// Execute a closure with Ruby exception protection
+/// Returns Err with the exception message if an exception is raised
+pub fn protect<F, T>(f: F) -> Result<T>
+where
+    F: FnOnce() -> std::result::Result<T, magnus::Error>,
+{
+    match f() {
+        Ok(v) => Ok(v),
+        Err(e) => Err(AssassinateError::RubyError(e.to_string())),
+    }
+}
+
+/// Call a method with exception protection
+/// Catches Ruby exceptions and converts them to our Result type
+pub fn safe_call<A>(obj: Value, method: &str, args: A) -> Result<Value>
+where
+    A: magnus::ArgList,
+{
+    obj.funcall(method, args).map_err(|e| {
+        AssassinateError::RubyError(format!("Method '{}' failed: {}", method, e))
+    })
+}
+
+/// Call a method with symbol (more efficient for repeated calls)
+pub fn call_sym<S, A>(obj: Value, method: S, args: A) -> Result<Value>
+where
+    S: IntoId,
+    A: magnus::ArgList,
+{
+    obj.funcall(method, args).map_err(|e| {
+        AssassinateError::RubyError(format!("Method call failed: {}", e))
+    })
+}
+
+// ========== Exception Class Accessors ==========
+
+/// Get Ruby's StandardError exception class
+pub fn standard_error() -> magnus::ExceptionClass {
+    exception::standard_error()
+}
+
+/// Get Ruby's RuntimeError exception class
+pub fn runtime_error() -> magnus::ExceptionClass {
+    exception::runtime_error()
+}
+
+/// Get Ruby's ArgumentError exception class
+pub fn arg_error() -> magnus::ExceptionClass {
+    exception::arg_error()
+}
+
+/// Get Ruby's TypeError exception class
+pub fn type_error() -> magnus::ExceptionClass {
+    exception::type_error()
+}
+
+/// Get Ruby's IOError exception class
+pub fn io_error() -> magnus::ExceptionClass {
+    exception::io_error()
+}
+
+/// Get Ruby's SystemCallError exception class
+pub fn system_call_error() -> magnus::ExceptionClass {
+    exception::system_call_error()
+}
+
+/// Get Ruby's NoMethodError exception class
+pub fn no_method_error() -> magnus::ExceptionClass {
+    exception::no_method_error()
+}
+
+// ========== Built-in Class Accessors ==========
+
+/// Get Ruby's String class
+pub fn string_class() -> magnus::RClass {
+    class::string()
+}
+
+/// Get Ruby's Array class
+pub fn array_class() -> magnus::RClass {
+    class::array()
+}
+
+/// Get Ruby's Hash class
+pub fn hash_class() -> magnus::RClass {
+    class::hash()
+}
+
+/// Get Ruby's Integer class
+pub fn integer_class() -> magnus::RClass {
+    class::integer()
+}
+
+/// Get Ruby's Float class
+pub fn float_class() -> magnus::RClass {
+    class::float()
+}
+
+/// Get Ruby's NilClass
+pub fn nil_class() -> magnus::RClass {
+    class::nil_class()
+}
+
+/// Get Ruby's TrueClass
+pub fn true_class() -> magnus::RClass {
+    class::true_class()
+}
+
+/// Get Ruby's FalseClass
+pub fn false_class() -> magnus::RClass {
+    class::false_class()
+}
+
+// ========== Symbol Creation ==========
+
+/// Create a dynamic Ruby Symbol
+/// Use StaticSymbol for symbols known at compile time
+pub fn make_symbol(name: &str) -> Result<Symbol> {
+    // Ensure Ruby is initialized
+    let _ = get_ruby()?;
+    Ok(Symbol::new(name))
+}
+
+/// Create a Ruby Symbol value
+pub fn symbol_value(name: &str) -> Result<Value> {
+    Ok(Symbol::new(name).as_value())
+}
+
+// ========== Array Creation and Manipulation ==========
+
+/// Create a new empty Ruby array
+pub fn new_ruby_array() -> Result<RArray> {
+    let ruby = get_ruby()?;
+    Ok(ruby.ary_new())
+}
+
+/// Create a Ruby array with pre-allocated capacity
+pub fn new_ruby_array_with_capacity(capacity: usize) -> Result<RArray> {
+    let ruby = get_ruby()?;
+    Ok(ruby.ary_new_capa(capacity))
+}
+
+/// Create a Ruby array from an iterator
+pub fn array_from_iter<I, T>(iter: I) -> Result<RArray>
+where
+    I: IntoIterator<Item = T>,
+    T: IntoValue,
+{
+    let ruby = get_ruby()?;
+    let arr = ruby.ary_new();
+    for item in iter {
+        arr.push(item).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to push to array: {}", e))
+        })?;
+    }
+    Ok(arr)
+}
+
+/// Create a Ruby array of strings from a Rust Vec<String>
+pub fn strings_to_ruby_array(strings: Vec<String>) -> Result<RArray> {
+    array_from_iter(strings)
+}
+
+/// Create a Ruby array of integers from a Rust Vec<i64>
+pub fn ints_to_ruby_array(ints: Vec<i64>) -> Result<RArray> {
+    array_from_iter(ints)
+}
+
+// ========== Hash Creation ==========
+
+/// Create a Ruby hash from key-value pairs iterator
+pub fn hash_from_iter<I, K, V>(iter: I) -> Result<RHash>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: IntoValue,
+    V: IntoValue,
+{
+    let ruby = get_ruby()?;
+    let hash = ruby.hash_new();
+    for (key, value) in iter {
+        hash.aset(key, value).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set hash entry: {}", e))
+        })?;
+    }
+    Ok(hash)
+}
+
+/// Create a Ruby hash from a HashMap<String, String>
+pub fn hashmap_to_ruby_hash(map: std::collections::HashMap<String, String>) -> Result<RHash> {
+    hash_from_iter(map)
 }
 
 #[cfg(test)]

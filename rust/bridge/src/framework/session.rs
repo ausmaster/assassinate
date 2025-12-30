@@ -7,7 +7,7 @@
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
-    get_i64_attr, get_string_attr, to_ruby_str, value_to_string,
+    get_i64_attr, get_string_attr, responds_to_public, to_ruby_str, value_to_string,
 };
 use magnus::{value::ReprValue, TryConvert, Value};
 
@@ -440,11 +440,10 @@ impl Session {
     }
 
     /// Check if this session has a specific extension/method
+    /// Uses Magnus built-in respond_to for efficiency
     #[allow(dead_code)]
-    fn has_extension(&self, name: &str) -> Result<bool> {
-        let method_name = to_ruby_str(name)?;
-        let result = call_method(self.ruby_session, "respond_to?", &[method_name])?;
-        Ok(result.to_bool())
+    fn has_extension(&self, name: &str) -> bool {
+        responds_to_public(self.ruby_session, name)
     }
 
     /// Get the core extension object for Meterpreter client core operations
