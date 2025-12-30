@@ -382,6 +382,51 @@ services:
       - ../rust/ipc/src:/app/rust/ipc/src:ro
       - ../pyproject.toml:/app/pyproject.toml:ro
       - target_payloads:/payload
+      # MSF database config
+      - ./msf-database.yml:/root/.msf4/database.yml:ro
+
+  # Development service - full source mounts for rapid iteration
+  # Usage:
+  #   docker compose -f docker/docker-compose.yml run -d --name dev dev sleep infinity
+  #   docker exec -it dev bash
+  #   # Inside: cargo build, uv run pytest, etc. - all changes immediately available
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      target-linux:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+      TARGET_HOST: assassinate-target
+      TARGET_FTP_PORT: "21"
+      TARGET_SHELL_PORT: "4445"
+      TARGET_BACKDOOR_PORT: "6200"
+      TARGET_WINDOWS_HOST: assassinate-target-windows
+      INTEGRATION_TESTS: "true"
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      # Full source mounts (read-write for development)
+      - ../rust:/app/rust
+      - ../python:/app/python
+      - ../pyproject.toml:/app/pyproject.toml
+      - target_payloads:/payload
+      # Cargo cache for faster rebuilds
+      - cargo_cache:/root/.cargo/registry
+      - cargo_git:/root/.cargo/git
+      # MSF database config
+      - ./msf-database.yml:/root/.msf4/database.yml:ro
 
 networks:
   assassinate-net:
@@ -394,3 +439,7 @@ volumes:
     name: assassinate-target-payloads
   windows_data:
     name: assassinate-windows-data
+  cargo_cache:
+    name: assassinate-cargo-cache
+  cargo_git:
+    name: assassinate-cargo-git

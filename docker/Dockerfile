@@ -90,6 +90,9 @@ RUN . .venv/bin/activate && \
 RUN . .venv/bin/activate && \
     assassinate-setup --verify || true
 
+# Create .msf4 directory for database config (mounted at runtime)
+RUN mkdir -p /root/.msf4
+
 # -----------------------------------------------------------------------------
 # Cleanup
 # -----------------------------------------------------------------------------
