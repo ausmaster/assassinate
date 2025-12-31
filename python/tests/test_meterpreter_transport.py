@@ -45,15 +45,14 @@ def skip_if_not_windows(platform: str):
 class TestMeterpreterTransportList:
     """Test Meterpreter Transport listing and timeouts.
 
-    NOTE: These tests require Windows Meterpreter. They will skip on Linux.
+    NOTE: These tests require Windows Meterpreter via windows_meterpreter_session fixture.
+    Uses direct exploit (Rejetto HFS) instead of slow shell upgrade.
     """
 
     @pytest.mark.asyncio
-    async def test_transport_list(self, client, direct_meterpreter_session):
+    async def test_transport_list(self, client, windows_meterpreter_session):
         """Test listing transports for a Meterpreter session."""
-        session_id = direct_meterpreter_session
-        platform = await get_session_platform(client, session_id)
-        skip_if_not_windows(platform)
+        session_id = windows_meterpreter_session
 
         transport_info = await client.session_transport_list(session_id)
 
@@ -76,11 +75,9 @@ class TestMeterpreterTransportList:
             print(f"First transport URL: {first_transport['url']}")
 
     @pytest.mark.asyncio
-    async def test_set_transport_timeouts_read(self, client, direct_meterpreter_session):
+    async def test_set_transport_timeouts_read(self, client, windows_meterpreter_session):
         """Test reading transport timeouts without changing them."""
-        session_id = direct_meterpreter_session
-        platform = await get_session_platform(client, session_id)
-        skip_if_not_windows(platform)
+        session_id = windows_meterpreter_session
 
         # Pass None for all params to just read current values
         timeouts = await client.session_set_transport_timeouts(session_id)
@@ -91,11 +88,9 @@ class TestMeterpreterTransportList:
         assert timeouts is not None, "Should return timeout info"
 
     @pytest.mark.asyncio
-    async def test_set_transport_timeouts_modify(self, client, direct_meterpreter_session):
+    async def test_set_transport_timeouts_modify(self, client, windows_meterpreter_session):
         """Test modifying transport timeouts."""
-        session_id = direct_meterpreter_session
-        platform = await get_session_platform(client, session_id)
-        skip_if_not_windows(platform)
+        session_id = windows_meterpreter_session
 
         # Get current timeouts first
         original = await client.session_set_transport_timeouts(session_id)
@@ -121,15 +116,14 @@ class TestMeterpreterTransportList:
 class TestMeterpreterTransportOperations:
     """Test Meterpreter Transport add/remove/change operations.
 
-    NOTE: These tests require Windows Meterpreter. They will skip on Linux.
+    NOTE: These tests require Windows Meterpreter via windows_meterpreter_session fixture.
+    Uses direct exploit (Rejetto HFS) instead of slow shell upgrade.
     """
 
     @pytest.mark.asyncio
-    async def test_transport_add_and_remove(self, client, direct_meterpreter_session):
+    async def test_transport_add_and_remove(self, client, windows_meterpreter_session):
         """Test adding and removing a transport."""
-        session_id = direct_meterpreter_session
-        platform = await get_session_platform(client, session_id)
-        skip_if_not_windows(platform)
+        session_id = windows_meterpreter_session
 
         # Get initial transport count
         initial_info = await client.session_transport_list(session_id)
@@ -170,15 +164,14 @@ class TestMeterpreterTransportOperations:
 class TestMeterpreterTransportNavigation:
     """Test Meterpreter Transport navigation (next/prev).
 
-    NOTE: These tests require Windows Meterpreter. They will skip on Linux.
+    NOTE: These tests require Windows Meterpreter via windows_meterpreter_session fixture.
+    Uses direct exploit (Rejetto HFS) instead of slow shell upgrade.
     """
 
     @pytest.mark.asyncio
-    async def test_transport_next_prev_available(self, client, direct_meterpreter_session):
+    async def test_transport_next_prev_available(self, client, windows_meterpreter_session):
         """Test that transport_next and transport_prev are callable."""
-        session_id = direct_meterpreter_session
-        platform = await get_session_platform(client, session_id)
-        skip_if_not_windows(platform)
+        session_id = windows_meterpreter_session
 
         transport_info = await client.session_transport_list(session_id)
         transport_count = len(transport_info["transports"])
