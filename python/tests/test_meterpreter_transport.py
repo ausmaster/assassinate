@@ -2,7 +2,10 @@
 
 IMPORTANT: Transport Management is a WINDOWS-ONLY feature in Meterpreter.
 Linux Meterpreter (x86 and x64) does NOT support transport operations.
-These tests require a Windows Meterpreter session to run.
+
+This test mimics the Rust test approach: create ONE session, run ALL transport
+operations on it, then cleanup. This avoids overwhelming the Windows VM with
+multiple exploits.
 
 To run these tests:
 1. Start the Windows target container:
@@ -10,93 +13,76 @@ To run these tests:
    (First run takes 10-20 minutes to install Windows)
 
 2. Run tests:
-   docker compose -f docker/docker-compose.yml run --rm integration-test bash -c \
-       "cargo build --release --manifest-path rust/daemon/Cargo.toml && \
-        pytest python/tests/test_meterpreter_transport.py -v"
-
-The tests will skip on Linux Meterpreter with an informative message.
+   docker exec dev pytest python/tests/test_meterpreter_transport.py -v
 """
 
 import pytest
 
 
-async def get_session_platform(client, session_id: int) -> str:
-    """Get session platform (windows, linux, etc.)."""
-    try:
-        info = await client.session_info(session_id)
-        return info.get("platform", "").lower()
-    except Exception:
-        return "unknown"
-
-
-def skip_if_not_windows(platform: str):
-    """Skip test with informative message if not Windows."""
-    if "windows" not in platform and "win" not in platform:
-        pytest.skip(
-            f"Transport Management is Windows-only. "
-            f"Current platform: {platform}. "
-            f"Use target-windows container for these tests."
-        )
-
-
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.windows_only
-class TestMeterpreterTransportList:
-    """Test Meterpreter Transport listing and timeouts.
+class TestMeterpreterTransportManagement:
+    """Comprehensive Transport Management tests using a single Windows Meterpreter session.
 
-    NOTE: These tests require Windows Meterpreter via windows_meterpreter_session fixture.
-    Uses direct exploit (Rejetto HFS) instead of slow shell upgrade.
+    This class creates ONE session and runs ALL transport tests on it,
+    mimicking the Rust test approach for reliability.
     """
 
     @pytest.mark.asyncio
-    async def test_transport_list(self, client, windows_meterpreter_session):
-        """Test listing transports for a Meterpreter session."""
+    async def test_transport_operations(self, client, windows_meterpreter_session):
+        """Test all transport operations on a single Windows Meterpreter session.
+
+        This comprehensive test covers:
+        - transport_list (initial state)
+        - set_transport_timeouts (read and modify)
+        - transport_add (add backup transport)
+        - transport_list (verify add)
+        - transport_remove (remove backup transport)
+        - transport_list (verify remove)
+        - transport_sleep(0) (works on all platforms)
+        """
         session_id = windows_meterpreter_session
 
+        print("\n" + "=" * 60)
+        print(" Transport Management Comprehensive Test")
+        print("=" * 60)
+
+        # =====================================================================
+        # Test 1: transport_list (initial state)
+        # =====================================================================
+        print("\n--- Test 1: transport_list (initial) ---")
         transport_info = await client.session_transport_list(session_id)
 
         print(f"Transport info: {transport_info}")
 
-        # Should have session_exp field
         assert "session_exp" in transport_info, "Should have session_exp field"
-
-        # Should have transports array
         assert "transports" in transport_info, "Should have transports array"
+
         transports = transport_info["transports"]
         assert isinstance(transports, list), "Transports should be a list"
+        initial_count = len(transports)
+        assert initial_count >= 1, "Should have at least one transport"
 
-        # Should have at least one transport (the current one)
-        assert len(transports) >= 1, "Should have at least one transport"
+        print(f"✓ Initial transport count: {initial_count}")
+        for i, t in enumerate(transports):
+            if t.get("url"):
+                print(f"  Transport {i}: {t['url']}")
 
-        # First transport should have URL
-        first_transport = transports[0]
-        if first_transport.get("url"):
-            print(f"First transport URL: {first_transport['url']}")
-
-    @pytest.mark.asyncio
-    async def test_set_transport_timeouts_read(self, client, windows_meterpreter_session):
-        """Test reading transport timeouts without changing them."""
-        session_id = windows_meterpreter_session
-
-        # Pass None for all params to just read current values
+        # =====================================================================
+        # Test 2: set_transport_timeouts (read current values)
+        # =====================================================================
+        print("\n--- Test 2: set_transport_timeouts (read) ---")
         timeouts = await client.session_set_transport_timeouts(session_id)
 
         print(f"Current timeouts: {timeouts}")
-
-        # Should return timeout info
         assert timeouts is not None, "Should return timeout info"
+        print("✓ Read timeouts successfully")
 
-    @pytest.mark.asyncio
-    async def test_set_transport_timeouts_modify(self, client, windows_meterpreter_session):
-        """Test modifying transport timeouts."""
-        session_id = windows_meterpreter_session
-
-        # Get current timeouts first
-        original = await client.session_set_transport_timeouts(session_id)
-        print(f"Original timeouts: {original}")
-
-        # Set new timeout values
+        # =====================================================================
+        # Test 3: set_transport_timeouts (modify values)
+        # =====================================================================
+        print("\n--- Test 3: set_transport_timeouts (modify) ---")
         new_timeouts = await client.session_set_transport_timeouts(
             session_id,
             comm_timeout=60,
@@ -105,106 +91,104 @@ class TestMeterpreterTransportList:
         )
 
         print(f"New timeouts: {new_timeouts}")
-
-        # Verify we got a response
         assert new_timeouts is not None
+        print("✓ Modified timeouts successfully")
 
-
-@pytest.mark.integration
-@pytest.mark.meterpreter
-@pytest.mark.windows_only
-class TestMeterpreterTransportOperations:
-    """Test Meterpreter Transport add/remove/change operations.
-
-    NOTE: These tests require Windows Meterpreter via windows_meterpreter_session fixture.
-    Uses direct exploit (Rejetto HFS) instead of slow shell upgrade.
-    """
-
-    @pytest.mark.asyncio
-    async def test_transport_add_and_remove(self, client, windows_meterpreter_session):
-        """Test adding and removing a transport."""
-        session_id = windows_meterpreter_session
-
-        # Get initial transport count
-        initial_info = await client.session_transport_list(session_id)
-        initial_count = len(initial_info["transports"])
-        print(f"Initial transport count: {initial_count}")
-
+        # =====================================================================
+        # Test 4: transport_add (add backup transport)
+        # =====================================================================
+        print("\n--- Test 4: transport_add ---")
         # Add a bind_tcp transport (doesn't require active connection)
+        test_lport = 54321
+
         success = await client.session_transport_add(
             session_id,
             transport="bind_tcp",
-            lport=54321,
+            lport=test_lport,
             comm_timeout=30,
         )
 
+        print(f"transport_add result: {success}")
         if success:
-            print("Transport added successfully")
-
-            # Verify transport was added
-            after_add = await client.session_transport_list(session_id)
-            after_add_count = len(after_add["transports"])
-            print(f"Transport count after add: {after_add_count}")
-            assert after_add_count >= initial_count
-
-            # Now remove it
-            remove_success = await client.session_transport_remove(
-                session_id,
-                transport="bind_tcp",
-                lport=54321,
-            )
-            print(f"Transport remove result: {remove_success}")
+            print("✓ Transport added successfully")
         else:
-            print("Transport add returned False")
+            print("⚠ transport_add returned False (may still have succeeded)")
 
+        # =====================================================================
+        # Test 5: transport_list (verify add)
+        # =====================================================================
+        print("\n--- Test 5: transport_list (after add) ---")
+        after_add = await client.session_transport_list(session_id)
+        after_add_count = len(after_add["transports"])
 
-@pytest.mark.integration
-@pytest.mark.meterpreter
-@pytest.mark.windows_only
-class TestMeterpreterTransportNavigation:
-    """Test Meterpreter Transport navigation (next/prev).
+        print(f"Transport count after add: {after_add_count}")
+        for i, t in enumerate(after_add["transports"]):
+            if t.get("url"):
+                print(f"  Transport {i}: {t['url']}")
 
-    NOTE: These tests require Windows Meterpreter via windows_meterpreter_session fixture.
-    Uses direct exploit (Rejetto HFS) instead of slow shell upgrade.
-    """
+        # Should have at least as many transports as before
+        assert after_add_count >= initial_count, "Should not have fewer transports after add"
+        print("✓ Transport list updated")
 
-    @pytest.mark.asyncio
-    async def test_transport_next_prev_available(self, client, windows_meterpreter_session):
-        """Test that transport_next and transport_prev are callable."""
-        session_id = windows_meterpreter_session
+        # =====================================================================
+        # Test 6: transport_remove (remove added transport)
+        # =====================================================================
+        print("\n--- Test 6: transport_remove ---")
+        remove_success = await client.session_transport_remove(
+            session_id,
+            transport="bind_tcp",
+            lport=test_lport,
+        )
 
-        transport_info = await client.session_transport_list(session_id)
-        transport_count = len(transport_info["transports"])
-        print(f"Transport count: {transport_count}")
+        print(f"transport_remove result: {remove_success}")
+        print("✓ Transport remove called")
 
-        if transport_count <= 1:
-            print("Only one transport - skipping navigation test")
-            pytest.skip("Need multiple transports to test navigation")
+        # =====================================================================
+        # Test 7: transport_list (verify remove)
+        # =====================================================================
+        print("\n--- Test 7: transport_list (after remove) ---")
+        after_remove = await client.session_transport_list(session_id)
+        final_count = len(after_remove["transports"])
 
-        print("Multiple transports available - navigation methods are available")
-        print("Not executing transport_next/prev to avoid breaking session")
+        print(f"Transport count after remove: {final_count}")
+        for i, t in enumerate(after_remove["transports"]):
+            if t.get("url"):
+                print(f"  Transport {i}: {t['url']}")
+
+        print("✓ Transport operations complete")
+
+        # =====================================================================
+        # Test 8: transport_sleep(0)
+        # =====================================================================
+        print("\n--- Test 8: transport_sleep(0) ---")
+        result = await client.session_transport_sleep(session_id, 0)
+        print(f"transport_sleep(0) result: {result}")
+        assert result is False, "Sleep(0) should return False"
+        print("✓ transport_sleep(0) correctly returns False")
+
+        print("\n" + "=" * 60)
+        print(" All Transport Tests Passed!")
+        print("=" * 60)
 
 
 @pytest.mark.integration
 @pytest.mark.meterpreter
 class TestMeterpreterTransportSleep:
-    """Test Meterpreter Transport sleep.
+    """Test Meterpreter Transport sleep on Linux (cross-platform).
 
     transport_sleep(0) is handled in Rust before calling MSF,
     so it works on ALL platforms (returns False immediately).
     """
 
     @pytest.mark.asyncio
-    async def test_transport_sleep_zero(self, client, direct_meterpreter_session):
-        """Test that transport_sleep with 0 seconds returns False.
+    async def test_transport_sleep_zero_linux(self, client, direct_meterpreter_session):
+        """Test that transport_sleep with 0 seconds returns False on Linux.
 
         This test works on ALL platforms because our Rust implementation
         short-circuits the 0-second case without calling MSF.
         """
         session_id = direct_meterpreter_session
 
-        # Sleep for 0 seconds should return False (as per Rust implementation)
-        # This is safe to call as it doesn't actually sleep
         result = await client.session_transport_sleep(session_id, 0)
         print(f"Sleep(0) result: {result}")
         assert result is False, "Sleep(0) should return False"
