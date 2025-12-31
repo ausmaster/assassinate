@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use bridge::ruby_bridge::{Options, RubyVal};
 use bridge::{Framework, Module};
 use clap::Parser;
 use futures::stream::StreamExt;
@@ -76,11 +77,35 @@ struct Daemon {
     next_module_id: AtomicU64,
 }
 
-/// Helper function to parse options from JSON Value to HashMap
-fn parse_options(value: Option<&serde_json::Value>) -> Option<HashMap<String, String>> {
+/// Helper function to parse options from JSON Value to Options (HashMap<String, RubyVal>)
+/// Converts JSON types to the appropriate RubyVal variant:
+/// - String -> RubyVal::String
+/// - Bool -> RubyVal::Bool
+/// - Number (i64) -> RubyVal::Int
+/// - Number (f64) -> RubyVal::Float
+/// - Null -> RubyVal::Nil
+fn parse_options(value: Option<&serde_json::Value>) -> Option<Options> {
     value.and_then(|v| v.as_object()).map(|obj| {
         obj.iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .map(|(k, v)| {
+                let ruby_val = match v {
+                    serde_json::Value::String(s) => RubyVal::String(s.clone()),
+                    serde_json::Value::Bool(b) => RubyVal::Bool(*b),
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            RubyVal::Int(i)
+                        } else if let Some(f) = n.as_f64() {
+                            RubyVal::Float(f)
+                        } else {
+                            RubyVal::Nil
+                        }
+                    }
+                    serde_json::Value::Null => RubyVal::Nil,
+                    // For arrays and objects, convert to string representation
+                    _ => RubyVal::String(v.to_string()),
+                };
+                (k.clone(), ruby_val)
+            })
             .collect()
     })
 }
@@ -1350,14 +1375,7 @@ impl Daemon {
                     .and_then(|v| v.as_u64())
                     .context("Missing lport")? as u16;
                 // Optional extra_options as a map (for PAYLOAD_OVERRIDE, PLATFORM_OVERRIDE, etc.)
-                let extra_options: Option<std::collections::HashMap<String, String>> = _args
-                    .get(3)
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    });
+                let extra_options = parse_options(_args.get(3));
                 self.with_session(&_args, |session| {
                     let success = session.shell_to_meterpreter(lhost, lport, extra_options)?;
                     Ok(serde_json::json!({ "success": success }))

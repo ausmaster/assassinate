@@ -2,8 +2,8 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
-    build_quiet_opts, call_method, get_bool_attr, get_string_attr, responds_to_public, sym,
-    value_to_string,
+    build_opts, call_method, get_bool_attr, get_string_attr, responds_to_public, sym,
+    value_to_string, Options, RubyVal,
 };
 use magnus::{value::ReprValue, RArray, TryConvert, Value};
 use std::collections::HashMap;
@@ -71,34 +71,32 @@ impl Module {
 
     /// Run an exploit module
     /// Returns the session ID if successful, None otherwise
-    pub fn exploit(
-        &self,
-        payload: &str,
-        options: Option<HashMap<String, String>>,
-    ) -> Result<Option<i64>> {
-        let ruby = crate::ruby_bridge::get_ruby()?;
+    ///
+    /// # Options
+    /// Use RubyVal for type-safe option values:
+    /// * `Quiet` - RubyVal::Bool(true) to suppress output (recommended)
+    /// * `RunAsJob` - RubyVal::Bool(true) to run as background job (for handlers)
+    /// * `ForceBlocking` - RubyVal::Bool(true) to wait for session (default if RunAsJob not set)
+    pub fn exploit(&self, payload: &str, options: Option<Options>) -> Result<Option<i64>> {
+        // Check if RunAsJob is explicitly set
+        let run_as_job = options
+            .as_ref()
+            .and_then(|opts| opts.get("RunAsJob"))
+            .map(|v| matches!(v, RubyVal::Bool(true)))
+            .unwrap_or(false);
 
-        // Build options hash in Ruby
-        let opts_val = ruby.hash_new().as_value();
+        // Build options, adding defaults
+        let mut opts = options.unwrap_or_default();
+        opts.insert("Payload".into(), RubyVal::String(payload.to_string()));
+        opts.entry("Quiet".into()).or_insert(RubyVal::Bool(true));
 
-        // Set payload
-        let payload_key = ruby.str_new("Payload").as_value();
-        let payload_val = ruby.str_new(payload).as_value();
-        call_method(opts_val, "[]=", &[payload_key, payload_val])?;
-
-        // Set Quiet mode
-        let quiet_key = ruby.str_new("Quiet").as_value();
-        let quiet_val = ruby.qtrue().as_value();
-        call_method(opts_val, "[]=", &[quiet_key, quiet_val])?;
-
-        // Set additional options
-        if let Some(opts_map) = options {
-            for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
-            }
+        // If not running as job, set ForceBlocking to wait for session
+        if !run_as_job {
+            opts.entry("ForceBlocking".into())
+                .or_insert(RubyVal::Bool(true));
         }
+
+        let opts_val = build_opts(Some(opts))?;
 
         // Call exploit_simple on the module
         let session_val = call_method(self.ruby_module, "exploit_simple", &[opts_val])?;
@@ -121,8 +119,10 @@ impl Module {
 
     /// Run an auxiliary module
     /// Returns true if successful, false otherwise
-    pub fn run(&self, options: Option<HashMap<String, String>>) -> Result<bool> {
-        let opts_val = build_quiet_opts(options)?;
+    pub fn run(&self, options: Option<Options>) -> Result<bool> {
+        let mut opts = options.unwrap_or_default();
+        opts.entry("Quiet".into()).or_insert(RubyVal::Bool(true));
+        let opts_val = build_opts(Some(opts))?;
 
         // Call run_simple on the module
         match call_method(self.ruby_module, "run_simple", &[opts_val]) {
@@ -134,7 +134,9 @@ impl Module {
     /// Check if target is vulnerable
     /// Returns check result code as string
     pub fn check(&self) -> Result<String> {
-        let opts_val = build_quiet_opts(None)?;
+        let mut opts = Options::new();
+        opts.insert("Quiet".into(), RubyVal::Bool(true));
+        let opts_val = build_opts(Some(opts))?;
 
         // Call check_simple on the module
         match call_method(self.ruby_module, "check_simple", &[opts_val]) {

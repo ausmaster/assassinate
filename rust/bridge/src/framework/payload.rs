@@ -1,9 +1,8 @@
 //! Payload generation for Metasploit Framework
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method};
-use magnus::{value::ReprValue, TryConvert, Value};
-use std::collections::HashMap;
+use crate::ruby_bridge::{call_method, Options};
+use magnus::{value::ReprValue, IntoValue, TryConvert, Value};
 
 /// Payload generator
 #[derive(Clone)]
@@ -22,7 +21,7 @@ impl PayloadGenerator {
     pub fn generate(
         &self,
         payload_name: &str,
-        options: Option<HashMap<String, String>>,
+        options: Option<Options>,
     ) -> Result<Vec<u8>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -43,7 +42,7 @@ impl PayloadGenerator {
             let datastore = call_method(payload, "datastore", &[])?;
             for (key, value) in opts_map {
                 let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
+                let value_val = value.into_value_with(&ruby);
                 call_method(datastore, "[]=", &[key_val, value_val])?;
             }
         }
@@ -75,7 +74,7 @@ impl PayloadGenerator {
         payload_name: &str,
         encoder: Option<&str>,
         iterations: Option<i32>,
-        options: Option<HashMap<String, String>>,
+        options: Option<Options>,
     ) -> Result<Vec<u8>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -112,7 +111,7 @@ impl PayloadGenerator {
         if let Some(opts_map) = options {
             for (key, value) in opts_map {
                 let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
+                let value_val = value.into_value_with(&ruby);
                 call_method(datastore, "[]=", &[key_val, value_val])?;
             }
         }
@@ -158,7 +157,7 @@ impl PayloadGenerator {
         payload_name: &str,
         platform: &str,
         arch: &str,
-        options: Option<HashMap<String, String>>,
+        options: Option<Options>,
     ) -> Result<Vec<u8>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -190,7 +189,7 @@ impl PayloadGenerator {
         if let Some(opts_map) = options {
             for (key, value) in opts_map {
                 let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
+                let value_val = value.into_value_with(&ruby);
                 call_method(datastore, "[]=", &[key_val, value_val])?;
             }
         }

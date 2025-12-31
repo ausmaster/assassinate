@@ -1,9 +1,8 @@
 //! Database manager for Metasploit's database operations
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, get_string_attr, sym, value_to_string};
-use magnus::{value::ReprValue, RArray, RHash, TryConvert, Value};
-use std::collections::HashMap;
+use crate::ruby_bridge::{call_method, get_string_attr, sym, value_to_string, Options};
+use magnus::{value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
 
 /// Database manager
 #[derive(Clone)]
@@ -93,7 +92,7 @@ impl DbManager {
     ///
     /// # Returns
     /// Returns the host ID from the database
-    pub fn report_host(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+    pub fn report_host(&self, opts: Option<Options>) -> Result<i64> {
         self.report_to_db("report_host", opts)
     }
 
@@ -104,7 +103,7 @@ impl DbManager {
     ///
     /// # Returns
     /// Returns the service ID from the database
-    pub fn report_service(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+    pub fn report_service(&self, opts: Option<Options>) -> Result<i64> {
         self.report_to_db("report_service", opts)
     }
 
@@ -115,7 +114,7 @@ impl DbManager {
     ///
     /// # Returns
     /// Returns the vulnerability ID from the database
-    pub fn report_vuln(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+    pub fn report_vuln(&self, opts: Option<Options>) -> Result<i64> {
         self.report_to_db("report_vuln", opts)
     }
 
@@ -133,7 +132,7 @@ impl DbManager {
     ///
     /// # Environment Variables
     /// * `ASSASSINATE_WORKSPACE` - Workspace name to use (defaults to "default" if not set)
-    pub fn report_cred(&self, opts: Option<HashMap<String, String>>) -> Result<i64> {
+    pub fn report_cred(&self, opts: Option<Options>) -> Result<i64> {
         self.report_to_db("report_cred", opts)
     }
 
@@ -228,7 +227,7 @@ impl DbManager {
     fn report_to_db(
         &self,
         method_name: &str,
-        opts: Option<HashMap<String, String>>,
+        opts: Option<Options>,
     ) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -239,7 +238,7 @@ impl DbManager {
             for (key, value) in opts_map {
                 // Convert string key to symbol
                 let key_sym = ruby.to_symbol(&key);
-                let value_val = ruby.str_new(&value).as_value();
+                let value_val = value.into_value_with(&ruby);
                 call_method(opts_val, "[]=", &[key_sym.as_value(), value_val])?;
             }
         }
@@ -496,7 +495,7 @@ impl DbManager {
     // ========== Note Management ==========
 
     /// List all notes in current workspace
-    pub fn notes(&self, opts: Option<HashMap<String, String>>) -> Result<Vec<serde_json::Value>> {
+    pub fn notes(&self, opts: Option<Options>) -> Result<Vec<serde_json::Value>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash using RHash::aset
@@ -505,7 +504,7 @@ impl DbManager {
         if let Some(opts_map) = opts {
             for (key, value) in opts_map {
                 let key_sym = ruby.to_symbol(&key);
-                opts_hash.aset(key_sym, ruby.str_new(&value)).map_err(|e| {
+                opts_hash.aset(key_sym, value.into_value_with(&ruby)).map_err(|e| {
                     AssassinateError::RubyError(format!("Failed to set option: {}", e))
                 })?;
             }
@@ -584,7 +583,7 @@ impl DbManager {
     }
 
     /// Report a note to the database
-    pub fn report_note(&self, opts: HashMap<String, String>) -> Result<i64> {
+    pub fn report_note(&self, opts: Options) -> Result<i64> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash with symbol keys using RHash::aset
@@ -592,7 +591,7 @@ impl DbManager {
 
         for (key, value) in opts {
             let key_sym = ruby.to_symbol(&key);
-            opts_hash.aset(key_sym, ruby.str_new(&value)).map_err(|e| {
+            opts_hash.aset(key_sym, value.into_value_with(&ruby)).map_err(|e| {
                 AssassinateError::RubyError(format!("Failed to set option: {}", e))
             })?;
         }

@@ -7,6 +7,69 @@ use magnus::{
 use std::mem;
 use std::sync::Once;
 
+// ========== Dynamic Ruby Value Type ==========
+
+/// A Rust enum representing values that can be converted to Ruby.
+/// Use this when you need heterogeneous option values.
+#[derive(Debug, Clone)]
+pub enum RubyVal {
+    String(String),
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Nil,
+}
+
+impl IntoValue for RubyVal {
+    fn into_value_with(self, handle: &Ruby) -> Value {
+        match self {
+            RubyVal::String(s) => handle.str_new(&s).as_value(),
+            RubyVal::Bool(true) => handle.qtrue().as_value(),
+            RubyVal::Bool(false) => handle.qfalse().as_value(),
+            RubyVal::Int(i) => handle.integer_from_i64(i).as_value(),
+            RubyVal::Float(f) => handle.float_from_f64(f).as_value(),
+            RubyVal::Nil => handle.qnil().as_value(),
+        }
+    }
+}
+
+// Convenience From impls
+impl From<&str> for RubyVal {
+    fn from(s: &str) -> Self {
+        RubyVal::String(s.to_string())
+    }
+}
+
+impl From<String> for RubyVal {
+    fn from(s: String) -> Self {
+        RubyVal::String(s)
+    }
+}
+
+impl From<bool> for RubyVal {
+    fn from(b: bool) -> Self {
+        RubyVal::Bool(b)
+    }
+}
+
+impl From<i64> for RubyVal {
+    fn from(i: i64) -> Self {
+        RubyVal::Int(i)
+    }
+}
+
+impl From<i32> for RubyVal {
+    fn from(i: i32) -> Self {
+        RubyVal::Int(i as i64)
+    }
+}
+
+impl From<f64> for RubyVal {
+    fn from(f: f64) -> Self {
+        RubyVal::Float(f)
+    }
+}
+
 static INIT: Once = Once::new();
 
 // ========== Lazy Symbols for Common Method Names ==========
@@ -530,42 +593,23 @@ pub fn call_strings_with_str(obj: Value, method: &str, arg: &str) -> Result<Vec<
 
 // ========== Ruby Hash Operations (using Magnus RHash) ==========
 
-/// Build a Ruby options hash with Quiet mode set and optional additional options
-/// Uses Magnus RHash::aset() for direct hash manipulation
-pub fn build_quiet_opts(
-    options: Option<std::collections::HashMap<String, String>>,
-) -> Result<Value> {
-    let ruby = get_ruby()?;
-    let hash = ruby.hash_new();
+/// Options type alias using RubyVal for type-safe option passing
+pub type Options = std::collections::HashMap<String, RubyVal>;
 
-    // Set Quiet mode using RHash::aset
-    hash.aset("Quiet", true).map_err(|e| {
-        AssassinateError::RubyError(format!("Failed to set Quiet option: {}", e))
-    })?;
-
-    // Set additional options
-    if let Some(opts_map) = options {
-        for (key, value) in opts_map {
-            hash.aset(key, value).map_err(|e| {
-                AssassinateError::RubyError(format!("Failed to set option: {}", e))
-            })?;
-        }
-    }
-
-    Ok(hash.as_value())
+/// Set a RubyVal on a Ruby hash
+pub fn hash_aset(hash: &RHash, key: &str, value: RubyVal) -> Result<()> {
+    hash.aset(key, value)
+        .map_err(|e| AssassinateError::RubyError(format!("Failed to set option '{}': {}", key, e)))
 }
 
-/// Build a Ruby options hash from a HashMap (without Quiet mode)
-/// Uses Magnus RHash::aset() for direct hash manipulation
-pub fn build_opts(options: Option<std::collections::HashMap<String, String>>) -> Result<Value> {
+/// Build a Ruby options hash from Options map
+pub fn build_opts(options: Option<Options>) -> Result<Value> {
     let ruby = get_ruby()?;
     let hash = ruby.hash_new();
 
     if let Some(opts_map) = options {
         for (key, value) in opts_map {
-            hash.aset(key, value).map_err(|e| {
-                AssassinateError::RubyError(format!("Failed to set option: {}", e))
-            })?;
+            hash_aset(&hash, &key, value)?;
         }
     }
 

@@ -45,6 +45,12 @@ impl Framework {
         Ok(Framework { ruby_framework })
     }
 
+    /// Create a Framework wrapper from an existing Ruby framework object
+    /// Useful for tests and when you already have a framework Value
+    pub fn from_raw(ruby_framework: Value) -> Self {
+        Framework { ruby_framework }
+    }
+
     /// Get the Metasploit Framework version
     pub fn version(&self) -> Result<String> {
         let version_val = call_method(self.ruby_framework, "version", &[])?;

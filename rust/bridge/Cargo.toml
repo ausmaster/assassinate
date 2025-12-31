@@ -28,6 +28,7 @@ hex = "0.4"
 serde_magnus = "0.10.0"
 
 [dev-dependencies]
+ntest = "0.9.5"
 # No external test frameworks needed - using Magnus pattern (one test per file)
 
 [profile.release]

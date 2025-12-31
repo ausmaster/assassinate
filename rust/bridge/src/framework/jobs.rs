@@ -1,9 +1,8 @@
 //! Job and Plugin management for Metasploit Framework
 
 use crate::error::{AssassinateError, Result};
-use crate::ruby_bridge::{call_method, value_to_string};
-use magnus::{value::ReprValue, TryConvert, Value};
-use std::collections::HashMap;
+use crate::ruby_bridge::{call_method, value_to_string, Options};
+use magnus::{value::ReprValue, IntoValue, TryConvert, Value};
 
 /// Job manager
 #[derive(Clone)]
@@ -85,23 +84,23 @@ impl PluginManager {
     }
 
     /// Load a plugin from path
-    pub fn load(&self, path: &str, options: Option<HashMap<String, String>>) -> Result<String> {
+    pub fn load(&self, path: &str, options: Option<Options>) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
-        // Build options hash
-        let opts_val = ruby.hash_new().as_value();
+        // Build options hash using RHash::aset
+        let opts_hash = ruby.hash_new();
 
         if let Some(opts_map) = options {
             for (key, value) in opts_map {
-                let key_val = ruby.str_new(&key).as_value();
-                let value_val = ruby.str_new(&value).as_value();
-                call_method(opts_val, "[]=", &[key_val, value_val])?;
+                opts_hash.aset(ruby.str_new(&key), value.into_value_with(&ruby)).map_err(|e| {
+                    AssassinateError::RubyError(format!("Failed to set option: {}", e))
+                })?;
             }
         }
 
         // Load the plugin
         let path_val = ruby.str_new(path).as_value();
-        let plugin_instance = call_method(self.ruby_plugins, "load", &[path_val, opts_val])?;
+        let plugin_instance = call_method(self.ruby_plugins, "load", &[path_val, opts_hash.as_value()])?;
 
         // Get plugin name
         let name_val = call_method(plugin_instance, "name", &[])?;
