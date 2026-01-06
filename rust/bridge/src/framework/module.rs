@@ -78,6 +78,10 @@ impl Module {
     /// * `RunAsJob` - RubyVal::Bool(true) to run as background job (for handlers)
     /// * `ForceBlocking` - RubyVal::Bool(true) to wait for session (default if RunAsJob not set)
     pub fn exploit(&self, payload: &str, options: Option<Options>) -> Result<Option<i64>> {
+        // CRITICAL: Set PAYLOAD in the module's datastore, not just the options hash.
+        // MSF's exploit_simple checks datastore['PAYLOAD'] for target validation.
+        self.set_option("PAYLOAD", payload)?;
+
         // Check if RunAsJob is explicitly set
         let run_as_job = options
             .as_ref()

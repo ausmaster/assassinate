@@ -8,11 +8,13 @@
 //! - [`JobManager`] / [`PluginManager`] - Jobs and plugins
 //! - [`PayloadGenerator`] - Payload generation
 //! - [`DataStore`] - Key-value configuration store
+//! - [`RouteManager`] / [`Route`] - Network routing through sessions (pivoting)
 
 mod db;
 mod jobs;
 mod module;
 mod payload;
+mod routing;
 mod session;
 
 // Re-export all public types
@@ -20,6 +22,7 @@ pub use db::DbManager;
 pub use jobs::{JobManager, PluginManager};
 pub use module::Module;
 pub use payload::PayloadGenerator;
+pub use routing::{Route, RouteManager};
 pub use session::{Session, SessionManager};
 
 use crate::error::{AssassinateError, Result};
@@ -283,6 +286,60 @@ impl Framework {
         stats.insert("evasions".to_string(), TryConvert::try_convert(evasions_val).unwrap_or(0));
 
         Ok(stats)
+    }
+
+    // ========== Routing Operations ==========
+
+    /// Get the route manager for adding/removing routes
+    pub fn routes(&self) -> Result<RouteManager> {
+        let sessions_val = call_method(self.ruby_framework, "sessions", &[])?;
+        RouteManager::new(sessions_val)
+    }
+
+    /// Add a route through a session (convenience method)
+    ///
+    /// # Arguments
+    /// * `subnet` - The subnet to route (e.g., "10.10.10.0")
+    /// * `netmask` - The netmask (e.g., "255.255.255.0" or "24" for CIDR)
+    /// * `session_id` - The session ID to route through
+    ///
+    /// # Returns
+    /// `true` if the route was added, `false` if it already exists
+    pub fn route_add(&self, subnet: &str, netmask: &str, session_id: i64) -> Result<bool> {
+        self.routes()?.add_route(subnet, netmask, session_id)
+    }
+
+    /// Remove a route through a session (convenience method)
+    ///
+    /// # Arguments
+    /// * `subnet` - The subnet to remove (e.g., "10.10.10.0")
+    /// * `netmask` - The netmask (e.g., "255.255.255.0" or "24" for CIDR)
+    /// * `session_id` - The session ID the route goes through
+    ///
+    /// # Returns
+    /// `true` if the route was removed, `false` if it wasn't found
+    pub fn route_remove(&self, subnet: &str, netmask: &str, session_id: i64) -> Result<bool> {
+        self.routes()?.remove_route(subnet, netmask, session_id)
+    }
+
+    /// List all routes (convenience method)
+    pub fn route_list(&self) -> Result<Vec<Route>> {
+        self.routes()?.list_routes()
+    }
+
+    /// Flush all routes (convenience method)
+    pub fn route_flush(&self) -> Result<()> {
+        self.routes()?.flush_routes()
+    }
+
+    /// Check if a route exists (convenience method)
+    pub fn route_exists(&self, subnet: &str, netmask: &str) -> Result<bool> {
+        self.routes()?.route_exists(subnet, netmask)
+    }
+
+    /// Find the best session for routing to an address (convenience method)
+    pub fn route_get(&self, addr: &str) -> Result<Option<i64>> {
+        self.routes()?.best_comm(addr)
     }
 
     pub fn __repr__(&self) -> Result<String> {

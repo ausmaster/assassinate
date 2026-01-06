@@ -241,17 +241,31 @@ impl Session {
         self.read(None)
     }
 
-    /// Run a Meterpreter command (if it's a meterpreter session)
-    pub fn run_cmd(&self, command: &str) -> Result<String> {
+    /// Run a shell command and return the output.
+    ///
+    /// Calls MSF's `shell_command(cmd, timeout)` method directly, which:
+    /// 1. Writes the command to the shell
+    /// 2. Reads output until timeout expires
+    /// 3. Returns accumulated output
+    ///
+    /// # Arguments
+    /// * `command` - The command to execute
+    /// * `timeout` - Timeout in seconds to wait for output (default 5)
+    ///
+    /// Note: shell_command always waits for the full timeout to collect all output.
+    pub fn run_cmd(&self, command: &str, timeout: Option<u32>) -> Result<String> {
         let ruby = crate::ruby_bridge::get_ruby()?;
-        let cmd_val = ruby.str_new(command).as_value();
 
-        let result = call_method(self.ruby_session, "run_cmd", &[cmd_val])?;
+        let cmd_val = ruby.str_new(command).as_value();
+        let timeout_val = ruby.integer_from_i64(timeout.unwrap_or(5) as i64).as_value();
+
+        // Call Ruby's shell_command(cmd, timeout) directly
+        let result = call_method(self.ruby_session, "shell_command", &[cmd_val, timeout_val])?;
 
         if result.is_nil() {
             Ok(String::new())
         } else {
-            Ok(value_to_string(result)?)
+            value_to_string(result)
         }
     }
 

@@ -740,6 +740,82 @@ impl Daemon {
                 Ok(serde_json::json!({}))
             }
 
+            // === Framework Routing Operations ===
+            // These routes are at the Rex::Socket::SwitchBoard level,
+            // routing traffic through sessions (pivoting).
+
+            "route_add" => {
+                let subnet = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing subnet")?;
+                let netmask = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing netmask")?;
+                let session_id = _args
+                    .get(2)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
+                let result = self.framework.route_add(subnet, netmask, session_id)
+                    .context("Failed to add route")?;
+                Ok(serde_json::json!({ "success": result }))
+            }
+
+            "route_remove" => {
+                let subnet = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing subnet")?;
+                let netmask = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing netmask")?;
+                let session_id = _args
+                    .get(2)
+                    .and_then(|v| v.as_i64())
+                    .context("Missing session_id")?;
+                let result = self.framework.route_remove(subnet, netmask, session_id)
+                    .context("Failed to remove route")?;
+                Ok(serde_json::json!({ "success": result }))
+            }
+
+            "route_list" => {
+                let routes = self.framework.route_list()
+                    .context("Failed to list routes")?;
+                Ok(serde_json::json!({ "routes": routes }))
+            }
+
+            "route_flush" => {
+                self.framework.route_flush()
+                    .context("Failed to flush routes")?;
+                Ok(serde_json::json!({}))
+            }
+
+            "route_exists" => {
+                let subnet = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing subnet")?;
+                let netmask = _args
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .context("Missing netmask")?;
+                let exists = self.framework.route_exists(subnet, netmask)
+                    .context("Failed to check route exists")?;
+                Ok(serde_json::json!({ "exists": exists }))
+            }
+
+            "route_get" => {
+                let addr = _args
+                    .get(0)
+                    .and_then(|v| v.as_str())
+                    .context("Missing address")?;
+                let session_id = self.framework.route_get(addr)
+                    .context("Failed to get route")?;
+                Ok(serde_json::json!({ "session_id": session_id }))
+            }
+
             // === Module-level DataStore Operations ===
             "module_datastore_to_dict" => {
                 let module_id = _args
@@ -1105,8 +1181,12 @@ impl Daemon {
 
             "session_run_cmd" => {
                 let command = get_str_arg(&_args, 1, "command")?;
+                // Optional timeout parameter (default 5 seconds in run_cmd)
+                let timeout = _args.get(2)
+                    .and_then(|v| v.as_u64())
+                    .map(|t| t as u32);
                 self.with_session(&_args, |session| {
-                    let output = session.run_cmd(command)?;
+                    let output = session.run_cmd(command, timeout)?;
                     Ok(serde_json::json!({ "output": output }))
                 })
             }

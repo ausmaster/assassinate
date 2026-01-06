@@ -626,6 +626,83 @@ class MsfClient:
         result = await self._call("framework_module_stats")
         return result["stats"]
 
+    # ========== Framework Routing Operations ==========
+    # These routes are at the Rex::Socket::SwitchBoard level,
+    # routing traffic through sessions (pivoting).
+
+    async def route_add(self, subnet: str, netmask: str, session_id: int) -> bool:
+        """Add a route through a session.
+
+        Routes traffic destined for the subnet through the specified session,
+        enabling pivoting through compromised hosts.
+
+        Args:
+            subnet: The subnet to route (e.g., "10.10.10.0")
+            netmask: The netmask (e.g., "255.255.255.0" or "24" for CIDR)
+            session_id: The session ID to route through
+
+        Returns:
+            True if the route was added, False if it already exists
+        """
+        result = await self._call("route_add", subnet, netmask, session_id)
+        return result["success"]
+
+    async def route_remove(self, subnet: str, netmask: str, session_id: int) -> bool:
+        """Remove a route through a session.
+
+        Args:
+            subnet: The subnet to remove (e.g., "10.10.10.0")
+            netmask: The netmask (e.g., "255.255.255.0" or "24" for CIDR)
+            session_id: The session ID the route goes through
+
+        Returns:
+            True if the route was removed, False if it wasn't found
+        """
+        result = await self._call("route_remove", subnet, netmask, session_id)
+        return result["success"]
+
+    async def route_list(self) -> list[dict[str, Any]]:
+        """List all routes in the routing table.
+
+        Returns:
+            List of route dictionaries with keys:
+                - subnet: The subnet (e.g., "10.10.10.0")
+                - netmask: The netmask (e.g., "255.255.255.0")
+                - session_id: The session ID (or None if not a session)
+                - comm_name: Human-readable comm name (e.g., "Session 1")
+        """
+        result = await self._call("route_list")
+        return result["routes"]
+
+    async def route_flush(self) -> None:
+        """Flush all routes from the routing table."""
+        await self._call("route_flush")
+
+    async def route_exists(self, subnet: str, netmask: str) -> bool:
+        """Check if a route exists.
+
+        Args:
+            subnet: The subnet to check
+            netmask: The netmask
+
+        Returns:
+            True if the route exists, False otherwise
+        """
+        result = await self._call("route_exists", subnet, netmask)
+        return result["exists"]
+
+    async def route_get(self, addr: str) -> int | None:
+        """Find the best session for routing to an address.
+
+        Args:
+            addr: The IP address to route to
+
+        Returns:
+            The session ID if a route exists, None otherwise
+        """
+        result = await self._call("route_get", addr)
+        return result["session_id"]
+
     async def module_datastore_to_dict(self, module_id: str) -> dict[str, str]:
         """Get all module datastore options as dict."""
         result = await self._call("module_datastore_to_dict", module_id)
@@ -1179,17 +1256,27 @@ class MsfClient:
         result = await self._call("session_execute", session_id, command)
         return result["output"]
 
-    async def session_run_cmd(self, session_id: int, command: str) -> str:
-        """Run meterpreter command in session.
+    async def session_run_cmd(
+        self, session_id: int, command: str, timeout: int = 5
+    ) -> str:
+        """Run shell command in session.
+
+        Uses MSF's shell_command which writes the command and reads output
+        until the timeout expires.
 
         Args:
             session_id: Session ID
-            command: Meterpreter command to run
+            command: Shell command to run
+            timeout: Timeout in seconds to wait for output (default 5)
 
         Returns:
             Command output
         """
-        result = await self._call("session_run_cmd", session_id, command)
+        # IPC timeout needs to be longer than shell_command timeout + overhead
+        ipc_timeout = timeout + 5.0
+        result = await self._call(
+            "session_run_cmd", session_id, command, timeout, timeout=ipc_timeout
+        )
         return result["output"]
 
     async def session_desc(self, session_id: int) -> str | None:

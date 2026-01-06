@@ -21,22 +21,26 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.shell
 @pytest.mark.asyncio
-async def test_shell_session_basic(client, shell_session):
-    """Test basic shell session operations."""
-    print(f"\n📋 Testing shell session {shell_session}")
+async def test_shell_session_basic(client, direct_shell_session):
+    """Test basic shell session operations.
+
+    Uses direct_shell_session (socat on 4445) for reliable, reusable shell access.
+    Note: vsftpd-based session testing moved to test_routing.py (fires once per container).
+    """
+    print(f"\n📋 Testing shell session {direct_shell_session}")
 
     # Test session info
-    info = await client.session_info(shell_session)
+    info = await client.session_info(direct_shell_session)
     print(f"   Session info: {info}")
     assert info is not None
 
     # Test session type
-    session_type = await client.session_type(shell_session)
+    session_type = await client.session_type(direct_shell_session)
     print(f"   Session type: {session_type}")
     assert "shell" in session_type.lower() or "command" in session_type.lower()
 
     # Test session is alive
-    is_alive = await client.session_alive(shell_session)
+    is_alive = await client.session_alive(direct_shell_session)
     print(f"   Is alive: {is_alive}")
     assert is_alive is True
 
@@ -105,22 +109,22 @@ async def test_shell_run_command(client, direct_shell_session):
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.asyncio
-async def test_meterpreter_session_basic(client, meterpreter_session):
+async def test_direct_meterpreter_session_basic(client, direct_direct_meterpreter_session):
     """Test basic Meterpreter session operations."""
-    print(f"\n📋 Testing Meterpreter session {meterpreter_session}")
+    print(f"\n📋 Testing Meterpreter session {direct_meterpreter_session}")
 
     # Test session info
-    info = await client.session_info(meterpreter_session)
+    info = await client.session_info(direct_direct_meterpreter_session)
     print(f"   Session info: {info}")
     assert info is not None
 
     # Test session type
-    session_type = await client.session_type(meterpreter_session)
+    session_type = await client.session_type(direct_direct_meterpreter_session)
     print(f"   Session type: {session_type}")
     assert "meterpreter" in session_type.lower()
 
     # Test session is alive
-    is_alive = await client.session_alive(meterpreter_session)
+    is_alive = await client.session_alive(direct_direct_meterpreter_session)
     print(f"   Is alive: {is_alive}")
     assert is_alive is True
 
@@ -130,18 +134,18 @@ async def test_meterpreter_session_basic(client, meterpreter_session):
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.asyncio
-async def test_meterpreter_sysinfo(client, meterpreter_session):
+async def test_meterpreter_sysinfo(client, direct_direct_meterpreter_session):
     """Test Meterpreter system info operations."""
-    print(f"\n🖥️ Testing Meterpreter sysinfo on session {meterpreter_session}")
+    print(f"\n🖥️ Testing Meterpreter sysinfo on session {direct_meterpreter_session}")
 
     # Get system info
-    sysinfo = await client.session_sysinfo(meterpreter_session)
+    sysinfo = await client.session_sysinfo(direct_direct_meterpreter_session)
     print(f"   Sysinfo: {sysinfo}")
     assert sysinfo is not None
     assert "Computer" in sysinfo or "OS" in sysinfo
 
     # Get user ID
-    uid = await client.session_getuid(meterpreter_session)
+    uid = await client.session_getuid(direct_direct_meterpreter_session)
     print(f"   UID: {uid}")
     assert uid is not None
 
@@ -151,27 +155,27 @@ async def test_meterpreter_sysinfo(client, meterpreter_session):
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.asyncio
-async def test_meterpreter_filesystem(client, meterpreter_session):
+async def test_meterpreter_filesystem(client, direct_direct_meterpreter_session):
     """Test Meterpreter filesystem operations."""
-    print(f"\n📁 Testing Meterpreter filesystem on session {meterpreter_session}")
+    print(f"\n📁 Testing Meterpreter filesystem on session {direct_meterpreter_session}")
 
     # Get current directory
-    pwd = await client.session_fs_pwd(meterpreter_session)
+    pwd = await client.session_fs_pwd(direct_direct_meterpreter_session)
     print(f"   Current directory: {pwd}")
     assert pwd is not None
 
     # List directory
-    files = await client.session_fs_ls(meterpreter_session)
+    files = await client.session_fs_ls(direct_direct_meterpreter_session)
     print(f"   Directory listing: {len(files)} entries")
     assert isinstance(files, list)
 
     # Check if path exists
-    exists = await client.session_fs_exists(meterpreter_session, "/etc/passwd")
+    exists = await client.session_fs_exists(direct_meterpreter_session, "/etc/passwd")
     print(f"   /etc/passwd exists: {exists}")
     assert exists is True
 
     # Get file stat
-    stat = await client.session_fs_stat(meterpreter_session, "/etc/passwd")
+    stat = await client.session_fs_stat(direct_meterpreter_session, "/etc/passwd")
     print(f"   /etc/passwd stat: {stat}")
     assert stat is not None
 
@@ -181,18 +185,18 @@ async def test_meterpreter_filesystem(client, meterpreter_session):
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.asyncio
-async def test_meterpreter_process(client, meterpreter_session):
+async def test_meterpreter_process(client, direct_direct_meterpreter_session):
     """Test Meterpreter process operations."""
-    print(f"\n⚙️ Testing Meterpreter process on session {meterpreter_session}")
+    print(f"\n⚙️ Testing Meterpreter process on session {direct_meterpreter_session}")
 
     # Get current PID
-    pid = await client.session_process_getpid(meterpreter_session)
+    pid = await client.session_process_getpid(direct_direct_meterpreter_session)
     print(f"   Current PID: {pid}")
     assert pid is not None
     assert pid > 0
 
     # List processes
-    processes = await client.session_process_list(meterpreter_session)
+    processes = await client.session_process_list(direct_direct_meterpreter_session)
     print(f"   Process count: {len(processes)}")
     assert isinstance(processes, list)
     assert len(processes) > 0
@@ -207,12 +211,12 @@ async def test_meterpreter_process(client, meterpreter_session):
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.asyncio
-async def test_meterpreter_network(client, meterpreter_session):
+async def test_meterpreter_network(client, direct_direct_meterpreter_session):
     """Test Meterpreter network operations."""
-    print(f"\n🌐 Testing Meterpreter network on session {meterpreter_session}")
+    print(f"\n🌐 Testing Meterpreter network on session {direct_meterpreter_session}")
 
     # Get network interfaces
-    interfaces = await client.session_net_interfaces(meterpreter_session)
+    interfaces = await client.session_net_interfaces(direct_direct_meterpreter_session)
     print(f"   Interface count: {len(interfaces)}")
     assert isinstance(interfaces, list)
 
@@ -220,7 +224,7 @@ async def test_meterpreter_network(client, meterpreter_session):
         print(f"   - {iface.get('name', 'unknown')}: {iface.get('ip', 'no ip')}")
 
     # Get routes
-    routes = await client.session_net_routes(meterpreter_session)
+    routes = await client.session_net_routes(direct_direct_meterpreter_session)
     print(f"   Route count: {len(routes)}")
     assert isinstance(routes, list)
 
@@ -230,16 +234,16 @@ async def test_meterpreter_network(client, meterpreter_session):
 @pytest.mark.integration
 @pytest.mark.meterpreter
 @pytest.mark.asyncio
-async def test_meterpreter_file_operations(client, meterpreter_session):
+async def test_meterpreter_file_operations(client, direct_direct_meterpreter_session):
     """Test Meterpreter file create/delete operations."""
-    print(f"\n📝 Testing Meterpreter file operations on session {meterpreter_session}")
+    print(f"\n📝 Testing Meterpreter file operations on session {direct_meterpreter_session}")
 
     test_dir = "/tmp/assassinate_test"
     test_file = f"{test_dir}/test_file.txt"
 
     try:
         # Create test directory
-        await client.session_fs_mkdir(meterpreter_session, test_dir)
+        await client.session_fs_mkdir(direct_meterpreter_session, test_dir)
         print(f"   ✓ Created directory: {test_dir}")
 
         # Upload a test file (write content)
@@ -248,37 +252,37 @@ async def test_meterpreter_file_operations(client, meterpreter_session):
 
         # For now, use execute to create file
         await client.session_process_execute(
-            meterpreter_session,
+            direct_meterpreter_session,
             "/bin/sh",
             ["-c", f"echo 'test content' > {test_file}"]
         )
         print(f"   ✓ Created test file: {test_file}")
 
         # Verify file exists
-        exists = await client.session_fs_exists(meterpreter_session, test_file)
+        exists = await client.session_fs_exists(direct_meterpreter_session, test_file)
         assert exists is True
         print(f"   ✓ Verified file exists")
 
         # Get file stat
-        stat = await client.session_fs_stat(meterpreter_session, test_file)
+        stat = await client.session_fs_stat(direct_meterpreter_session, test_file)
         print(f"   File stat: {stat}")
 
         # Remove file
-        await client.session_fs_rm(meterpreter_session, test_file)
+        await client.session_fs_rm(direct_meterpreter_session, test_file)
         print(f"   ✓ Removed test file")
 
         # Remove directory
-        await client.session_fs_rmdir(meterpreter_session, test_dir)
+        await client.session_fs_rmdir(direct_meterpreter_session, test_dir)
         print(f"   ✓ Removed test directory")
 
     except Exception as e:
         # Cleanup on failure
         try:
-            await client.session_fs_rm(meterpreter_session, test_file)
+            await client.session_fs_rm(direct_meterpreter_session, test_file)
         except Exception:
             pass
         try:
-            await client.session_fs_rmdir(meterpreter_session, test_dir)
+            await client.session_fs_rmdir(direct_meterpreter_session, test_dir)
         except Exception:
             pass
         raise e

@@ -279,10 +279,13 @@ services:
       - assassinate-net
     # Ports exposed for exploitation (Docker network only, not published to host):
     # 21: FTP (vsftpd 2.3.4 backdoor trigger)
-    # 6200: Backdoor shell (opened after exploit)
+    # 139/445: SMB (Samba 4.6.3 CVE-2017-7494)
+    # 6200: Backdoor shell (opened after vsftpd exploit)
     # 4445: Pre-configured shell listener
     expose:
       - "21"
+      - "139"
+      - "445"
       - "6200"
       - "4445"
     healthcheck:
