@@ -37,6 +37,7 @@ pub mod ruby_bridge;
 
 // Re-export main types for Rust users
 pub use framework::{
-    DataStore, DbManager, Framework, JobManager, Module, PayloadGenerator, Session, SessionManager,
+    DataStore, DbManager, Framework, JobManager, Module, PayloadGenerator, PluginManager, Session,
+    SessionManager,
 };
 pub use ruby_bridge::init_metasploit;

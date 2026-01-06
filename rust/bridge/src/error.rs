@@ -26,6 +26,9 @@ pub enum AssassinateError {
     #[error("Session error: {0}")]
     SessionError(String),
 
+    #[error("Session not found: {0}")]
+    SessionNotFound(i64),
+
     #[error("DataStore error: {0}")]
     DataStoreError(String),
 
@@ -40,6 +43,9 @@ pub enum AssassinateError {
 
     #[error("Type conversion error: {0}")]
     ConversionError(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
 
     #[error("Unknown error: {0}")]
     Unknown(String),

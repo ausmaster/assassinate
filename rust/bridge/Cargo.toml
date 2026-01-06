@@ -12,7 +12,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 # Magnus for Ruby FFI with embed feature for proper VM initialization
-magnus = { version = "0.7", features = ["embed"] }
+magnus = { version = "0.8", features = ["embed"] }
 rb-sys = "0.9"
 
 # Error handling
@@ -23,8 +23,13 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Encoding
+hex = "0.4"
+serde_magnus = "0.10.0"
+
 [dev-dependencies]
-serial_test = "3.0"
+ntest = "0.9.5"
+# No external test frameworks needed - using Magnus pattern (one test per file)
 
 [profile.release]
 lto = true

