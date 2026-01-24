@@ -1,0 +1,13 @@
+[package]
+name = "pyo3_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "assassinate_pyo3"
+crate-type = ["cdylib"]
+
+[dependencies]
+bridge = { path = "../bridge" }
+pyo3 = { version = "0.21", features = ["extension-module", "multiple-pymethods"] }
+serde_json = "1.0"

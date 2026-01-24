@@ -33,11 +33,14 @@
 
 pub mod error;
 pub mod framework;
+pub mod gvl;
 pub mod ruby_bridge;
+pub mod ruby_bootstrap;
 
 // Re-export main types for Rust users
 pub use framework::{
     DataStore, DbManager, Framework, JobManager, Module, PayloadGenerator, PluginManager, Session,
     SessionManager,
 };
+pub use ruby_bootstrap::{ensure_ruby, init_ruby, require_all};
 pub use ruby_bridge::init_metasploit;

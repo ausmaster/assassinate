@@ -1,10 +1,8 @@
 use crate::error::{AssassinateError, Result};
 use magnus::{
-    embed,
     value::{IntoId, ReprValue},
     IntoValue, RArray, RHash, RString, Ruby, TryConvert, Value,
 };
-use std::mem;
 use std::sync::Once;
 
 // ========== Dynamic Ruby Value Type ==========
@@ -69,8 +67,6 @@ impl From<f64> for RubyVal {
         RubyVal::Float(f)
     }
 }
-
-static INIT: Once = Once::new();
 
 // ========== Lazy Symbols for Common Method Names ==========
 // LazyId provides thread-safe, lazily-initialized symbol IDs
@@ -227,30 +223,11 @@ pub mod sym {
 
 // ========== Ruby VM Initialization ==========
 
-/// Initialize the Ruby interpreter using Magnus embed
+/// Initialize the Ruby interpreter using the shared bootstrap helper
 pub fn init_ruby() -> Result<()> {
-    INIT.call_once(|| {
-        unsafe {
-            // Use Magnus embed::init for proper Ruby VM initialization
-            // This ensures all stdlib methods (Dir.glob, Time.now, etc.) are available
-            let guard = embed::init();
-
-            // Prevent the guard from being dropped using mem::forget
-            // This keeps the Ruby VM alive for the lifetime of the process
-            mem::forget(guard);
-        }
-
-        // Verify stdlib methods are available
-        if let Ok(ruby) = Ruby::get() {
-            let code = r###"
-                # Verify stdlib methods are available
-                Time.now
-                Dir.pwd
-            "###;
-            let _ = ruby.eval::<Value>(code);
-        }
-    });
-    Ok(())
+    crate::ruby_bootstrap::ensure_ruby().map_err(|e| {
+        AssassinateError::RubyInitError(format!("Failed to initialize Ruby VM: {}", e))
+    })
 }
 
 /// Get the Ruby VM handle
@@ -264,46 +241,90 @@ pub fn get_ruby() -> Result<Ruby> {
 // ========== Metasploit Framework Initialization ==========
 
 /// Initialize Metasploit Framework
+/// Uses Magnus to call Ruby methods directly instead of string interpolation
 pub fn init_metasploit(msf_path: &str) -> Result<Value> {
     let ruby = get_ruby()?;
 
-    // Initialize Metasploit the same way msfconsole does
-    let code = format!(
-        r###"
-        Dir.chdir('{}')
-        ENV['BUNDLE_GEMFILE'] = '{}/Gemfile'
-        $LOAD_PATH.unshift('{}/lib')
-        ENV['RAILS_ENV'] ||= 'production'
-        require '{}/config/boot'
-        require 'msfenv'
-        "###,
-        msf_path, msf_path, msf_path, msf_path
-    );
+    // Get Ruby constants/globals we need
+    let dir_class: Value = ruby
+        .eval("Dir")
+        .map_err(|e| AssassinateError::RubyInitError(format!("Failed to get Dir: {}", e)))?;
+    let env_hash: Value = ruby
+        .eval("ENV")
+        .map_err(|e| AssassinateError::RubyInitError(format!("Failed to get ENV: {}", e)))?;
+    let load_path: Value = ruby
+        .eval("$LOAD_PATH")
+        .map_err(|e| AssassinateError::RubyInitError(format!("Failed to get $LOAD_PATH: {}", e)))?;
+    let kernel: Value = ruby
+        .eval("Kernel")
+        .map_err(|e| AssassinateError::RubyInitError(format!("Failed to get Kernel: {}", e)))?;
 
-    ruby.eval::<Value>(&code)
-        .map_err(|e| AssassinateError::RubyInitError(e.to_string()))?;
+    // Dir.chdir(msf_path)
+    dir_class
+        .funcall::<_, _, Value>(*sym::CHDIR, (msf_path,))
+        .map_err(|e| AssassinateError::RubyInitError(format!("Dir.chdir failed: {}", e)))?;
+
+    // ENV['BUNDLE_GEMFILE'] = "#{msf_path}/Gemfile"
+    let gemfile_path = format!("{}/Gemfile", msf_path);
+    env_hash
+        .funcall::<_, _, Value>(*sym::ASET, ("BUNDLE_GEMFILE", gemfile_path.as_str()))
+        .map_err(|e| AssassinateError::RubyInitError(format!("Failed to set BUNDLE_GEMFILE: {}", e)))?;
+
+    // $LOAD_PATH.unshift("#{msf_path}/lib")
+    let lib_path = format!("{}/lib", msf_path);
+    load_path
+        .funcall::<_, _, Value>("unshift", (lib_path.as_str(),))
+        .map_err(|e| AssassinateError::RubyInitError(format!("$LOAD_PATH.unshift failed: {}", e)))?;
+
+    // ENV['RAILS_ENV'] ||= 'production'
+    let rails_env: Value = env_hash
+        .funcall(*sym::AREF, ("RAILS_ENV",))
+        .map_err(|e| AssassinateError::RubyInitError(format!("Failed to get RAILS_ENV: {}", e)))?;
+    if rails_env.is_nil() {
+        env_hash
+            .funcall::<_, _, Value>(*sym::ASET, ("RAILS_ENV", "production"))
+            .map_err(|e| AssassinateError::RubyInitError(format!("Failed to set RAILS_ENV: {}", e)))?;
+    }
+
+    // require "#{msf_path}/config/boot"
+    let boot_path = format!("{}/config/boot", msf_path);
+    kernel
+        .funcall::<_, _, Value>("require", (boot_path.as_str(),))
+        .map_err(|e| AssassinateError::RubyInitError(format!("require config/boot failed: {}", e)))?;
+
+    // require 'msfenv'
+    kernel
+        .funcall::<_, _, Value>("require", ("msfenv",))
+        .map_err(|e| AssassinateError::RubyInitError(format!("require msfenv failed: {}", e)))?;
 
     Ok(ruby.qnil().as_value())
 }
 
 /// Create a new Metasploit Framework instance
+/// Uses Magnus to call the create method directly with proper Ruby hash conversion
 pub fn create_framework(options: Option<serde_json::Value>) -> Result<Value> {
     let ruby = get_ruby()?;
 
-    let code = if let Some(opts) = options {
-        format!(
-            r#"
-            opts = {}
-            Msf::Simple::Framework.create(opts)
-            "#,
-            serde_json::to_string(&opts).unwrap_or_else(|_| "{}".to_string())
-        )
-    } else {
-        r#"Msf::Simple::Framework.create"#.to_string()
-    };
+    // Get Msf::Simple::Framework class
+    let framework_class: Value = ruby
+        .eval("Msf::Simple::Framework")
+        .map_err(|e| AssassinateError::RubyError(format!("Failed to get Framework class: {}", e)))?;
 
-    ruby.eval(&code)
-        .map_err(|e| AssassinateError::RubyError(e.to_string()))
+    if let Some(opts) = options {
+        // Convert serde_json::Value to Ruby value using serde_magnus
+        let ruby_opts: Value = serde_magnus::serialize(&ruby, &opts)
+            .map_err(|e| AssassinateError::RubyError(format!("Failed to convert options: {}", e)))?;
+
+        // Call Framework.create(opts)
+        framework_class
+            .funcall(*sym::CREATE, (ruby_opts,))
+            .map_err(|e| AssassinateError::RubyError(format!("Framework.create failed: {}", e)))
+    } else {
+        // Call Framework.create with no arguments
+        framework_class
+            .funcall(*sym::CREATE, ())
+            .map_err(|e| AssassinateError::RubyError(format!("Framework.create failed: {}", e)))
+    }
 }
 
 // ========== Ruby Method Calls ==========

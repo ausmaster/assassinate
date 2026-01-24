@@ -37,6 +37,14 @@ impl Module {
         get_string_attr(self.ruby_module, "type")
     }
 
+    /// Get the framework instance this module belongs to
+    pub fn framework(&self) -> Result<super::Framework> {
+        let fw_val = call_method(self.ruby_module, "framework", &[])?;
+        Ok(super::Framework {
+            ruby_framework: fw_val,
+        })
+    }
+
     /// Get module datastore
     pub fn datastore(&self) -> Result<DataStore> {
         let datastore_val = call_method(self.ruby_module, "datastore", &[])?;
@@ -105,20 +113,33 @@ impl Module {
         // Call exploit_simple on the module
         let session_val = call_method(self.ruby_module, "exploit_simple", &[opts_val])?;
 
+        // Handle all failure cases: nil, false, or non-session objects
+        // In Ruby: nil and false are falsy, everything else is truthy
         if session_val.is_nil() {
-            Ok(None)
-        } else {
-            // Get session ID
-            let sid_val = call_method(session_val, "sid", &[])?;
-            let session_id: i64 =
-                TryConvert::try_convert(sid_val).map_err(|e: magnus::Error| {
-                    AssassinateError::ConversionError(format!(
-                        "Failed to convert session ID: {}",
-                        e
-                    ))
-                })?;
-            Ok(Some(session_id))
+            return Ok(None);
         }
+        // Check if the value is falsy (Ruby false)
+        let is_falsy: bool = TryConvert::try_convert(session_val).unwrap_or(false);
+        if is_falsy {
+            return Ok(None);
+        }
+
+        // Check if it's actually a session object before calling sid
+        let responds_to_sid = responds_to_public(session_val, "sid");
+        if !responds_to_sid {
+            return Ok(None);
+        }
+
+        // Get session ID
+        let sid_val = call_method(session_val, "sid", &[])?;
+        let session_id: i64 =
+            TryConvert::try_convert(sid_val).map_err(|e: magnus::Error| {
+                AssassinateError::ConversionError(format!(
+                    "Failed to convert session ID: {}",
+                    e
+                ))
+            })?;
+        Ok(Some(session_id))
     }
 
     /// Run an auxiliary module
@@ -273,11 +294,18 @@ impl Module {
     pub fn author(&self) -> Result<Vec<String>> {
         let author_val = call_method(self.ruby_module, "author", &[])?;
 
-        // author is an array of Author objects, convert to strings
-        let authors: Vec<String> =
-            TryConvert::try_convert(author_val).map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert authors: {}", e))
+        // author is an array of Author objects - must call to_s on each
+        let author_array = RArray::from_value(author_val).ok_or_else(|| {
+            AssassinateError::ConversionError("author did not return an array".into())
+        })?;
+
+        let mut authors = Vec::with_capacity(author_array.len());
+        for i in 0..author_array.len() {
+            let author_obj: Value = author_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get author at {}: {}", i, e))
             })?;
+            authors.push(value_to_string(author_obj)?);
+        }
 
         Ok(authors)
     }
@@ -286,10 +314,18 @@ impl Module {
     pub fn references(&self) -> Result<Vec<String>> {
         let refs_val = call_method(self.ruby_module, "references", &[])?;
 
-        // References is an array, convert each to string
-        let refs: Vec<String> = TryConvert::try_convert(refs_val).map_err(|e: magnus::Error| {
-            AssassinateError::ConversionError(format!("Failed to convert references: {}", e))
+        // References is an array of Ref objects - must call to_s on each
+        let refs_array = RArray::from_value(refs_val).ok_or_else(|| {
+            AssassinateError::ConversionError("references did not return an array".into())
         })?;
+
+        let mut refs = Vec::with_capacity(refs_array.len());
+        for i in 0..refs_array.len() {
+            let ref_obj: Value = refs_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get reference at {}: {}", i, e))
+            })?;
+            refs.push(value_to_string(ref_obj)?);
+        }
 
         Ok(refs)
     }
@@ -308,11 +344,20 @@ impl Module {
             return Ok(vec![]);
         }
 
-        // Try to convert to array of strings
-        let platforms: Vec<String> =
-            TryConvert::try_convert(platform_val).map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert platforms: {}", e))
+        // Platform is a PlatformList - call .names to get array of platform names
+        let names_val = call_method(platform_val, "names", &[])?;
+
+        let names_array = RArray::from_value(names_val).ok_or_else(|| {
+            AssassinateError::ConversionError("platform.names did not return an array".into())
+        })?;
+
+        let mut platforms = Vec::with_capacity(names_array.len());
+        for i in 0..names_array.len() {
+            let name_val: Value = names_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get platform name at {}: {}", i, e))
             })?;
+            platforms.push(value_to_string(name_val)?);
+        }
 
         Ok(platforms)
     }
@@ -326,11 +371,18 @@ impl Module {
             return Ok(vec![]);
         }
 
-        // Try to convert to array of strings
-        let archs: Vec<String> =
-            TryConvert::try_convert(arch_val).map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert architectures: {}", e))
+        // Arch is an array - must call to_s on each element
+        let arch_array = RArray::from_value(arch_val).ok_or_else(|| {
+            AssassinateError::ConversionError("arch did not return an array".into())
+        })?;
+
+        let mut archs = Vec::with_capacity(arch_array.len());
+        for i in 0..arch_array.len() {
+            let arch_obj: Value = arch_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get arch at {}: {}", i, e))
             })?;
+            archs.push(value_to_string(arch_obj)?);
+        }
 
         Ok(archs)
     }

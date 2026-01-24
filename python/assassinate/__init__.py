@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import os
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 __all__ = ["bridge", "ipc", "setup_logging"]
 
 # Re-export submodules for easy access

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from typing import Any
 
 from ..log_config import PerformanceLogger, current_call_id, get_logger
@@ -11,6 +12,16 @@ from .protocol import deserialize_response, serialize_call
 from .shm import RingBuffer
 
 logger = get_logger("ipc.client")
+
+# Global atomic counter for call IDs - ensures uniqueness across ALL clients
+# in the same process. This prevents response routing conflicts when multiple
+# MsfClient instances share the same IPC channel.
+_global_call_id_counter = itertools.count(start=1)
+
+# Singleton registry for connected clients per IPC channel.
+# Only ONE client can be connected to each channel at a time because
+# the IPC protocol is single-producer/single-consumer.
+_connected_clients: dict[str, "MsfClient"] = {}
 
 
 class MsfClient:
@@ -43,13 +54,40 @@ class MsfClient:
         self.buffer_size = buffer_size
         self.request_buffer: RingBuffer | None = None  # Client writes requests
         self.response_buffer: RingBuffer | None = None  # Client reads responses
-        self.next_call_id = 1
+        # Note: call_ids use global counter (_global_call_id_counter) for
+        # process-wide uniqueness, preventing conflicts between clients
         self._pending_calls: dict[int, asyncio.Future] = {}
         self._response_reader_task: asyncio.Task | None = None
         self._shutdown = False
+        self._is_shared = False  # True if sharing connection with another client
 
     async def connect(self) -> None:
-        """Connect to the daemon's shared memory."""
+        """Connect to the daemon's shared memory.
+
+        If another MsfClient is already connected to the same IPC channel,
+        this client will share the connection (buffers and response reader)
+        to prevent response routing conflicts.
+        """
+        # Check if we're already connected
+        if self.request_buffer is not None:
+            logger.debug("Already connected")
+            return
+
+        # Check if another client is connected to this channel
+        existing = _connected_clients.get(self.shm_name)
+        if existing is not None and existing.request_buffer is not None:
+            # Share the existing connection
+            logger.info(
+                f"Sharing existing connection to {self.shm_name} "
+                f"(prevents response routing conflicts)"
+            )
+            self.request_buffer = existing.request_buffer
+            self.response_buffer = existing.response_buffer
+            self._pending_calls = existing._pending_calls
+            self._response_reader_task = existing._response_reader_task
+            self._is_shared = True
+            return
+
         logger.info(
             f"Connecting to daemon: shm={self.shm_name}, "
             f"buffer_size={self.buffer_size}"
@@ -71,6 +109,10 @@ class MsfClient:
             self._response_reader_task = asyncio.create_task(
                 self._response_reader()
             )
+            self._is_shared = False
+
+            # Register as the primary client for this channel
+            _connected_clients[self.shm_name] = self
 
             logger.info("Successfully connected to daemon")
         except Exception as e:
@@ -78,8 +120,25 @@ class MsfClient:
             raise
 
     async def disconnect(self) -> None:
-        """Disconnect from shared memory."""
+        """Disconnect from shared memory.
+
+        If this client is sharing a connection with another client,
+        only clears the local references without closing the buffers.
+        """
+        if self._is_shared:
+            # We're sharing - just clear our references, don't close anything
+            logger.info("Disconnecting shared client (primary connection stays open)")
+            self.request_buffer = None
+            self.response_buffer = None
+            self._pending_calls = {}
+            self._response_reader_task = None
+            return
+
         logger.info("Disconnecting from daemon")
+
+        # Unregister from singleton registry
+        if _connected_clients.get(self.shm_name) is self:
+            del _connected_clients[self.shm_name]
 
         # Signal shutdown and wait for response reader to finish
         self._shutdown = True
@@ -184,9 +243,8 @@ class MsfClient:
         if not self.request_buffer or not self.response_buffer:
             raise RuntimeError("Not connected - call connect() first")
 
-        # Generate call ID
-        call_id = self.next_call_id
-        self.next_call_id += 1
+        # Generate globally unique call ID (thread-safe via itertools.count)
+        call_id = next(_global_call_id_counter)
 
         # Set context for logging
         current_call_id.set(call_id)

@@ -1,85 +1,58 @@
-// Test: Module options and actions
-// Split from test_module_options.rs - Magnus requires one test per file
+// Test: Module actions (for auxiliary/post modules)
+// Run with: ./run_tests.sh --test test_module_actions
 
 mod common;
 
-use bridge::ruby_bridge;
-use magnus::{TryConvert, value::ReprValue};
+use bridge::Framework;
 
 #[test]
-fn it_reads_module_options_and_actions() {
-    let (ruby, framework) = common::init_framework();
+fn it_gets_module_actions() {
+    let _ruby = common::init_msf();
+    let framework = Framework::new(None).expect("Failed to create framework");
 
-    let modules = ruby_bridge::call_method(framework, "modules", &[])
-        .expect("Failed to get modules");
+    // Test exploit module - typically no actions
+    let exploit = framework
+        .create_module("exploit/linux/samba/is_known_pipename")
+        .expect("Failed to create exploit");
 
-    // Create an auxiliary module to test options
-    let module_name = ruby.str_new("auxiliary/scanner/portscan/tcp").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name])
-        .expect("Failed to create module");
-    println!("✓ Created auxiliary/scanner/portscan/tcp");
+    let exploit_actions = exploit.actions().expect("Failed to get exploit actions");
+    println!("✓ Exploit actions: {:?}", exploit_actions);
+    // Exploits typically don't have actions
+    assert!(exploit_actions.is_empty(), "Exploit should have no actions");
 
-    // Test options
-    let options = ruby_bridge::call_method(module, "options", &[])
-        .expect("Failed to get options");
-    assert!(!options.is_nil(), "Options should not be nil");
+    let exploit_default = exploit.default_action().expect("Failed to get default action");
+    println!("✓ Exploit default action: {:?}", exploit_default);
+    assert!(exploit_default.is_none(), "Exploit should have no default action");
 
-    let option_keys = ruby_bridge::call_method(options, "keys", &[])
-        .expect("Failed to get option keys");
-    let keys: Vec<String> = TryConvert::try_convert(option_keys)
-        .expect("Failed to convert keys");
-    println!("✓ Module has {} options", keys.len());
-    assert!(!keys.is_empty(), "Should have options");
+    // Test auxiliary module with actions - use a module known to have actions
+    let gather = framework
+        .create_module("auxiliary/gather/enum_dns")
+        .expect("Failed to create DNS enum module");
 
-    // Check for common options
-    let has_rhosts = keys.iter().any(|k| k == "RHOSTS");
-    let has_ports = keys.iter().any(|k| k == "PORTS");
-    println!("  RHOSTS option: {}", has_rhosts);
-    println!("  PORTS option: {}", has_ports);
+    let actions = gather.actions().expect("Failed to get gather actions");
+    println!("✓ DNS enum actions ({}):", actions.len());
+    for action in &actions {
+        println!("    {}", action);
+    }
 
-    // Test module rank and privileged
-    let rank = ruby_bridge::call_method(module, "rank", &[])
-        .expect("Failed to get rank");
-    let rank_val: i64 = TryConvert::try_convert(rank)
-        .expect("Failed to convert rank");
-    println!("✓ Rank: {}", rank_val);
+    if !actions.is_empty() {
+        let default = gather.default_action().expect("Failed to get default action");
+        println!("✓ Default action: {:?}", default);
 
-    // Test license
-    if let Ok(license) = ruby_bridge::call_method(module, "license", &[]) {
-        if let Ok(lic_str) = ruby_bridge::value_to_string(license) {
-            println!("✓ License: {}", lic_str);
+        // If there are actions, there should be a default
+        if let Some(def) = default {
+            assert!(actions.contains(&def), "Default action should be in actions list");
         }
     }
 
-    // Test aliases
-    if let Ok(aliases) = ruby_bridge::call_method(module, "aliases", &[]) {
-        if !aliases.is_nil() {
-            let alias_vec: Vec<String> = TryConvert::try_convert(aliases)
-                .unwrap_or_else(|_| Vec::new());
-            println!("✓ Aliases: {:?}", alias_vec);
-        }
-    }
+    // Test scanner module
+    let scanner = framework
+        .create_module("auxiliary/scanner/portscan/tcp")
+        .expect("Failed to create scanner");
 
-    // Now test a module with actions (auxiliary/scanner/smb/smb_ms17_010)
-    let action_module_name = ruby.str_new("auxiliary/scanner/smb/smb_ms17_010").as_value();
-    if let Ok(action_module) = ruby_bridge::call_method(modules, "create", &[action_module_name]) {
-        if !action_module.is_nil() {
-            println!("✓ Created auxiliary/scanner/smb/smb_ms17_010");
+    let scanner_actions = scanner.actions().expect("Failed to get scanner actions");
+    println!("✓ Scanner actions: {:?}", scanner_actions);
+    // Port scanner doesn't have multiple actions
 
-            // Test actions
-            if let Ok(actions) = ruby_bridge::call_method(action_module, "actions", &[]) {
-                let actions_len = ruby_bridge::ruby_array_len(actions).unwrap_or(0);
-                println!("✓ Module has {} actions", actions_len);
-            }
-
-            // Test default_action
-            if let Ok(default_action) = ruby_bridge::call_method(action_module, "default_action", &[]) {
-                if !default_action.is_nil() {
-                    if let Ok(action_str) = ruby_bridge::value_to_string(default_action) {
-                        println!("✓ Default action: {}", action_str);
-                    }
-                }
-            }
-        }
-    }
+    println!("✓ All actions tests passed");
 }

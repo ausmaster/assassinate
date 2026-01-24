@@ -1,47 +1,63 @@
-// Test: Module structured options
-// Note: Other tests split to separate files - Magnus requires one test per file
+// Test: Module options (get, set, structured, missing_required)
+// Run with: ./run_tests.sh --test test_module_options
 
 mod common;
 
-use bridge::ruby_bridge;
-use magnus::value::ReprValue;
+use bridge::Framework;
 
 #[test]
-fn it_gets_structured_options() {
-    let (ruby, framework) = common::init_framework();
+fn it_manages_module_options() {
+    let _ruby = common::init_msf();
+    let framework = Framework::new(None).expect("Failed to create framework");
 
-    let modules = ruby_bridge::call_method(framework, "modules", &[])
-        .expect("Failed to get modules");
-
-    // Create a module with known required options
-    let module_name = ruby.str_new("auxiliary/scanner/portscan/tcp").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+    let module = framework
+        .create_module("exploit/linux/samba/is_known_pipename")
         .expect("Failed to create module");
 
-    // Get options as hash
-    let options = ruby_bridge::call_method(module, "options", &[])
-        .expect("Failed to get options");
-    let options_hash = ruby_bridge::call_method(options, "to_h", &[])
-        .expect("Failed to convert options to hash");
+    // Test options_structured - get all options with metadata
+    let options = module.options_structured().expect("Failed to get structured options");
+    println!("✓ Got {} options", options.len());
+    assert!(!options.is_empty(), "Module should have options");
 
-    // Convert to JSON to inspect structure
-    let json = ruby_bridge::hash_to_json(options_hash)
-        .expect("Failed to convert options hash to JSON");
+    // Check that RHOSTS exists and has expected fields
+    assert!(options.contains_key("RHOSTS"), "Should have RHOSTS option");
+    let rhosts_opt = &options["RHOSTS"];
+    println!("  RHOSTS schema: {}", rhosts_opt);
+    assert!(rhosts_opt.get("required").is_some(), "RHOSTS should have 'required' field");
+    assert!(rhosts_opt.get("desc").is_some(), "RHOSTS should have 'desc' field");
 
-    println!("✓ Structured options JSON has {} keys", json.as_object().map(|o| o.len()).unwrap_or(0));
+    // Test set_option and get_option
+    module.set_option("RHOSTS", "192.168.1.100").expect("Failed to set RHOSTS");
+    let value = module.get_option("RHOSTS").expect("Failed to get RHOSTS");
+    println!("✓ Set RHOSTS = {:?}", value);
+    assert_eq!(value, Some("192.168.1.100".to_string()));
 
-    // Check that we can extract option details
-    if let Some(opts_obj) = json.as_object() {
-        for (opt_name, opt_val) in opts_obj {
-            if opt_name == "RHOSTS" || opt_name == "RHOST" {
-                println!("  {} option details: {}", opt_name, opt_val);
-                // Should have required, desc, type fields
-                if let Some(opt_obj) = opt_val.as_object() {
-                    assert!(opt_obj.contains_key("required") || opt_obj.contains_key("desc"),
-                        "Option should have metadata");
-                }
-                break;
-            }
-        }
-    }
+    // Test setting RPORT
+    module.set_option("RPORT", "445").expect("Failed to set RPORT");
+    let rport = module.get_option("RPORT").expect("Failed to get RPORT");
+    println!("✓ Set RPORT = {:?}", rport);
+    assert_eq!(rport, Some("445".to_string()));
+
+    // Test get_option for non-existent option returns None
+    let nonexistent = module.get_option("NONEXISTENT_OPTION_XYZ").expect("Failed to get nonexistent");
+    assert!(nonexistent.is_none(), "Non-existent option should return None");
+
+    // Test missing_required before setting all required options
+    // First, clear RHOSTS to test missing detection
+    let module2 = framework
+        .create_module("auxiliary/scanner/portscan/tcp")
+        .expect("Failed to create scanner module");
+
+    let missing = module2.missing_required().expect("Failed to get missing required");
+    println!("✓ Missing required options: {:?}", missing);
+    // RHOSTS is typically required for scanners
+    assert!(missing.contains(&"RHOSTS".to_string()), "RHOSTS should be missing");
+
+    // Set RHOSTS and check missing again
+    module2.set_option("RHOSTS", "192.168.1.0/24").expect("Failed to set RHOSTS");
+    let missing_after = module2.missing_required().expect("Failed to get missing after set");
+    println!("✓ Missing after setting RHOSTS: {:?}", missing_after);
+    assert!(!missing_after.contains(&"RHOSTS".to_string()), "RHOSTS should not be missing after set");
+
+    println!("✓ All options tests passed");
 }

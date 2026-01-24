@@ -1,50 +1,66 @@
-// Test: Module creation and metadata access
+// Test: Module metadata properties (fullname, description, rank, license, etc.)
+// Run with: ./run_tests.sh --test test_module_metadata
 
 mod common;
 
-use bridge::ruby_bridge;
-use magnus::value::ReprValue;
+use bridge::Framework;
 
 #[test]
-fn it_creates_module_and_reads_metadata() {
-    let (ruby, framework) = common::init_framework();
+fn it_gets_module_metadata() {
+    let _ruby = common::init_msf();
+    let framework = Framework::new(None).expect("Failed to create framework");
 
-    let modules = ruby_bridge::call_method(framework, "modules", &[])
-        .expect("Failed to get modules");
-
-    // Create an exploit module
-    let module_name = ruby.str_new("exploit/multi/handler").as_value();
-    let module = ruby_bridge::call_method(modules, "create", &[module_name])
+    // Use a well-documented exploit
+    let module = framework
+        .create_module("exploit/linux/samba/is_known_pipename")
         .expect("Failed to create module");
-    assert!(!module.is_nil(), "Module is nil");
-    println!("✓ Module created: exploit/multi/handler");
 
-    // Test module metadata
-    let name = ruby_bridge::call_method(module, "name", &[])
-        .expect("Failed to get name");
-    let name_str = ruby_bridge::value_to_string(name).expect("Failed to convert name");
-    println!("  Name: {}", name_str);
-    assert!(!name_str.is_empty(), "Name should not be empty");
+    // Test fullname
+    let fullname = module.fullname().expect("Failed to get fullname");
+    println!("✓ Fullname: {}", fullname);
+    assert_eq!(fullname, "exploit/linux/samba/is_known_pipename");
 
-    let fullname = ruby_bridge::call_method(module, "fullname", &[])
-        .expect("Failed to get fullname");
-    let fullname_str = ruby_bridge::value_to_string(fullname).expect("Failed to convert fullname");
-    println!("  Fullname: {}", fullname_str);
-    assert!(fullname_str.contains("handler"), "Fullname should contain 'handler'");
+    // Test name
+    let name = module.name().expect("Failed to get name");
+    println!("✓ Name: {}", name);
+    assert!(!name.is_empty());
 
-    let description = ruby_bridge::call_method(module, "description", &[])
-        .expect("Failed to get description");
-    let desc_str = ruby_bridge::value_to_string(description).expect("Failed to convert description");
-    println!("  Description: {}...", &desc_str[..desc_str.len().min(50)]);
-    assert!(!desc_str.is_empty(), "Description should not be empty");
+    // Test description
+    let description = module.description().expect("Failed to get description");
+    println!("✓ Description: {}...", &description[..description.len().min(80)]);
+    assert!(!description.is_empty());
+    assert!(description.to_lowercase().contains("samba") || description.to_lowercase().contains("smb"));
 
-    // Test rank
-    let rank = ruby_bridge::call_method(module, "rank", &[])
-        .expect("Failed to get rank");
-    let rank_val: i64 = magnus::TryConvert::try_convert(rank)
-        .expect("Failed to convert rank");
-    println!("  Rank: {}", rank_val);
-    assert!(rank_val >= 0, "Rank should be non-negative");
+    // Test rank (should be a number like "600" for excellent)
+    let rank = module.rank().expect("Failed to get rank");
+    println!("✓ Rank: {}", rank);
+    assert!(!rank.is_empty());
 
-    println!("✓ All metadata accessible");
+    // Test license
+    let license = module.license().expect("Failed to get license");
+    println!("✓ License: {}", license);
+    assert!(license.contains("Metasploit") || license.contains("BSD"));
+
+    // Test disclosure_date
+    let disclosure = module.disclosure_date().expect("Failed to get disclosure_date");
+    println!("✓ Disclosure date: {:?}", disclosure);
+    if let Some(date) = disclosure {
+        assert!(date.contains("2017"), "CVE-2017-7494 should have 2017 disclosure date");
+    }
+
+    // Test privileged
+    let privileged = module.privileged().expect("Failed to get privileged");
+    println!("✓ Privileged: {}", privileged);
+    // This exploit runs as root typically
+    assert!(privileged, "Samba exploit should be privileged");
+
+    // Test targets
+    let targets = module.targets().expect("Failed to get targets");
+    println!("✓ Targets ({}):", targets.len());
+    for (i, target) in targets.iter().take(3).enumerate() {
+        println!("    {}: {}", i, target);
+    }
+    assert!(!targets.is_empty(), "Module should have targets");
+
+    println!("✓ All metadata tests passed");
 }
