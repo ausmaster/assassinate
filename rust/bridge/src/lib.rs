@@ -25,11 +25,18 @@
 //! println!("Found {} exploits", exploits.len());
 //! ```
 //!
-//! ## Note for Python Users
+//! ## Python Bindings
 //!
-//! Due to Ruby VM threading requirements, this library cannot be used as a Python
-//! extension module. Python users should use the IPC-based interface instead, which
-//! provides near-FFI performance through high-speed shared memory communication.
+//! When compiled with the `pyo3` feature, this library provides the `msf` Python module:
+//!
+//! ```python
+//! from msf import init_msf, create_module
+//!
+//! init_msf("/path/to/metasploit-framework")
+//! module = create_module("exploit/linux/samba/is_known_pipename")
+//! module.options.RHOSTS = "192.168.1.100"  # Attribute-style access
+//! session = module.exploit("cmd/unix/interact")
+//! ```
 
 pub mod error;
 pub mod framework;
@@ -44,3 +51,33 @@ pub use framework::{
 };
 pub use ruby_bootstrap::{ensure_ruby, init_ruby, require_all};
 pub use ruby_bridge::init_metasploit;
+
+// =============================================================================
+// Python Bindings (pyo3 feature)
+// =============================================================================
+
+/// Python module providing MSF bindings when the `pyo3` feature is enabled.
+///
+/// The module is named `assassinate_pyo3` and provides:
+/// - `PySession` - Session wrapper with 70+ methods
+/// - `ExploitModule` - Module wrapper with metadata, options, and execution
+/// - Module-level functions for framework operations
+///
+/// ## Usage from Python
+///
+/// ```python
+/// from msf import init_msf, create_module
+///
+/// init_msf("/path/to/metasploit-framework")
+/// module = create_module("exploit/linux/samba/is_known_pipename")
+/// module.options.RHOSTS = "192.168.1.100"  # Attribute-style access
+/// session = module.exploit("cmd/unix/interact")
+/// if session:
+///     print(session.run_cmd("whoami"))
+/// ```
+#[cfg(feature = "pyo3")]
+pub mod pyo3;
+
+// Re-export the pymodule initializer for maturin
+#[cfg(feature = "pyo3")]
+pub use pyo3::msf;

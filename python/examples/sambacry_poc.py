@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import time
 
-import assassinate_pyo3 as msf
+import msf
 
 # Target can be set via env var for flexibility (Docker vs host testing)
 TARGET_HOST = os.environ.get("TARGET_HOST", "assassinate-target")

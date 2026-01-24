@@ -33,6 +33,7 @@ use std::collections::HashMap;
 /// Core Metasploit Framework interface
 ///
 /// This type provides access to the Metasploit Framework functionality through Ruby FFI.
+/// Python bindings use a thread-local singleton pattern instead of exposing Framework directly.
 #[derive(Clone)]
 pub struct Framework {
     pub(crate) ruby_framework: Value,
@@ -346,6 +347,10 @@ impl Framework {
         Ok(format!("<Framework version={}>", self.version()?))
     }
 }
+
+// Note: Pyo3 bindings are in src/pyo3/pymodule.rs
+// Framework is not directly exposed as a pyclass - instead, module-level
+// functions use a thread-local singleton pattern for Python API.
 
 /// DataStore for framework and module configuration
 #[derive(Clone)]

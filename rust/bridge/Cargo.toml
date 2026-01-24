@@ -7,8 +7,14 @@ description = "Rust FFI bridge to Metasploit Framework via Magnus (Ruby embeddin
 license = "GPL-3.0"
 
 [lib]
-name = "bridge"
-crate-type = ["rlib"]
+name = "msf"
+# rlib: Rust library (for use as dependency)
+# cdylib: C-compatible dynamic library (for Python extension via maturin)
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+pyo3 = ["dep:pyo3"]
 
 [dependencies]
 # Magnus for Ruby FFI with embed feature for proper VM initialization
@@ -26,6 +32,9 @@ serde_json = "1.0"
 # Encoding
 hex = "0.4"
 serde_magnus = "0.10.0"
+
+# Optional Python bindings
+pyo3 = { version = "0.21", features = ["extension-module", "multiple-pymethods"], optional = true }
 
 [dev-dependencies]
 ntest = "0.9.5"

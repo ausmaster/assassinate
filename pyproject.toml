@@ -60,9 +60,11 @@ select = ["E", "F", "W", "I"]
 
 [tool.maturin]
 bindings = "pyo3"
-module-name = "assassinate_pyo3"
-manifest-path = "rust/pyo3_bridge/Cargo.toml"
+module-name = "msf"
+# MSF module: Rust FFI bindings + Python wrappers
+manifest-path = "rust/bridge/Cargo.toml"
 python-source = "python"
+features = ["pyo3"]
 
 [tool.pytest.ini_options]
 testpaths = ["python/tests"]

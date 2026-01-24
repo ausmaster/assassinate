@@ -87,21 +87,22 @@ class Session:
 
     # === Shell Methods ===
 
-    def run_cmd(self, cmd: str) -> str:
+    def run_cmd(self, cmd: str, timeout: Optional[int] = None) -> str:
         """
         Execute a command and return the output.
 
         Args:
             cmd: Command to execute
+            timeout: Optional timeout in seconds
 
         Returns:
             Command output as string
         """
-        return self._rust.run_cmd(cmd)
+        return self._rust.run_cmd(cmd, timeout)
 
-    def read(self) -> str:
+    def read(self, length: Optional[int] = None) -> str:
         """Read available data from session."""
-        return self._rust.read()
+        return self._rust.read(length)
 
     def write(self, data: str) -> int:
         """

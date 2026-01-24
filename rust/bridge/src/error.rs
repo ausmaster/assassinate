@@ -59,3 +59,29 @@ impl From<magnus::Error> for AssassinateError {
 
 /// Result type alias using AssassinateError
 pub type Result<T> = std::result::Result<T, AssassinateError>;
+
+// =============================================================================
+// Pyo3 Error Conversion
+// =============================================================================
+
+/// Convert AssassinateError to PyErr when the pyo3 feature is enabled
+///
+/// This implementation allows using the `?` operator directly in #[pyfunction]
+/// and #[pymethods] without calling `to_py_result()` manually.
+///
+/// # Example
+///
+/// ```ignore
+/// #[pyfunction]
+/// fn framework_version() -> PyResult<String> {
+///     // The ? operator automatically converts AssassinateError -> PyErr
+///     Ok(with_framework(|fw| fw.version())?)
+/// }
+/// ```
+#[cfg(feature = "pyo3")]
+impl From<AssassinateError> for pyo3::PyErr {
+    fn from(err: AssassinateError) -> Self {
+        // Use the custom AssassinateError exception from the pymodule
+        crate::pyo3::AssassinateError::new_err(err.to_string())
+    }
+}
