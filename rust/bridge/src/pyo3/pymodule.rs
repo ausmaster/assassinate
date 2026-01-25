@@ -2,7 +2,8 @@
 //!
 //! This module defines the `assassinate_pyo3` Python module with:
 //! - `PySession` - Wrapper for MSF sessions (shell/meterpreter)
-//! - `ExploitModule` - Wrapper for MSF modules (exploit/auxiliary/post)
+//! - `MsfModule` (exposed as `Module`) - Generic wrapper for all MSF module types
+//!   (auxiliary, encoder, evasion, exploit, nop, payload, post)
 //! - Module-level functions for framework operations
 
 use pyo3::create_exception;
@@ -276,52 +277,58 @@ impl PySession {
 }
 
 // =============================================================================
-// ExploitModule - Wrapper for MSF Module
+// MsfModule - Generic Wrapper for all MSF Module Types
 // =============================================================================
 
-/// Python wrapper for Metasploit modules (exploit/auxiliary/post)
+/// Python wrapper for Metasploit modules (all 7 types: auxiliary, encoder, evasion, exploit, nop, payload, post)
 ///
 /// Provides access to module metadata, options configuration, validation,
-/// and execution (exploit/run/check).
-#[pyclass(unsendable)]
-pub struct ExploitModule {
+/// and type-specific execution methods. The Python layer uses type-specific
+/// subclasses (ExploitModule, AuxiliaryModule, etc.) that wrap this generic class.
+#[pyclass(unsendable, name = "Module")]
+pub struct MsfModule {
     pub(crate) module: Module,
     pub(crate) fullname: String,
 }
 
 // Generate wrapper methods via macros
 // Module Metadata
-pyo3_wrap!(ExploitModule, module, description() -> String);
-pyo3_wrap!(ExploitModule, module, author() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, references() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, platform() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, arch() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, rank() -> String);
-pyo3_wrap!(ExploitModule, module, license() -> String);
-pyo3_wrap!(ExploitModule, module, disclosure_date() -> Option<String>);
-pyo3_wrap!(ExploitModule, module, privileged() -> bool);
-pyo3_wrap!(ExploitModule, module, targets() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, aliases() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, action() -> Option<String>);
-pyo3_wrap_hashmap!(ExploitModule, module, notes());
+pyo3_wrap!(MsfModule, module, description() -> String);
+pyo3_wrap!(MsfModule, module, author() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, references() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, platform() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, arch() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, rank() -> String);
+pyo3_wrap!(MsfModule, module, license() -> String);
+pyo3_wrap!(MsfModule, module, disclosure_date() -> Option<String>);
+pyo3_wrap!(MsfModule, module, privileged() -> bool);
+pyo3_wrap!(MsfModule, module, targets() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, aliases() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, action() -> Option<String>);
+pyo3_wrap_hashmap!(MsfModule, module, notes());
 
 // Note: Options are accessed via Python wrapper's ModuleOptions class
 // which uses _get_option, _set_option, _options_structured, _missing_required
 // (defined in the manual implementations below)
 
 // Validation
-pyo3_wrap!(ExploitModule, module, validate() -> bool);
-pyo3_wrap!(ExploitModule, module, has_check() -> bool);
-pyo3_wrap!(ExploitModule, module, check() -> String);
+pyo3_wrap!(MsfModule, module, validate() -> bool);
+pyo3_wrap!(MsfModule, module, has_check() -> bool);
+pyo3_wrap!(MsfModule, module, check() -> String);
 
 // Compatibility
-pyo3_wrap!(ExploitModule, module, compatible_payloads() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, actions() -> Vec<String>);
-pyo3_wrap!(ExploitModule, module, default_action() -> Option<String>);
+pyo3_wrap!(MsfModule, module, compatible_payloads() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, actions() -> Vec<String>);
+pyo3_wrap!(MsfModule, module, default_action() -> Option<String>);
 
 // Manual implementations for complex methods
 #[pymethods]
-impl ExploitModule {
+impl MsfModule {
+    /// Get the module type (auxiliary, encoder, evasion, exploit, nop, payload, post)
+    fn module_type(&self) -> PyResult<String> {
+        Ok(self.module.module_type()?)
+    }
+
     /// Execute the exploit with the specified payload
     ///
     /// Returns the session ID if a session was created, None otherwise.
@@ -527,14 +534,14 @@ fn get_module_info(module_name: &str, py: Python<'_>) -> PyResult<PyObject> {
 ///
 /// * `module_name` - Full module path (e.g., "exploit/linux/samba/is_known_pipename")
 #[pyfunction]
-fn create_module(module_name: &str) -> PyResult<ExploitModule> {
+fn create_module(module_name: &str) -> PyResult<MsfModule> {
     let (module, fullname) = with_framework(|framework| {
         let module = framework.create_module(module_name)?;
         let fullname = module.fullname()?;
         Ok((module, fullname))
     })?;
 
-    Ok(ExploitModule { module, fullname })
+    Ok(MsfModule { module, fullname })
 }
 
 /// Quick exploit execution (creates module, runs exploit, returns session ID)
@@ -635,7 +642,7 @@ fn job_kill(job_id: &str) -> PyResult<bool> {
 /// an embedded Ruby VM. The Rust FFI layer is combined with Python
 /// wrappers for a Pythonic API.
 #[pymodule]
-pub fn msf(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     module.add("__doc__", "Python interface to Metasploit Framework via Rust/Pyo3")?;
     module.add(
         "__all__",
@@ -650,7 +657,7 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
             "kill_session",
             "get_module_info",
             "create_module",
-            "ExploitModule",
+            "Module",
             "PySession",
             "exploit",
             "check",
@@ -684,7 +691,7 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(job_kill, module)?)?;
 
     // Add classes
-    module.add_class::<ExploitModule>()?;
+    module.add_class::<MsfModule>()?;
     module.add_class::<PySession>()?;
 
     Ok(())

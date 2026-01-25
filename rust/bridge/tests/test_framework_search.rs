@@ -3,7 +3,7 @@
 
 mod common;
 
-use bridge::Framework;
+use msf::Framework;
 
 #[test]
 fn it_searches_modules() {

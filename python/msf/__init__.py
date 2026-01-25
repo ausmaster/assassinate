@@ -3,25 +3,38 @@
 This module provides a Pythonic API for interacting with Metasploit Framework
 through an embedded Ruby VM (via Rust/Pyo3).
 
+The create_module() factory returns type-specific classes based on module type:
+- ExploitModule: Vulnerability exploitation (exploit(), check(), targets)
+- AuxiliaryModule: Scanners, fuzzers, servers (run(), actions())
+- PostModule: Post-exploitation, requires session (run(session))
+- EvasionModule: AV/EDR bypass (run(), targets)
+- PayloadModule: Shellcode generation (generate(), to_handler())
+- EncoderModule: Payload encoding (encode())
+- NopModule: NOP sled generation (generate_sled())
+
 Example:
     from msf import init_msf, create_module
 
     init_msf("/path/to/metasploit-framework")
-    module = create_module("exploit/linux/samba/is_known_pipename")
-    module.options.RHOSTS = "192.168.1.100"
-    session = module.exploit("cmd/unix/interact")
+
+    # Factory returns appropriate type
+    exploit = create_module("exploit/linux/samba/is_known_pipename")
+    assert isinstance(exploit, ExploitModule)
+
+    exploit.options.RHOSTS = "192.168.1.100"
+    session = exploit.exploit("cmd/unix/interact")
     if session:
         print(session.run_cmd("whoami"))
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
-# Import from Rust extension (maturin places .so in this package as msf.cpython-*.so)
+# Import from Rust extension
 from .msf import (
     AssassinateError,
-    ExploitModule as _RustExploitModule,
+    Module as _RustModule,
     PySession as _RustPySession,
     check,
     create_module as _create_module_rust,
@@ -41,29 +54,77 @@ from .msf import (
     job_kill,
 )
 
-from .module import Module
+# Import type-specific module classes
+from .module import (
+    BaseModule,
+    AuxiliaryModule,
+    EncoderModule,
+    EvasionModule,
+    ExploitModule,
+    NopModule,
+    PayloadModule,
+    PostModule,
+)
 from .session import Session
 from .options import ModuleOptions
 
+# Type alias for any module type
+AnyModule = Union[
+    AuxiliaryModule,
+    EncoderModule,
+    EvasionModule,
+    ExploitModule,
+    NopModule,
+    PayloadModule,
+    PostModule,
+]
 
-def create_module(module_name: str) -> Module:
+# Module type to class mapping
+_MODULE_CLASSES = {
+    "auxiliary": AuxiliaryModule,
+    "encoder": EncoderModule,
+    "evasion": EvasionModule,
+    "exploit": ExploitModule,
+    "nop": NopModule,
+    "payload": PayloadModule,
+    "post": PostModule,
+}
+
+
+def create_module(module_name: str) -> AnyModule:
     """
-    Create a module instance with rich Python interface.
+    Create a module instance with the appropriate type-specific class.
+
+    The factory inspects the module type and returns the correct subclass:
+    - exploit/* -> ExploitModule
+    - auxiliary/* -> AuxiliaryModule
+    - post/* -> PostModule
+    - evasion/* -> EvasionModule
+    - payload/* -> PayloadModule
+    - encoder/* -> EncoderModule
+    - nop/* -> NopModule
 
     Args:
         module_name: Full module name (e.g., "exploit/linux/samba/is_known_pipename")
 
     Returns:
-        Module object with attribute-style options access
+        Type-specific module object (ExploitModule, AuxiliaryModule, etc.)
 
     Example:
-        module = create_module("exploit/linux/samba/is_known_pipename")
-        module.options.RHOSTS = "192.168.1.100"
-        module.options.RPORT = 445
-        session = module.exploit("cmd/unix/interact")
+        exploit = create_module("exploit/linux/samba/is_known_pipename")
+        assert isinstance(exploit, ExploitModule)
+        assert exploit.module_type == "exploit"
+
+        scanner = create_module("auxiliary/scanner/smb/smb_version")
+        assert isinstance(scanner, AuxiliaryModule)
+        assert scanner.module_type == "auxiliary"
     """
     rust_module = _create_module_rust(module_name)
-    return Module(rust_module)
+    module_type = rust_module.module_type()
+
+    # Get the appropriate class for this module type
+    module_class = _MODULE_CLASSES.get(module_type, BaseModule)
+    return module_class(rust_module)
 
 
 def get_session(session_id: int) -> Optional[Session]:
@@ -93,14 +154,23 @@ __all__ = [
     "init_msf",
     "is_initialized",
     "framework_version",
-    # Modules
+    # Module factory
     "create_module",
     "list_modules",
     "search",
     "get_module_info",
     "check",
     "exploit",
-    "Module",
+    # Module classes (type-specific)
+    "BaseModule",
+    "AuxiliaryModule",
+    "EncoderModule",
+    "EvasionModule",
+    "ExploitModule",
+    "NopModule",
+    "PayloadModule",
+    "PostModule",
+    # Module options
     "ModuleOptions",
     # Sessions
     "get_session",
@@ -115,4 +185,6 @@ __all__ = [
     "sleep_releasing_gvl",
     # Exception
     "AssassinateError",
+    # Type alias
+    "AnyModule",
 ]
