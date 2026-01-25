@@ -1,40 +1,42 @@
-"""Detailed framework tests modeled after MSF framework_spec.rb."""
+"""Tests for framework-level operations.
+
+Tests framework version, module listing, and search functionality.
+"""
 
 import re
 
 import pytest
 
+import msf
 
-@pytest.mark.integration
+
 class TestFrameworkVersion:
     """Tests for framework version information."""
 
-    async def test_version_exists(self, client):
+    def test_version_exists(self, msf_init):
         """Test that version returns a value."""
-        version = await client.framework_version()
-        assert "version" in version
-        assert version["version"] is not None
+        version = msf.framework_version()
+        assert version is not None
+        assert isinstance(version, str)
+        assert len(version) > 0
 
-    async def test_version_format(self, client):
+    def test_version_format(self, msf_init):
         """Test that version follows expected format."""
-        version = await client.framework_version()
-        version_str = version["version"]
+        version = msf.framework_version()
 
         # MSF versions typically follow: Major.Minor.Point-Release
         # e.g., "6.4.100-dev" or "6.3.25" or "6.4.100-dev-e670167"
-        # Allow alphanumeric characters and dashes in release suffix
         pattern = r"^\d+\.\d+\.\d+(-.+)?$"
-        assert re.match(pattern, version_str), (
-            f"Version {version_str} doesn't match expected format"
+        assert re.match(pattern, version), (
+            f"Version {version} doesn't match expected format"
         )
 
-    async def test_version_components(self, client):
+    def test_version_components(self, msf_init):
         """Test that version can be split into major/minor/point components."""
-        version = await client.framework_version()
-        version_str = version["version"]
+        version = msf.framework_version()
 
         # Split on . and -
-        parts = re.split(r"[.-]", version_str)
+        parts = re.split(r"[.-]", version)
         assert len(parts) >= 3, "Version should have at least major.minor.point"
 
         major, minor, point = parts[0:3]
@@ -46,66 +48,69 @@ class TestFrameworkVersion:
         assert int(major) >= 6, "Major version should be 6 or higher"
 
 
-@pytest.mark.integration
 class TestFrameworkModuleManager:
     """Tests for framework module management."""
 
-    async def test_list_exploits_not_empty(self, client):
+    def test_list_exploits_not_empty(self, msf_init):
         """Test that framework has exploits loaded."""
-        exploits = await client.list_modules("exploit")
+        exploits = msf.list_modules("exploit")
         assert len(exploits) > 0, "Framework should have exploits loaded"
 
-    async def test_list_auxiliary_not_empty(self, client):
+    def test_list_auxiliary_not_empty(self, msf_init):
         """Test that framework has auxiliary modules loaded."""
-        auxiliary = await client.list_modules("auxiliary")
-        assert len(auxiliary) > 0, (
-            "Framework should have auxiliary modules loaded"
-        )
+        auxiliary = msf.list_modules("auxiliary")
+        assert len(auxiliary) > 0, "Framework should have auxiliary modules loaded"
 
-    async def test_list_payloads_not_empty(self, client):
+    def test_list_payloads_not_empty(self, msf_init):
         """Test that framework has payloads loaded."""
-        payloads = await client.list_modules("payload")
+        payloads = msf.list_modules("payload")
         assert len(payloads) > 0, "Framework should have payloads loaded"
 
-    async def test_search_finds_known_modules(self, client):
-        """Test that search can find well-known modules."""
-        # Search for vsftpd - should find the backdoor exploit
-        results = await client.search("vsftpd")
-        assert len(results) > 0, "Search should find vsftpd modules"
-        assert any("vsftpd_234_backdoor" in r for r in results)
+    def test_list_post_not_empty(self, msf_init):
+        """Test that framework has post modules loaded."""
+        post = msf.list_modules("post")
+        assert len(post) > 0, "Framework should have post modules loaded"
 
-    async def test_search_with_type_filter(self, client):
+    def test_list_encoders_not_empty(self, msf_init):
+        """Test that framework has encoders loaded."""
+        encoders = msf.list_modules("encoder")
+        assert len(encoders) > 0, "Framework should have encoders loaded"
+
+    def test_list_nops_not_empty(self, msf_init):
+        """Test that framework has NOP modules loaded."""
+        nops = msf.list_modules("nop")
+        assert len(nops) > 0, "Framework should have NOP modules loaded"
+
+    def test_search_finds_known_modules(self, msf_init):
+        """Test that search can find well-known modules."""
+        # Search for samba - should find SambaCry and other samba modules
+        results = msf.search("samba")
+        assert len(results) > 0, "Search should find samba modules"
+        assert any("is_known_pipename" in r for r in results)
+
+    def test_search_with_type_filter(self, msf_init):
         """Test search with type filtering."""
         # Search with type filter
-        results = await client.search("type:exploit vsftpd")
+        results = msf.search("type:exploit samba")
         assert len(results) > 0
         # All results should be exploits
         for result in results:
             assert "exploit/" in result
 
 
-@pytest.mark.integration
-class TestFrameworkThreads:
-    """Tests for framework thread management."""
-
-    async def test_threads_returns_count(self, client):
-        """Test that threads returns a numeric count."""
-        threads = await client.threads()
-        assert isinstance(threads, int)
-        assert threads >= 0
-
-
-@pytest.mark.integration
 class TestFrameworkSessions:
     """Tests for framework session management."""
 
-    async def test_list_sessions_returns_list(self, client):
+    def test_list_sessions_returns_list(self, msf_init):
         """Test that list_sessions returns a list."""
-        sessions = await client.list_sessions()
+        sessions = msf.list_sessions()
         assert isinstance(sessions, list)
 
-    async def test_list_sessions_initially_empty(self, client):
-        """Test that sessions list starts empty."""
-        sessions = await client.list_sessions()
-        # May or may not be empty depending on test state
-        assert isinstance(sessions, list)
+
+class TestFrameworkJobs:
+    """Tests for framework job management."""
+
+    def test_job_list_returns_list(self, msf_init):
+        """Test that job_list returns a list."""
+        jobs = msf.job_list()
+        assert isinstance(jobs, list)

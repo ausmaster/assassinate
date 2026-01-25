@@ -1,34 +1,53 @@
 """Hideout module for managing the assassination framework runtime.
 
 The Hideout is where the hitman operates from. It handles:
-- Environment verification (delegates to assassinate-setup)
-- Daemon lifecycle management
-- Framework client initialization
+- Environment verification and setup
+- Framework initialization (direct Pyo3 bridge to Ruby/MSF)
+- Ruby environment detection and configuration
+- Arsenal access for weapon discovery
+- Contract creation for targeted operations
+- Kill tracking for compromised assets
 
 For installation/setup, use: assassinate-setup --install
+
+Example:
+    >>> from assassinate import Hideout, Target
+    >>>
+    >>> with Hideout() as hideout:
+    ...     # Find weapons
+    ...     weapons = hideout.arsenal.find("samba", type="exploit")
+    ...     weapon = weapons[0]
+    ...
+    ...     # Create contract
+    ...     target = Target("192.168.1.100")
+    ...     contract = hideout.contract(target, weapon)
+    ...     contract.configure(SMB_SHARE_NAME="myshare")
+    ...
+    ...     # Profile and execute
+    ...     if contract.profile():
+    ...         kill = contract.execute()
+    ...         if kill:
+    ...             print(kill.interrogate("whoami"))
 """
 
 from __future__ import annotations
 
-from glob import glob
+import os
 from os import environ
 from pathlib import Path
-from subprocess import (
-    DEVNULL,
-    PIPE,
-    CalledProcessError,
-    Popen,
-    TimeoutExpired,
-    run,
-)
-from time import sleep, time
-from typing import TYPE_CHECKING
+from subprocess import DEVNULL, CalledProcessError, TimeoutExpired, run
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-from assassinate.bridge import Framework, get_version, initialize
+import msf
 from assassinate.log_config import get_logger
 
 if TYPE_CHECKING:
     from types import TracebackType
+    from assassinate.arsenal import Arsenal
+    from assassinate.contract import Contract, MassContract
+    from assassinate.kill import Kill
+    from assassinate.target import Target
+    from assassinate.weapon import Bullet, Weapon
 
 logger = get_logger("hideout")
 
@@ -36,13 +55,11 @@ logger = get_logger("hideout")
 try:
     from setup.installer import (
         PROJECT_ROOT,
-        RUST_DIR,
         MSF_CLONE_PATH,
     )
 except ImportError:
     # Fallback if setup module not available
     PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-    RUST_DIR = PROJECT_ROOT / "rust"
     MSF_CLONE_PATH = Path("/opt/metasploit-framework")
 
 # Known safehouse locations (MSF installation paths)
@@ -50,38 +67,50 @@ KNOWN_SAFEHOUSES = [
     Path("/opt/metasploit-framework"),
     Path("/opt/metasploit-framework/embedded/framework"),
     Path("/usr/share/metasploit-framework"),
+    Path.home() / "Projects" / "metasploit-framework",
 ]
 
 
 class Hideout:
     """The Hideout - operational headquarters for assassination missions.
 
-    Manages the runtime environment including daemon lifecycle and
-    Framework client connections.
+    Manages the runtime environment and provides access to the full
+    Metasploit Framework arsenal through the embedded Ruby VM.
+
+    The Hideout is your base of operations. From here you can:
+    - Access the full MSF module arsenal (exploits, payloads, auxiliary)
+    - Create contracts for targeted assassinations
+    - Execute precision strikes against targets
+    - Track confirmed kills (active sessions)
+    - Plan and execute complex multi-stage operations
 
     Note:
         For installation, use: assassinate-setup --install
         Hideout assumes the environment is already set up.
 
     Attributes:
-        framework: Connected Framework client instance
         version: Framework version string
-        daemon_process: Running daemon process handle
         safehouse: Path to MSF installation
-        ruby_cmd: Path to Ruby executable
-        bundle_cmd: Path to Bundler executable
-        ruby_env: Environment variables for Ruby execution
+        arsenal: Weapon search and discovery
+
+    Example:
+        >>> with Hideout() as hideout:
+        ...     # Search for weapons
+        ...     weapons = hideout.arsenal.find("smb", rank="excellent")
+        ...
+        ...     # Create and execute a contract
+        ...     contract = hideout.contract("192.168.1.100", weapons[0])
+        ...     if contract.profile():
+        ...         kill = contract.execute()
+        ...         print(kill.interrogate("id"))
     """
 
     __slots__ = (
-        "framework",
         "version",
-        "daemon_process",
         "safehouse",
-        "ruby_cmd",
-        "bundle_cmd",
-        "ruby_env",
-        "_omnibus_root",
+        "_initialized",
+        "_arsenal",
+        "_kills",
     )
 
     def __init__(self, skip_verify: bool = False):
@@ -94,52 +123,32 @@ class Hideout:
             RuntimeError: If environment not ready or initialization fails
         """
         logger.debug("Establishing hideout...")
-        self.daemon_process: Popen[bytes] | None = None
-        self.framework: Framework | None = None
+        self._initialized = False
         self.version: str | None = None
+        self._arsenal: Optional["Arsenal"] = None
+        self._kills: Dict[int, "Kill"] = {}
 
-        # Discover environment paths
+        # Discover the safehouse (MSF installation)
         self.safehouse = self._locate_safehouse()
-        self._omnibus_root: Path | None = None
-        self.ruby_cmd, self.bundle_cmd, self.ruby_env = (
-            self._identify_ruby_environment()
-        )
+        logger.debug(f"Safehouse located: {self.safehouse}")
 
-        logger.debug(f"Safehouse: {self.safehouse}")
-
-        # Verify environment is ready (delegates to setup)
+        # Verify environment is ready
         if not skip_verify:
             self._verify_environment()
 
         try:
-            # Start daemon if not already running
-            if not self._is_daemon_active():
-                self._deploy_daemon()
-            else:
-                logger.info("Daemon already active")
+            # Initialize the framework (embeds Ruby VM directly)
+            if not msf.is_initialized():
+                logger.info("Initializing framework connection...")
+                msf.init_msf(str(self.safehouse))
 
-            # Initialize Framework client
-            initialize()
-            self.framework = Framework()
-            self.version = get_version()
-            logger.info(
-                f"Hideout established successfully, version={self.version}"
-            )
-        except RuntimeError:
-            logger.error("Failed to establish hideout")
-            self.cleanup()
-            raise
-        except (OSError, IOError) as e:
-            logger.error(f"IO error during hideout setup: {e}")
-            self.cleanup()
-            raise RuntimeError(f"Failed to establish hideout: {e}") from e
-        except (CalledProcessError, TimeoutExpired) as e:
-            logger.error(f"Process error during hideout setup: {e}")
-            self.cleanup()
-            raise RuntimeError(f"Failed to establish hideout: {e}") from e
+            self.version = msf.framework_version()
+            self._initialized = True
+            logger.info(f"Hideout established - Framework v{self.version}")
 
-    def __del__(self) -> None:
-        self.cleanup()
+        except Exception as e:
+            logger.error(f"Failed to establish hideout: {e}")
+            raise RuntimeError(f"Failed to establish hideout: {e}") from e
 
     def __enter__(self) -> Hideout:
         return self
@@ -150,185 +159,354 @@ class Hideout:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> bool:
-        self.cleanup()
+        self.evacuate()
         return False
 
-    def cleanup(self) -> None:
-        """Clean up all resources and evacuate the hideout."""
-        logger.debug("Evacuating hideout...")
-        self._recall_daemon()
-        try:
-            run(["rm", "-f", "/dev/shm/assassinate_msf_ipc*"], stderr=DEVNULL)
-            logger.debug("Cleared dead drops (shared memory)")
-        except (OSError, FileNotFoundError) as e:
-            logger.warning(f"Failed to clear dead drops: {e}")
+    def evacuate(self) -> None:
+        """Evacuate the hideout and clean up resources.
 
-    def verify_environment(self) -> None:
-        """Verify environment is ready via assassinate-setup.
-
-        Raises:
-            RuntimeError: If environment verification fails.
+        Kills all active sessions and cleans up.
         """
-        self._verify_environment()
+        logger.debug("Evacuating hideout...")
+        # Kill any remaining sessions
+        try:
+            for sid in msf.list_sessions():
+                try:
+                    msf.kill_session(sid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._kills.clear()
+        logger.info("Hideout evacuated")
 
     # =========================================================================
-    # Daemon Lifecycle
+    # Arsenal Access
     # =========================================================================
 
-    def _is_daemon_active(self) -> bool:
-        """Check if daemon is active via shared memory files."""
-        try:
-            return len(glob("/dev/shm/assassinate_msf_ipc*")) > 0
-        except (OSError, PermissionError) as e:
-            logger.warning(f"Cannot check daemon status: {e}")
-            return False
+    @property
+    def arsenal(self) -> "Arsenal":
+        """Access the weapon arsenal for search and discovery.
 
-    def _deploy_daemon(
-        self, log_level: str = "info", timeout: int = 15
-    ) -> None:
-        """Deploy the daemon operative."""
-        logger.info("Deploying daemon operative...")
+        Returns:
+            Arsenal instance for finding weapons
 
-        # Locate daemon binary
-        cargo_target_dir = environ.get("CARGO_TARGET_DIR")
-        if cargo_target_dir:
-            daemon_path = Path(cargo_target_dir) / "release" / "daemon"
-        else:
-            daemon_path = RUST_DIR / "daemon" / "target" / "release" / "daemon"
+        Example:
+            >>> weapons = hideout.arsenal.find("samba", type="exploit")
+            >>> weapon = hideout.arsenal.get("exploit/linux/samba/is_known_pipename")
+        """
+        if self._arsenal is None:
+            from assassinate.arsenal import Arsenal
+            self._arsenal = Arsenal(self)
+        return self._arsenal
 
-        if not daemon_path.exists():
-            logger.error(f"Daemon binary not found: {daemon_path}")
-            raise RuntimeError(
-                f"Daemon not found at {daemon_path}. "
-                "Run: assassinate-setup --install"
-            )
+    # =========================================================================
+    # Contract Creation
+    # =========================================================================
 
-        # Clean up any previous operations
-        logger.debug("Cleaning up previous operations...")
-        try:
-            run(["pkill", "-f", "daemon.*msf-root"], stderr=DEVNULL)
-        except (OSError, FileNotFoundError):
-            pass
-        sleep(0.5)
+    def contract(
+        self,
+        target: Union["Target", str],
+        weapon: Union["Weapon", str],
+        bullet: Optional[Union["Bullet", str]] = None,
+    ) -> "Contract":
+        """Create a contract for a hit.
 
-        try:
-            run(["rm", "-f", "/dev/shm/assassinate_msf_ipc*"], stderr=DEVNULL)
-        except (OSError, FileNotFoundError):
-            pass
+        Args:
+            target: Target object or IP string
+            weapon: Weapon object or module name
+            bullet: Bullet object or name (auto-selected if not provided)
 
-        # Build environment
-        env = self.ruby_env.copy()
-        if "ASSASSINATE_WORKSPACE" not in env:
-            env["ASSASSINATE_WORKSPACE"] = "default"
+        Returns:
+            Contract ready for configuration and execution
 
-        # Deploy
-        logger.debug(f"Deploying: {daemon_path} --log-level {log_level}")
-        try:
-            self.daemon_process = Popen(
-                [
-                    str(daemon_path),
-                    "--msf-root",
-                    str(self.safehouse),
-                    "--log-level",
-                    log_level,
-                ],
-                stdout=PIPE,
-                stderr=PIPE,
-                env=env,
-            )
-            logger.debug(f"Daemon deployed, pid={self.daemon_process.pid}")
-        except FileNotFoundError:
-            logger.error(f"Daemon not found: {daemon_path}")
-            raise RuntimeError(
-                f"Daemon not found: {daemon_path}. "
-                "Run: assassinate-setup --install"
-            )
-        except PermissionError:
-            logger.error(f"Permission denied: {daemon_path}")
-            raise RuntimeError(f"Permission denied: {daemon_path}")
-        except OSError as e:
-            logger.error(f"Failed to deploy daemon: {e}")
-            raise RuntimeError(f"Failed to deploy daemon: {e}")
+        Example:
+            >>> contract = hideout.contract(
+            ...     target="192.168.1.100",
+            ...     weapon="exploit/linux/samba/is_known_pipename"
+            ... )
+            >>> contract.configure(SMB_SHARE_NAME="myshare")
+            >>> if contract.profile():
+            ...     kill = contract.execute()
+        """
+        from assassinate.contract import Contract
+        return Contract(target, weapon, bullet)
 
-        # Wait for daemon to become active
-        logger.debug(f"Waiting for daemon (timeout={timeout}s)...")
-        start = time()
-        while time() - start < timeout:
-            if self.daemon_process.poll() is not None:
-                logger.debug("Daemon exited prematurely")
-                break
-            if self._is_daemon_active():
-                logger.info("Daemon operative deployed successfully")
-                return
-            sleep(0.5)
+    def mass_contract(
+        self,
+        targets: List[Union["Target", str]],
+        weapon: Union["Weapon", str],
+        bullet: Optional[Union["Bullet", str]] = None,
+        max_parallel: int = 10,
+    ) -> "MassContract":
+        """Create a mass contract for parallel attacks.
 
-        # Daemon failed
-        logger.error("Daemon failed to deploy")
-        stdout_data, stderr_data = b"", b""
-        if self.daemon_process and self.daemon_process.poll() is not None:
+        Args:
+            targets: List of targets (Target objects or IP strings)
+            weapon: Weapon to use for all targets
+            bullet: Bullet to use (auto-selected if not provided)
+            max_parallel: Maximum concurrent operations
+
+        Returns:
+            MassContract ready for configuration and mass execution
+
+        Example:
+            >>> targets = ["192.168.1.100", "192.168.1.101", "192.168.1.102"]
+            >>> mass = hideout.mass_contract(targets, weapon)
+            >>> mass.configure(SMB_SHARE_NAME="myshare")
+            >>> kills = mass.massacre()
+        """
+        from assassinate.contract import MassContract
+        return MassContract(targets, weapon, bullet, max_parallel)
+
+    # =========================================================================
+    # Quick Operations
+    # =========================================================================
+
+    def quick_hit(
+        self,
+        target: Union["Target", str],
+        weapon: Union["Weapon", str],
+        bullet: Optional[Union["Bullet", str]] = None,
+        timeout: int = 60,
+        **options: Any,
+    ) -> Optional["Kill"]:
+        """One-liner: configure and execute immediately.
+
+        Convenience method for quick exploitation without managing
+        Contract objects manually.
+
+        Args:
+            target: Target object or IP string
+            weapon: Weapon object or module name
+            bullet: Bullet (auto-selected if not provided)
+            timeout: Seconds to wait for session
+            **options: Weapon configuration options
+
+        Returns:
+            Kill on success, None on failure
+
+        Example:
+            >>> kill = hideout.quick_hit(
+            ...     target="192.168.1.100",
+            ...     weapon="exploit/linux/samba/is_known_pipename",
+            ...     SMB_SHARE_NAME="myshare"
+            ... )
+            >>> if kill:
+            ...     print(kill.interrogate("id"))
+        """
+        contract = self.contract(target, weapon, bullet)
+        contract.configure(**options)
+        kill = contract.execute(timeout)
+
+        if kill:
+            self._kills[kill.id] = kill
+
+        return kill
+
+    # =========================================================================
+    # Kill Management (Active Sessions)
+    # =========================================================================
+
+    def kills(self) -> List["Kill"]:
+        """Get all confirmed kills (active sessions).
+
+        Returns:
+            List of Kill objects for active sessions
+
+        Example:
+            >>> for kill in hideout.kills():
+            ...     print(f"{kill.host}: {kill.interrogate('whoami')}")
+        """
+        from assassinate.kill import Kill
+
+        result = []
+        for sid in msf.list_sessions():
+            # Check if we have a cached Kill
+            if sid in self._kills:
+                kill = self._kills[sid]
+                if kill.confirmed:
+                    result.append(kill)
+                else:
+                    del self._kills[sid]
+            else:
+                # Create new Kill wrapper
+                session = msf.get_session(sid)
+                if session:
+                    kill = Kill(session)
+                    self._kills[sid] = kill
+                    result.append(kill)
+
+        return result
+
+    def get_kill(self, session_id: int) -> Optional["Kill"]:
+        """Get a specific kill by session ID.
+
+        Args:
+            session_id: Session ID to retrieve
+
+        Returns:
+            Kill object or None if not found
+        """
+        from assassinate.kill import Kill
+
+        if session_id in self._kills:
+            kill = self._kills[session_id]
+            if kill.confirmed:
+                return kill
+            del self._kills[session_id]
+
+        session = msf.get_session(session_id)
+        if session:
+            kill = Kill(session)
+            self._kills[session_id] = kill
+            return kill
+
+        return None
+
+    def silence_all(self) -> int:
+        """Silence all kills (terminate all sessions).
+
+        Returns:
+            Number of sessions terminated
+        """
+        count = 0
+        for kill in self.kills():
             try:
-                stdout_data, stderr_data = self.daemon_process.communicate(
-                    timeout=5
-                )
-            except TimeoutExpired:
-                logger.warning("Timeout reading daemon output")
-                self.daemon_process.kill()
-                stdout_data, stderr_data = self.daemon_process.communicate()
-            except (OSError, ValueError) as e:
-                logger.warning(f"Error reading daemon output: {e}")
+                kill.silence()
+                count += 1
+            except Exception:
+                pass
+        self._kills.clear()
+        return count
 
-        self._recall_daemon()
-        try:
-            run(["rm", "-f", "/dev/shm/assassinate_msf_ipc*"], stderr=DEVNULL)
-        except (OSError, FileNotFoundError):
-            pass
+    # =========================================================================
+    # Legacy Arsenal Access - Module Operations
+    # =========================================================================
 
-        raise RuntimeError(
-            f"Daemon failed to deploy:\n"
-            f"STDOUT: {stdout_data.decode()}\n"
-            f"STDERR: {stderr_data.decode()}"
-        )
+    def arm(self, weapon_name: str) -> msf.AnyModule:
+        """Arm a weapon from the arsenal (legacy method).
 
-    def _recall_daemon(self) -> None:
-        """Recall (stop) the daemon operative."""
-        proc = getattr(self, "daemon_process", None)
-        if not proc:
-            return
+        Loads and configures an MSF module for use.
+        Prefer using `hideout.arsenal.get()` for new code.
 
-        logger.debug(f"Recalling daemon, pid={proc.pid}")
+        Args:
+            weapon_name: Full module path (e.g., "exploit/linux/samba/is_known_pipename")
 
-        # Graceful termination
-        try:
-            proc.terminate()
-            logger.debug("Sent recall signal (SIGTERM)")
-        except OSError as e:
-            logger.warning(f"Error recalling daemon: {e}")
-            self.daemon_process = None
-            return
+        Returns:
+            Armed module ready for configuration and execution.
 
-        # Wait for termination
-        try:
-            proc.wait(timeout=5)
-            logger.debug("Daemon recalled gracefully")
-        except TimeoutExpired:
-            logger.warning("Daemon not responding, forcing recall (SIGKILL)")
-            try:
-                proc.kill()
-            except OSError as e:
-                logger.warning(f"Error forcing recall: {e}")
+        Example:
+            >>> weapon = hideout.arm("exploit/unix/ftp/vsftpd_234_backdoor")
+            >>> weapon.options.RHOSTS = "192.168.1.100"
+            >>> asset = weapon.execute("cmd/unix/interact")
+        """
+        logger.debug(f"Arming weapon: {weapon_name}")
+        return msf.create_module(weapon_name)
 
-            try:
-                proc.wait(timeout=2)
-                logger.debug("Daemon forcefully recalled")
-            except TimeoutExpired:
-                logger.error("Daemon did not respond to SIGKILL")
-            except OSError as e:
-                logger.warning(f"Error waiting for daemon: {e}")
-        except OSError as e:
-            logger.warning(f"Error waiting for daemon: {e}")
+    def recon(self, query: str) -> List[str]:
+        """Reconnaissance - search the arsenal for available weapons (legacy method).
 
-        self.daemon_process = None
-        logger.info("Daemon operative recalled")
+        Prefer using `hideout.arsenal.find()` for new code.
+
+        Args:
+            query: Search query (supports MSF search syntax)
+
+        Returns:
+            List of matching module names.
+
+        Example:
+            >>> weapons = hideout.recon("type:exploit smb")
+            >>> for w in weapons[:5]:
+            ...     print(f"  → {w}")
+        """
+        logger.debug(f"Recon query: {query}")
+        return msf.search(query)
+
+    def inventory(self, module_type: str) -> List[str]:
+        """Get full inventory of weapons by type (legacy method).
+
+        Args:
+            module_type: Type of modules ("exploit", "auxiliary", "payload", etc.)
+
+        Returns:
+            List of all module names of that type.
+
+        Example:
+            >>> exploits = hideout.inventory("exploit")
+            >>> print(f"Arsenal contains {len(exploits)} exploits")
+        """
+        return msf.list_modules(module_type)
+
+    # =========================================================================
+    # Legacy Asset Management - Sessions
+    # =========================================================================
+
+    def assets(self) -> List[int]:
+        """List all compromised assets (active sessions) (legacy method).
+
+        Prefer using `hideout.kills()` for new code.
+
+        Returns:
+            List of session IDs.
+
+        Example:
+            >>> for sid in hideout.assets():
+            ...     asset = hideout.get_asset(sid)
+            ...     print(f"Asset {sid}: {asset.host}")
+        """
+        return msf.list_sessions()
+
+    def get_asset(self, session_id: int) -> Optional[msf.Session]:
+        """Retrieve a compromised asset by ID (legacy method).
+
+        Prefer using `hideout.get_kill()` for new code.
+
+        Args:
+            session_id: Session ID to retrieve.
+
+        Returns:
+            Session object or None if not found.
+        """
+        return msf.get_session(session_id)
+
+    def terminate_asset(self, session_id: int) -> bool:
+        """Terminate a compromised asset (kill session) (legacy method).
+
+        Args:
+            session_id: Session ID to terminate.
+
+        Returns:
+            True if successfully terminated.
+        """
+        logger.debug(f"Terminating asset {session_id}")
+        if session_id in self._kills:
+            del self._kills[session_id]
+        return msf.kill_session(session_id)
+
+    # =========================================================================
+    # Operations Management - Jobs
+    # =========================================================================
+
+    def active_ops(self) -> List[int]:
+        """List active operations (background jobs).
+
+        Returns:
+            List of job IDs.
+        """
+        return msf.job_list()
+
+    def abort_op(self, job_id: int) -> bool:
+        """Abort an active operation.
+
+        Args:
+            job_id: Job ID to abort.
+
+        Returns:
+            True if successfully aborted.
+        """
+        logger.debug(f"Aborting operation {job_id}")
+        return msf.job_kill(job_id)
 
     # =========================================================================
     # Environment Verification
@@ -340,7 +518,7 @@ class Hideout:
         Raises:
             RuntimeError: If verification fails.
         """
-        logger.info("Verifying environment...")
+        logger.info("Verifying operational environment...")
         try:
             result = run(
                 ["assassinate-setup", "--verify"],
@@ -365,23 +543,17 @@ class Hideout:
 
     def _quick_verify(self) -> None:
         """Quick local verification when assassinate-setup not available."""
-        # Check daemon exists
-        cargo_target_dir = environ.get("CARGO_TARGET_DIR")
-        if cargo_target_dir:
-            daemon_path = Path(cargo_target_dir) / "release" / "daemon"
-        else:
-            daemon_path = RUST_DIR / "daemon" / "target" / "release" / "daemon"
-
-        if not daemon_path.exists():
-            raise RuntimeError(
-                f"Daemon not built at {daemon_path}. "
-                "Run: assassinate-setup --install"
-            )
-
         # Check MSF exists
         if not self.safehouse.exists():
             raise RuntimeError(
-                f"MSF not found at {self.safehouse}. "
+                f"Safehouse not found at {self.safehouse}. "
+                "Run: assassinate-setup --install"
+            )
+
+        # Check Gemfile exists (valid MSF installation)
+        if not (self.safehouse / "Gemfile").exists():
+            raise RuntimeError(
+                f"Invalid safehouse at {self.safehouse} (no Gemfile). "
                 "Run: assassinate-setup --install"
             )
 
@@ -402,7 +574,7 @@ class Hideout:
         # Check environment variable
         msf_root_env = environ.get("MSF_ROOT")
         if msf_root_env:
-            path = Path(msf_root_env)
+            path = Path(msf_root_env).expanduser()
             logger.debug(f"Safehouse from MSF_ROOT: {path}")
             return path
 
@@ -414,91 +586,20 @@ class Hideout:
 
         # Scan known locations
         for path in KNOWN_SAFEHOUSES:
-            if path.exists() and (path / "Gemfile").exists():
-                logger.debug(f"Safehouse (detected): {path}")
-                return path
+            expanded = path.expanduser()
+            if expanded.exists() and (expanded / "Gemfile").exists():
+                logger.debug(f"Safehouse (detected): {expanded}")
+                return expanded
 
         # Fall back to standard clone path
         logger.debug(f"Safehouse (fallback): {MSF_CLONE_PATH}")
         return MSF_CLONE_PATH
 
-    def _find_omnibus_root(self) -> Path | None:
-        """Find omnibus installation root if applicable."""
-        if self._omnibus_root is not None:
-            return self._omnibus_root
+    # =========================================================================
+    # Representation
+    # =========================================================================
 
-        try:
-            msf_path = self.safehouse.resolve()
-            # Check if inside embedded/framework
-            if len(msf_path.parts) >= 2 and msf_path.parts[-2:] == (
-                "embedded",
-                "framework",
-            ):
-                omnibus_root = msf_path.parent.parent
-                if (omnibus_root / "embedded" / "bin" / "ruby").exists():
-                    self._omnibus_root = omnibus_root
-                    return omnibus_root
-
-            # Check common omnibus path
-            omnibus_path = Path("/opt/metasploit-framework")
-            if (omnibus_path / "embedded" / "bin" / "ruby").exists():
-                self._omnibus_root = omnibus_path
-                return omnibus_path
-        except (OSError, PermissionError):
-            pass
-
-        return None
-
-    def _identify_ruby_environment(self) -> tuple[str, str, dict[str, str]]:
-        """Identify Ruby environment for daemon operations.
-
-        Checks in order:
-        1. Omnibus embedded Ruby
-        2. rbenv Ruby
-        3. System Ruby
-        """
-        ruby_cmd = "ruby"
-        bundle_cmd = "bundle"
-        env = environ.copy()
-
-        # Check for omnibus Ruby
-        omnibus_root = self._find_omnibus_root()
-        if omnibus_root:
-            embedded_bin = omnibus_root / "embedded" / "bin"
-            omnibus_ruby = embedded_bin / "ruby"
-            omnibus_bundle = embedded_bin / "bundle"
-            if omnibus_ruby.exists():
-                ruby_cmd = str(omnibus_ruby)
-                bundle_cmd = (
-                    str(omnibus_bundle) if omnibus_bundle.exists() else "bundle"
-                )
-                # Set library path for omnibus
-                embedded_lib = omnibus_root / "embedded" / "lib"
-                if embedded_lib.exists():
-                    existing = env.get("LD_LIBRARY_PATH", "")
-                    env["LD_LIBRARY_PATH"] = (
-                        f"{embedded_lib}:{existing}"
-                        if existing
-                        else str(embedded_lib)
-                    )
-                logger.debug(f"Using omnibus Ruby: {ruby_cmd}")
-                return (ruby_cmd, bundle_cmd, env)
-
-        # Check for rbenv Ruby
-        ruby_version_file = PROJECT_ROOT / ".ruby-version"
-        rbenv_root = Path.home() / ".rbenv"
-
-        if ruby_version_file.exists() and rbenv_root.exists():
-            try:
-                ruby_version = ruby_version_file.read_text().strip()
-                rbenv_bin = rbenv_root / "versions" / ruby_version / "bin"
-                if rbenv_bin.exists():
-                    ruby_cmd = str(rbenv_bin / "ruby")
-                    bundle_cmd = str(rbenv_bin / "bundle")
-                    logger.debug(f"Using rbenv Ruby {ruby_version}")
-                    return (ruby_cmd, bundle_cmd, env)
-            except (IOError, OSError) as e:
-                logger.warning(f"Cannot read .ruby-version: {e}")
-
-        logger.debug("Using system Ruby")
-        return (ruby_cmd, bundle_cmd, env)
+    def __repr__(self) -> str:
+        status = "operational" if self._initialized else "compromised"
+        kills = len(self._kills)
+        return f"<Hideout status={status} version={self.version} kills={kills}>"

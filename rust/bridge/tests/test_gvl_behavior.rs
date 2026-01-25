@@ -45,7 +45,7 @@ fn test_gvl_release_allows_ruby_threads() {
     // If GVL is properly released, the Ruby thread can run and set the flag
     println!("  Releasing GVL and sleeping for 1 second...");
     let start = Instant::now();
-    bridge::gvl::sleep_releasing_gvl(1000);
+    msf::gvl::sleep_releasing_gvl(1000);
     let elapsed = start.elapsed();
 
     println!("  Sleep completed in {:.2}s", elapsed.as_secs_f64());
@@ -115,7 +115,7 @@ fn test_without_gvl_release_blocks_ruby_threads() {
     }
 
     // Cleanup - release GVL briefly so thread can complete
-    bridge::gvl::sleep_releasing_gvl(300);
+    msf::gvl::sleep_releasing_gvl(300);
     let _: Value = ruby.eval("$gvl_test_thread2.join rescue nil").unwrap_or_else(|_| ruby.qnil().as_value());
 
     // We expect the flag to be false (thread blocked), but don't fail if Ruby was clever
@@ -151,7 +151,7 @@ fn test_poll_releasing_gvl_pattern() {
     let mut poll_count = 0;
 
     // Use our poll_releasing_gvl utility
-    let completed = bridge::gvl::poll_releasing_gvl(
+    let completed = msf::gvl::poll_releasing_gvl(
         || {
             poll_count += 1;
             let done: bool = ruby.eval("$poll_test_done").unwrap_or(false);
@@ -225,7 +225,7 @@ fn test_msf_job_simulation() {
     let mut session_found = false;
 
     // Poll for session
-    let completed = bridge::gvl::poll_releasing_gvl(
+    let completed = msf::gvl::poll_releasing_gvl(
         || {
             let count: i64 = ruby.eval("$msf_sessions.length").unwrap_or(0);
             if count > 0 {

