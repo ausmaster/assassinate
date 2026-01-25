@@ -74,10 +74,14 @@ pyo3_wrap!(PySession, session, fs_expand_path(path: &str) -> String);
 pyo3_wrap!(PySession, session, fs_download_file(local_path: &str, remote_path: &str) -> String);
 pyo3_wrap!(PySession, session, fs_upload_file(remote_path: &str, local_path: &str) -> ());
 pyo3_wrap_json!(PySession, session, fs_stat(path: &str));
+// Meterpreter gap methods (4.5D)
+pyo3_wrap!(PySession, session, fs_md5(path: &str) -> String);
+pyo3_wrap!(PySession, session, fs_sha1(path: &str) -> String);
 
 // Meterpreter Process
 pyo3_wrap!(PySession, session, process_getpid() -> i64);
 pyo3_wrap!(PySession, session, process_kill(pid: i64) -> ());
+pyo3_wrap!(PySession, session, process_open(pid: i64, perms: i64) -> i64);
 pyo3_wrap_json_vec!(PySession, session, process_list());
 
 // Meterpreter System
@@ -87,6 +91,7 @@ pyo3_wrap!(PySession, session, sys_is_system() -> bool);
 pyo3_wrap!(PySession, session, sys_localtime() -> String);
 pyo3_wrap!(PySession, session, sys_getprivs() -> Vec<String>);
 pyo3_wrap_json!(PySession, session, sys_sysinfo());
+pyo3_wrap!(PySession, session, sys_steal_token(pid: i64) -> bool);
 pyo3_wrap_json_vec!(PySession, session, sys_getdrivers());
 
 // Meterpreter Network
@@ -162,6 +167,18 @@ impl PySession {
     /// Get an environment variable
     fn sys_getenv(&self, var_name: &str) -> PyResult<Option<String>> {
         Ok(self.session.sys_getenv(var_name)?)
+    }
+
+    /// Search for files matching a pattern
+    fn fs_search(
+        &self,
+        py: Python<'_>,
+        root: &str,
+        pattern: &str,
+        recurse: Option<bool>,
+    ) -> PyResult<PyObject> {
+        let results = self.session.fs_search(root, pattern, recurse.unwrap_or(true))?;
+        json_to_py(py, &serde_json::json!(results))
     }
 
     /// Get multiple environment variables
@@ -434,6 +451,68 @@ impl MsfModule {
     fn _missing_required(&self) -> PyResult<Vec<String>> {
         Ok(self.module.missing_required()?)
     }
+
+    // ========== Exploit Target Constraints (4.5C) ==========
+
+    /// Get available payload space for current target
+    fn payload_space(&self) -> PyResult<Option<i64>> {
+        Ok(self.module.payload_space()?)
+    }
+
+    /// Get bad characters to avoid in payloads for current target
+    fn payload_badchars(&self, py: Python<'_>) -> PyResult<PyObject> {
+        use pyo3::types::PyBytes;
+        let badchars = self.module.payload_badchars()?;
+        Ok(PyBytes::new_bound(py, &badchars).into())
+    }
+
+    /// Get platform of current target
+    fn target_platform(&self) -> PyResult<Option<String>> {
+        Ok(self.module.target_platform()?)
+    }
+
+    /// Get architecture of current target
+    fn target_arch(&self) -> PyResult<Option<String>> {
+        Ok(self.module.target_arch()?)
+    }
+
+    /// Get current target index
+    fn target_index(&self) -> PyResult<Option<i64>> {
+        Ok(self.module.target_index()?)
+    }
+
+    /// Perform detailed vulnerability check
+    fn check_detailed(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let result = self.module.check_detailed()?;
+        json_to_py(py, &result)
+    }
+
+    // ========== NOP Module Operations ==========
+
+    /// Generate a NOP sled of specified length
+    ///
+    /// This is only valid for NOP modules (nop/*).
+    ///
+    /// # Arguments
+    /// * `length` - Desired length of the NOP sled in bytes
+    /// * `badchars` - Optional bytes to avoid in output
+    /// * `save_registers` - Optional list of registers to preserve
+    ///
+    /// # Returns
+    /// NOP sled bytes as PyBytes
+    #[pyo3(signature = (length, badchars=None, save_registers=None))]
+    fn generate_sled(
+        &self,
+        py: Python<'_>,
+        length: i32,
+        badchars: Option<Vec<u8>>,
+        save_registers: Option<Vec<String>>,
+    ) -> PyResult<PyObject> {
+        use pyo3::types::PyBytes;
+
+        let sled = self.module.generate_sled(length, badchars.as_deref(), save_registers)?;
+        Ok(PyBytes::new_bound(py, &sled).into())
+    }
 }
 
 // =============================================================================
@@ -491,6 +570,41 @@ fn pyo3_is_initialized() -> bool {
 #[pyfunction]
 fn framework_version() -> PyResult<String> {
     Ok(with_framework(|fw| fw.version())?)
+}
+
+/// Get module statistics (counts by type)
+///
+/// Returns a dictionary mapping module types to their counts.
+///
+/// Example:
+///     {"exploits": 2500, "auxiliary": 1200, "post": 400, ...}
+#[pyfunction]
+fn module_stats(py: Python<'_>) -> PyResult<PyObject> {
+    let stats = with_framework(|fw| fw.module_stats())?;
+    json_to_py(py, &serde_json::json!(stats))
+}
+
+/// Add a custom module path to the framework
+///
+/// The path must contain top-level directories for module types
+/// (exploits, auxiliary, post, encoders, nops, payloads, evasion).
+///
+/// Returns a dictionary with counts of modules loaded from the new path.
+#[pyfunction]
+fn add_module_path(py: Python<'_>, path: &str) -> PyResult<PyObject> {
+    let stats = with_framework(|fw| fw.add_module_path(path))?;
+    json_to_py(py, &serde_json::json!(stats))
+}
+
+/// Hot reload all framework modules
+///
+/// Reloads all modules from their source files, picking up any changes.
+///
+/// Returns a dictionary with counts of modules reloaded by type.
+#[pyfunction]
+fn reload_modules(py: Python<'_>) -> PyResult<PyObject> {
+    let stats = with_framework(|fw| fw.reload_modules())?;
+    json_to_py(py, &serde_json::json!(stats))
 }
 
 /// List all modules of a given type
@@ -597,6 +711,28 @@ fn kill_session(session_id: i64) -> PyResult<bool> {
     })?)
 }
 
+/// Create a shell session from a raw bind shell
+///
+/// Connects to a bind shell (like netcat or socat) and creates an MSF session.
+/// This is useful for integrating with pre-existing shells or testing.
+///
+/// # Arguments
+///
+/// * `host` - Target host running the bind shell
+/// * `port` - Port the bind shell is listening on
+/// * `timeout` - Connection timeout in seconds
+///
+/// # Returns
+///
+/// Session ID on success
+#[pyfunction]
+fn create_shell_session(host: &str, port: u16, timeout: Option<u32>) -> PyResult<i64> {
+    Ok(with_framework(|framework| {
+        let session_manager = framework.sessions()?;
+        session_manager.create_shell_session(host, port, timeout.unwrap_or(30))
+    })?)
+}
+
 /// Sleep while releasing the Ruby GVL
 ///
 /// Useful for allowing other Ruby threads to run during long operations.
@@ -633,6 +769,667 @@ fn job_kill(job_id: &str) -> PyResult<bool> {
 }
 
 // =============================================================================
+// Payload Generation Functions (Tier 2)
+// =============================================================================
+
+/// Generate raw payload bytes
+///
+/// # Arguments
+///
+/// * `payload_name` - Full payload path (e.g., "linux/x64/meterpreter/reverse_tcp")
+/// * `options` - Optional dict of payload options (LHOST, LPORT, etc.)
+///
+/// # Returns
+///
+/// Raw shellcode bytes as `PyBytes`
+#[pyfunction]
+#[pyo3(signature = (payload_name, options=None))]
+fn forge_payload(
+    py: Python<'_>,
+    payload_name: &str,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyObject> {
+    use crate::framework::PayloadGenerator;
+    use pyo3::types::PyBytes;
+
+    let opts = pydict_to_options(options)?;
+
+    let bytes = with_framework(|framework| {
+        let generator = PayloadGenerator::new(framework)?;
+        generator.generate(payload_name, opts)
+    })?;
+
+    Ok(PyBytes::new_bound(py, &bytes).into())
+}
+
+/// Generate encoded payload bytes
+///
+/// # Arguments
+///
+/// * `payload_name` - Full payload path (e.g., "windows/meterpreter/reverse_tcp")
+/// * `encoder` - Optional encoder (e.g., "x86/shikata_ga_nai")
+/// * `iterations` - Optional number of encoding iterations
+/// * `options` - Optional dict of payload options (LHOST, LPORT, etc.)
+///
+/// # Returns
+///
+/// Encoded shellcode bytes as `PyBytes`
+#[pyfunction]
+#[pyo3(signature = (payload_name, encoder=None, iterations=None, options=None))]
+fn forge_encoded(
+    py: Python<'_>,
+    payload_name: &str,
+    encoder: Option<&str>,
+    iterations: Option<i32>,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyObject> {
+    use crate::framework::PayloadGenerator;
+    use pyo3::types::PyBytes;
+
+    let opts = pydict_to_options(options)?;
+
+    let bytes = with_framework(|framework| {
+        let generator = PayloadGenerator::new(framework)?;
+        generator.generate_encoded(payload_name, encoder, iterations, opts)
+    })?;
+
+    Ok(PyBytes::new_bound(py, &bytes).into())
+}
+
+/// Generate a standalone executable payload
+///
+/// # Arguments
+///
+/// * `payload_name` - Full payload path (e.g., "windows/x64/meterpreter/reverse_https")
+/// * `platform` - Target platform ("windows", "linux", "osx")
+/// * `arch` - Target architecture ("x86", "x64")
+/// * `options` - Optional dict of payload options (LHOST, LPORT, etc.)
+///
+/// # Returns
+///
+/// Executable bytes as `PyBytes`
+#[pyfunction]
+#[pyo3(signature = (payload_name, platform, arch, options=None))]
+fn forge_executable(
+    py: Python<'_>,
+    payload_name: &str,
+    platform: &str,
+    arch: &str,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyObject> {
+    use crate::framework::PayloadGenerator;
+    use pyo3::types::PyBytes;
+
+    let opts = pydict_to_options(options)?;
+
+    let bytes = with_framework(|framework| {
+        let generator = PayloadGenerator::new(framework)?;
+        generator.generate_executable(payload_name, platform, arch, opts)
+    })?;
+
+    Ok(PyBytes::new_bound(py, &bytes).into())
+}
+
+/// List all available payloads
+///
+/// # Returns
+///
+/// List of payload reference names
+#[pyfunction]
+fn list_payloads() -> PyResult<Vec<String>> {
+    use crate::framework::PayloadGenerator;
+
+    Ok(with_framework(|framework| {
+        let generator = PayloadGenerator::new(framework)?;
+        generator.list_payloads()
+    })?)
+}
+
+/// Generate a payload in a specific output format.
+///
+/// Transforms raw shellcode into language-specific formats like C arrays,
+/// Python bytes, Ruby strings, etc.
+///
+/// # Arguments
+///
+/// * `payload_name` - Full payload path (e.g., "linux/x86/shell_reverse_tcp")
+/// * `format` - Output format: raw, hex, c, python, ruby, bash, perl, csharp, java, go, rust, powershell, base64, num, dword, js_le, js_be
+/// * `var_name` - Optional variable name (default: "buf")
+/// * `options` - Optional dict of payload options (LHOST, LPORT, etc.)
+///
+/// # Returns
+///
+/// Formatted string representation of the payload
+#[pyfunction]
+#[pyo3(signature = (payload_name, format, var_name=None, options=None))]
+fn forge_formatted(
+    payload_name: &str,
+    format: &str,
+    var_name: Option<&str>,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<String> {
+    use crate::framework::PayloadGenerator;
+
+    let opts = pydict_to_options(options)?;
+
+    let formatted = with_framework(|framework| {
+        let generator = PayloadGenerator::new(framework)?;
+        generator.generate_formatted(payload_name, format, var_name, opts)
+    })?;
+
+    Ok(formatted)
+}
+
+/// Transform raw bytes to a specific output format.
+///
+/// This is a standalone function that transforms existing bytes without
+/// generating a new payload.
+///
+/// # Arguments
+///
+/// * `buf` - Raw bytes to transform
+/// * `format` - Output format (see forge_formatted for list)
+/// * `var_name` - Optional variable name (default: "buf")
+///
+/// # Returns
+///
+/// Formatted string representation
+#[pyfunction]
+#[pyo3(signature = (buf, format, var_name=None))]
+fn transform_buffer(buf: &[u8], format: &str, var_name: Option<&str>) -> PyResult<String> {
+    use crate::framework::PayloadGenerator;
+
+    let name = var_name.unwrap_or("buf");
+    let formatted = PayloadGenerator::transform_buffer(buf, format, name)?;
+    Ok(formatted)
+}
+
+/// Generate payload with automatic encoder selection to avoid bad characters.
+///
+/// This implements MSF's encoder auto-selection logic:
+/// 1. Generate raw payload
+/// 2. Check if badchars actually exist in payload (skip encoding if not)
+/// 3. Get compatible encoders ranked by arch/platform
+/// 4. Try each encoder in ranked order until payload is clean
+///
+/// # Arguments
+///
+/// * `payload_name` - Full payload path (e.g., "linux/x86/shell_reverse_tcp")
+/// * `badchars` - Bytes to avoid in final payload (e.g., b"\x00\x0a\x0d")
+/// * `iterations` - Optional number of encoding iterations (default: 1)
+/// * `options` - Optional dict of payload options (LHOST, LPORT, etc.)
+///
+/// # Returns
+///
+/// Tuple of (encoded payload bytes, encoder name used or None if no encoding needed)
+///
+/// # Raises
+///
+/// AssassinateError if no encoder can clean the payload
+#[pyfunction]
+#[pyo3(signature = (payload_name, badchars, iterations=None, options=None))]
+fn forge_payload_with_badchars(
+    py: Python<'_>,
+    payload_name: &str,
+    badchars: &[u8],
+    iterations: Option<i32>,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<(PyObject, Option<String>)> {
+    use crate::framework::PayloadGenerator;
+    use pyo3::types::PyBytes;
+
+    let opts = pydict_to_options(options)?;
+
+    let (bytes, encoder_used) = with_framework(|framework| {
+        let generator = PayloadGenerator::new(framework)?;
+        generator.generate_with_badchars(payload_name, badchars, iterations, opts)
+    })?;
+
+    Ok((PyBytes::new_bound(py, &bytes).into(), encoder_used))
+}
+
+/// Helper to convert Python dict to Options HashMap
+fn pydict_to_options(options: Option<&Bound<'_, PyDict>>) -> PyResult<Option<Options>> {
+    match options {
+        Some(py_opts) => {
+            let mut opts = Options::new();
+            for (key, value) in py_opts.iter() {
+                let key_str: String = key.extract()?;
+                if let Ok(val) = value.extract::<bool>() {
+                    opts.insert(key_str, RubyVal::Bool(val));
+                } else if let Ok(val) = value.extract::<i64>() {
+                    opts.insert(key_str, RubyVal::Int(val));
+                } else if let Ok(val) = value.extract::<String>() {
+                    opts.insert(key_str, RubyVal::String(val));
+                }
+            }
+            Ok(Some(opts))
+        }
+        None => Ok(None),
+    }
+}
+
+// =============================================================================
+// Database Functions (Tier 3)
+// =============================================================================
+
+/// Check if database is active/connected
+#[pyfunction]
+fn db_active() -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.active()
+    })?)
+}
+
+/// Get database driver name
+#[pyfunction]
+fn db_driver() -> PyResult<String> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.driver()
+    })?)
+}
+
+/// Get all hosts from database
+#[pyfunction]
+fn db_hosts() -> PyResult<Vec<String>> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.hosts()
+    })?)
+}
+
+/// Get all services from database
+#[pyfunction]
+fn db_services() -> PyResult<Vec<String>> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.services()
+    })?)
+}
+
+/// Get all vulnerabilities from database
+#[pyfunction]
+fn db_vulns() -> PyResult<Vec<String>> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.vulns()
+    })?)
+}
+
+/// Get all credentials from database
+#[pyfunction]
+fn db_creds() -> PyResult<Vec<String>> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.creds()
+    })?)
+}
+
+/// Get all loot from database
+#[pyfunction]
+fn db_loot() -> PyResult<Vec<String>> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.loot()
+    })?)
+}
+
+/// Report a host to the database
+#[pyfunction]
+#[pyo3(signature = (options=None))]
+fn db_report_host(options: Option<&Bound<'_, PyDict>>) -> PyResult<i64> {
+    let opts = pydict_to_options(options)?;
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.report_host(opts)
+    })?)
+}
+
+/// Report a service to the database
+#[pyfunction]
+#[pyo3(signature = (options=None))]
+fn db_report_service(options: Option<&Bound<'_, PyDict>>) -> PyResult<i64> {
+    let opts = pydict_to_options(options)?;
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.report_service(opts)
+    })?)
+}
+
+/// Report a vulnerability to the database
+#[pyfunction]
+#[pyo3(signature = (options=None))]
+fn db_report_vuln(options: Option<&Bound<'_, PyDict>>) -> PyResult<i64> {
+    let opts = pydict_to_options(options)?;
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.report_vuln(opts)
+    })?)
+}
+
+/// Report a credential to the database
+#[pyfunction]
+#[pyo3(signature = (options=None))]
+fn db_report_cred(options: Option<&Bound<'_, PyDict>>) -> PyResult<i64> {
+    let opts = pydict_to_options(options)?;
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.report_cred(opts)
+    })?)
+}
+
+/// List all workspaces
+#[pyfunction]
+fn db_workspaces(py: Python<'_>) -> PyResult<PyObject> {
+    let workspaces = with_framework(|framework| {
+        let db = framework.db()?;
+        db.workspaces()
+    })?;
+    json_to_py(py, &serde_json::json!(workspaces))
+}
+
+/// Get current workspace
+#[pyfunction]
+fn db_workspace(py: Python<'_>) -> PyResult<PyObject> {
+    let workspace = with_framework(|framework| {
+        let db = framework.db()?;
+        db.workspace()
+    })?;
+    json_to_py(py, &workspace)
+}
+
+/// Set current workspace by name
+#[pyfunction]
+fn db_set_workspace(name: &str) -> PyResult<()> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.set_workspace(name)
+    })?)
+}
+
+/// Create a new workspace
+#[pyfunction]
+fn db_add_workspace(py: Python<'_>, name: &str) -> PyResult<PyObject> {
+    let workspace = with_framework(|framework| {
+        let db = framework.db()?;
+        db.add_workspace(name)
+    })?;
+    json_to_py(py, &workspace)
+}
+
+/// Find workspace by name
+#[pyfunction]
+fn db_find_workspace(py: Python<'_>, name: &str) -> PyResult<PyObject> {
+    let workspace = with_framework(|framework| {
+        let db = framework.db()?;
+        db.find_workspace(name)
+    })?;
+    match workspace {
+        Some(ws) => json_to_py(py, &ws),
+        None => Ok(py.None()),
+    }
+}
+
+/// Delete workspace by ID
+#[pyfunction]
+fn db_delete_workspace(workspace_id: i64) -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.delete_workspace(workspace_id)
+    })?)
+}
+
+/// List notes in current workspace
+#[pyfunction]
+#[pyo3(signature = (options=None))]
+fn db_notes(py: Python<'_>, options: Option<&Bound<'_, PyDict>>) -> PyResult<PyObject> {
+    let opts = pydict_to_options(options)?;
+    let notes = with_framework(|framework| {
+        let db = framework.db()?;
+        db.notes(opts)
+    })?;
+    json_to_py(py, &serde_json::json!(notes))
+}
+
+/// Report a note to the database
+#[pyfunction]
+fn db_report_note(options: &Bound<'_, PyDict>) -> PyResult<i64> {
+    let opts = pydict_to_options(Some(options))?.unwrap_or_default();
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.report_note(opts)
+    })?)
+}
+
+/// Delete notes by IDs
+#[pyfunction]
+fn db_delete_note(note_ids: Vec<i64>) -> PyResult<usize> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.delete_note(note_ids)
+    })?)
+}
+
+// =============================================================================
+// Database Query Functions (Tier 4.5B)
+// =============================================================================
+
+/// Get a single host by address
+///
+/// # Arguments
+/// * `address` - IP address of the host to find
+///
+/// # Returns
+/// Host info as dict or None if not found
+#[pyfunction]
+fn db_get_host(py: Python<'_>, address: &str) -> PyResult<PyObject> {
+    let result = with_framework(|framework| {
+        let db = framework.db()?;
+        db.get_host(address)
+    })?;
+
+    match result {
+        Some(json) => json_to_py(py, &json),
+        None => Ok(py.None()),
+    }
+}
+
+/// Get a single service by host and port
+///
+/// # Arguments
+/// * `host` - IP address of the host
+/// * `port` - Port number
+/// * `proto` - Protocol (default: "tcp")
+///
+/// # Returns
+/// Service info as dict or None if not found
+#[pyfunction]
+#[pyo3(signature = (host, port, proto=None))]
+fn db_get_service(py: Python<'_>, host: &str, port: i32, proto: Option<&str>) -> PyResult<PyObject> {
+    let result = with_framework(|framework| {
+        let db = framework.db()?;
+        db.get_service(host, port, proto)
+    })?;
+
+    match result {
+        Some(json) => json_to_py(py, &json),
+        None => Ok(py.None()),
+    }
+}
+
+/// Get a single vulnerability by query options
+///
+/// # Arguments
+/// * `options` - Query options dict (host, name, etc.)
+///
+/// # Returns
+/// Vulnerability info as dict or None if not found
+#[pyfunction]
+fn db_get_vuln(py: Python<'_>, options: &Bound<'_, PyDict>) -> PyResult<PyObject> {
+    let opts = pydict_to_options(Some(options))?.unwrap_or_default();
+    let result = with_framework(|framework| {
+        let db = framework.db()?;
+        db.get_vuln(opts)
+    })?;
+
+    match result {
+        Some(json) => json_to_py(py, &json),
+        None => Ok(py.None()),
+    }
+}
+
+/// Update a host by ID
+///
+/// # Arguments
+/// * `host_id` - Host ID
+/// * `options` - Fields to update (os_name, os_flavor, name, state)
+///
+/// # Returns
+/// True if update succeeded
+#[pyfunction]
+fn db_update_host(host_id: i64, options: &Bound<'_, PyDict>) -> PyResult<bool> {
+    let opts = pydict_to_options(Some(options))?.unwrap_or_default();
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.update_host(host_id, opts)
+    })?)
+}
+
+/// Delete a host by ID
+///
+/// # Arguments
+/// * `host_id` - Host ID to delete
+///
+/// # Returns
+/// True if delete succeeded
+#[pyfunction]
+fn db_delete_host(host_id: i64) -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.delete_host(host_id)
+    })?)
+}
+
+/// Update a service by ID
+///
+/// # Arguments
+/// * `service_id` - Service ID
+/// * `options` - Fields to update (name, state, info)
+///
+/// # Returns
+/// True if update succeeded
+#[pyfunction]
+fn db_update_service(service_id: i64, options: &Bound<'_, PyDict>) -> PyResult<bool> {
+    let opts = pydict_to_options(Some(options))?.unwrap_or_default();
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.update_service(service_id, opts)
+    })?)
+}
+
+/// Delete a service by ID
+///
+/// # Arguments
+/// * `service_id` - Service ID to delete
+///
+/// # Returns
+/// True if delete succeeded
+#[pyfunction]
+fn db_delete_service(service_id: i64) -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        let db = framework.db()?;
+        db.delete_service(service_id)
+    })?)
+}
+
+// =============================================================================
+// Routing Functions (Tier 4)
+// =============================================================================
+
+/// Add a route through a session (for pivoting)
+///
+/// # Arguments
+/// * `subnet` - The subnet to route (e.g., "10.10.10.0")
+/// * `netmask` - The netmask (e.g., "255.255.255.0" or "24" for CIDR)
+/// * `session_id` - The session ID to route traffic through
+///
+/// # Returns
+/// `true` if the route was added, `false` if it already exists
+#[pyfunction]
+fn route_add(subnet: &str, netmask: &str, session_id: i64) -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        framework.route_add(subnet, netmask, session_id)
+    })?)
+}
+
+/// Remove a route through a session
+///
+/// # Arguments
+/// * `subnet` - The subnet to remove (e.g., "10.10.10.0")
+/// * `netmask` - The netmask (e.g., "255.255.255.0")
+/// * `session_id` - The session ID the route goes through
+///
+/// # Returns
+/// `true` if the route was removed, `false` if it wasn't found
+#[pyfunction]
+fn route_remove(subnet: &str, netmask: &str, session_id: i64) -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        framework.route_remove(subnet, netmask, session_id)
+    })?)
+}
+
+/// List all routes in the routing table
+///
+/// # Returns
+/// List of route dictionaries with subnet, netmask, session_id, comm_name
+#[pyfunction]
+fn route_list(py: Python<'_>) -> PyResult<PyObject> {
+    let routes = with_framework(|framework| {
+        framework.route_list()
+    })?;
+    json_to_py(py, &serde_json::json!(routes))
+}
+
+/// Flush all routes from the routing table
+#[pyfunction]
+fn route_flush() -> PyResult<()> {
+    Ok(with_framework(|framework| {
+        framework.route_flush()
+    })?)
+}
+
+/// Check if a route exists
+///
+/// # Arguments
+/// * `subnet` - The subnet to check
+/// * `netmask` - The netmask
+///
+/// # Returns
+/// `true` if the route exists
+#[pyfunction]
+fn route_exists(subnet: &str, netmask: &str) -> PyResult<bool> {
+    Ok(with_framework(|framework| {
+        framework.route_exists(subnet, netmask)
+    })?)
+}
+
+/// Find the best session for routing to an address
+///
+/// # Arguments
+/// * `addr` - The IP address to route to
+///
+/// # Returns
+/// The session ID if a route exists, None otherwise
+#[pyfunction]
+fn route_get(addr: &str) -> PyResult<Option<i64>> {
+    Ok(with_framework(|framework| {
+        framework.route_get(addr)
+    })?)
+}
+
+// =============================================================================
 // Python Module Definition
 // =============================================================================
 
@@ -650,11 +1447,15 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
             "init_msf",
             "is_initialized",
             "framework_version",
+            "module_stats",
+            "add_module_path",
+            "reload_modules",
             "list_modules",
             "list_sessions",
             "search",
             "get_session",
             "kill_session",
+            "create_shell_session",
             "get_module_info",
             "create_module",
             "Module",
@@ -666,6 +1467,50 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
             "job_list",
             "job_info",
             "job_kill",
+            // Payload generation (Tier 2)
+            "forge_payload",
+            "forge_encoded",
+            "forge_executable",
+            "list_payloads",
+            "forge_payload_with_badchars",
+            "forge_formatted",
+            "transform_buffer",
+            // Database (Tier 3)
+            "db_active",
+            "db_driver",
+            "db_hosts",
+            "db_services",
+            "db_vulns",
+            "db_creds",
+            "db_loot",
+            "db_report_host",
+            "db_report_service",
+            "db_report_vuln",
+            "db_report_cred",
+            "db_workspaces",
+            "db_workspace",
+            "db_set_workspace",
+            "db_add_workspace",
+            "db_find_workspace",
+            "db_delete_workspace",
+            "db_notes",
+            "db_report_note",
+            "db_delete_note",
+            // Database query methods (Tier 4.5B)
+            "db_get_host",
+            "db_get_service",
+            "db_get_vuln",
+            "db_update_host",
+            "db_delete_host",
+            "db_update_service",
+            "db_delete_service",
+            // Routing (Tier 4)
+            "route_add",
+            "route_remove",
+            "route_list",
+            "route_flush",
+            "route_exists",
+            "route_get",
         ],
     )?;
 
@@ -676,11 +1521,15 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
     module.add_function(wrap_pyfunction!(init_msf, module)?)?;
     module.add_function(wrap_pyfunction!(pyo3_is_initialized, module)?)?;
     module.add_function(wrap_pyfunction!(framework_version, module)?)?;
+    module.add_function(wrap_pyfunction!(module_stats, module)?)?;
+    module.add_function(wrap_pyfunction!(add_module_path, module)?)?;
+    module.add_function(wrap_pyfunction!(reload_modules, module)?)?;
     module.add_function(wrap_pyfunction!(list_modules, module)?)?;
     module.add_function(wrap_pyfunction!(list_sessions, module)?)?;
     module.add_function(wrap_pyfunction!(search, module)?)?;
     module.add_function(wrap_pyfunction!(get_session, module)?)?;
     module.add_function(wrap_pyfunction!(kill_session, module)?)?;
+    module.add_function(wrap_pyfunction!(create_shell_session, module)?)?;
     module.add_function(wrap_pyfunction!(get_module_info, module)?)?;
     module.add_function(wrap_pyfunction!(create_module, module)?)?;
     module.add_function(wrap_pyfunction!(exploit, module)?)?;
@@ -689,6 +1538,54 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
     module.add_function(wrap_pyfunction!(job_list, module)?)?;
     module.add_function(wrap_pyfunction!(job_info, module)?)?;
     module.add_function(wrap_pyfunction!(job_kill, module)?)?;
+
+    // Payload generation (Tier 2)
+    module.add_function(wrap_pyfunction!(forge_payload, module)?)?;
+    module.add_function(wrap_pyfunction!(forge_encoded, module)?)?;
+    module.add_function(wrap_pyfunction!(forge_executable, module)?)?;
+    module.add_function(wrap_pyfunction!(list_payloads, module)?)?;
+    module.add_function(wrap_pyfunction!(forge_payload_with_badchars, module)?)?;
+    module.add_function(wrap_pyfunction!(forge_formatted, module)?)?;
+    module.add_function(wrap_pyfunction!(transform_buffer, module)?)?;
+
+    // Database (Tier 3)
+    module.add_function(wrap_pyfunction!(db_active, module)?)?;
+    module.add_function(wrap_pyfunction!(db_driver, module)?)?;
+    module.add_function(wrap_pyfunction!(db_hosts, module)?)?;
+    module.add_function(wrap_pyfunction!(db_services, module)?)?;
+    module.add_function(wrap_pyfunction!(db_vulns, module)?)?;
+    module.add_function(wrap_pyfunction!(db_creds, module)?)?;
+    module.add_function(wrap_pyfunction!(db_loot, module)?)?;
+    module.add_function(wrap_pyfunction!(db_report_host, module)?)?;
+    module.add_function(wrap_pyfunction!(db_report_service, module)?)?;
+    module.add_function(wrap_pyfunction!(db_report_vuln, module)?)?;
+    module.add_function(wrap_pyfunction!(db_report_cred, module)?)?;
+    module.add_function(wrap_pyfunction!(db_workspaces, module)?)?;
+    module.add_function(wrap_pyfunction!(db_workspace, module)?)?;
+    module.add_function(wrap_pyfunction!(db_set_workspace, module)?)?;
+    module.add_function(wrap_pyfunction!(db_add_workspace, module)?)?;
+    module.add_function(wrap_pyfunction!(db_find_workspace, module)?)?;
+    module.add_function(wrap_pyfunction!(db_delete_workspace, module)?)?;
+    module.add_function(wrap_pyfunction!(db_notes, module)?)?;
+    module.add_function(wrap_pyfunction!(db_report_note, module)?)?;
+    module.add_function(wrap_pyfunction!(db_delete_note, module)?)?;
+
+    // Database query methods (Tier 4.5B)
+    module.add_function(wrap_pyfunction!(db_get_host, module)?)?;
+    module.add_function(wrap_pyfunction!(db_get_service, module)?)?;
+    module.add_function(wrap_pyfunction!(db_get_vuln, module)?)?;
+    module.add_function(wrap_pyfunction!(db_update_host, module)?)?;
+    module.add_function(wrap_pyfunction!(db_delete_host, module)?)?;
+    module.add_function(wrap_pyfunction!(db_update_service, module)?)?;
+    module.add_function(wrap_pyfunction!(db_delete_service, module)?)?;
+
+    // Routing (Tier 4)
+    module.add_function(wrap_pyfunction!(route_add, module)?)?;
+    module.add_function(wrap_pyfunction!(route_remove, module)?)?;
+    module.add_function(wrap_pyfunction!(route_list, module)?)?;
+    module.add_function(wrap_pyfunction!(route_flush, module)?)?;
+    module.add_function(wrap_pyfunction!(route_exists, module)?)?;
+    module.add_function(wrap_pyfunction!(route_get, module)?)?;
 
     // Add classes
     module.add_class::<MsfModule>()?;

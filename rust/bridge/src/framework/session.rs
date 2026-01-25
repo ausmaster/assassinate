@@ -9,7 +9,7 @@ use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
     get_i64_attr, get_string_attr, sym, to_ruby_str, value_to_string, Options,
 };
-use magnus::{value::ReprValue, IntoValue, RHash, TryConvert, Value};
+use magnus::{value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
 
 /// Session manager for listing and accessing sessions
 #[derive(Clone)]
@@ -596,6 +596,165 @@ impl Session {
             &[to_ruby_str(remote_path)?, to_ruby_str(local_path)?],
         )?;
         Ok(())
+    }
+
+    // ========== Meterpreter Gap Methods (4.5D) ==========
+
+    /// Search for files matching a pattern
+    /// Only works on Meterpreter sessions
+    ///
+    /// # Arguments
+    /// * `root` - Starting directory for the search
+    /// * `pattern` - Glob pattern to match (e.g., "*.txt", "pass*")
+    /// * `recurse` - Whether to search subdirectories
+    ///
+    /// # Returns
+    /// List of matching file paths
+    pub fn fs_search(
+        &self,
+        root: &str,
+        pattern: &str,
+        recurse: bool,
+    ) -> Result<Vec<serde_json::Value>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let file_ext = self.fs_file_ext()?;
+
+        let root_val = ruby.str_new(root).as_value();
+        let pattern_val = ruby.str_new(pattern).as_value();
+        let recurse_val = if recurse { ruby.qtrue().as_value() } else { ruby.qfalse().as_value() };
+
+        let results = call_method(file_ext, "search", &[root_val, pattern_val, recurse_val])?;
+
+        if results.is_nil() {
+            return Ok(Vec::new());
+        }
+
+        // Results is an array of file info hashes
+        let results_array = RArray::from_value(results).ok_or_else(|| {
+            AssassinateError::ConversionError("search did not return an array".into())
+        })?;
+
+        let mut files = Vec::with_capacity(results_array.len());
+        for i in 0..results_array.len() {
+            let file_info: Value = results_array.entry(i as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get file info at {}: {}", i, e))
+            })?;
+
+            // Convert to JSON
+            let json = crate::ruby_bridge::hash_to_json(file_info)?;
+            files.push(json);
+        }
+
+        Ok(files)
+    }
+
+    /// Get MD5 hash of a remote file
+    /// Only works on Meterpreter sessions
+    pub fn fs_md5(&self, path: &str) -> Result<String> {
+        let file_ext = self.fs_file_ext()?;
+        let path_val = to_ruby_str(path)?;
+
+        let md5_val = call_method(file_ext, "md5", &[path_val])?;
+
+        if md5_val.is_nil() {
+            return Err(AssassinateError::RubyError(format!(
+                "Failed to get MD5 for: {}",
+                path
+            )));
+        }
+
+        value_to_string(md5_val)
+    }
+
+    /// Get SHA1 hash of a remote file
+    /// Only works on Meterpreter sessions
+    pub fn fs_sha1(&self, path: &str) -> Result<String> {
+        let file_ext = self.fs_file_ext()?;
+        let path_val = to_ruby_str(path)?;
+
+        let sha1_val = call_method(file_ext, "sha1", &[path_val])?;
+
+        if sha1_val.is_nil() {
+            return Err(AssassinateError::RubyError(format!(
+                "Failed to get SHA1 for: {}",
+                path
+            )));
+        }
+
+        value_to_string(sha1_val)
+    }
+
+    /// Open a process handle
+    /// Only works on Windows Meterpreter sessions
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID to open
+    /// * `perms` - Access permissions flags
+    ///
+    /// # Returns
+    /// Process handle value
+    pub fn process_open(&self, pid: i64, perms: i64) -> Result<i64> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let sys_process = self.sys_process()?;
+
+        let pid_val = ruby.integer_from_i64(pid).as_value();
+        let perms_val = ruby.integer_from_i64(perms).as_value();
+
+        let handle_val = call_method(sys_process, "open", &[pid_val, perms_val])?;
+
+        if handle_val.is_nil() {
+            return Err(AssassinateError::RubyError(format!(
+                "Failed to open process: {}",
+                pid
+            )));
+        }
+
+        let handle: i64 = TryConvert::try_convert(handle_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert handle: {}", e))
+        })?;
+
+        Ok(handle)
+    }
+
+    /// Steal a process token (Windows privilege escalation)
+    /// Only works on Windows Meterpreter sessions
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID to steal token from
+    ///
+    /// # Returns
+    /// true if token was stolen successfully
+    pub fn sys_steal_token(&self, pid: i64) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Get priv extension for token operations
+        let meterpreter = call_method(self.ruby_session, "meterpreter", &[])?;
+        if meterpreter.is_nil() {
+            return Err(AssassinateError::RubyError(
+                "Session is not a meterpreter".to_string(),
+            ));
+        }
+
+        let ext_priv = call_method(meterpreter, "ext_priv", &[])?;
+        if ext_priv.is_nil() {
+            // Try to load the extension
+            let _ = call_method(meterpreter, "core_use", &[ruby.str_new("priv").as_value()]);
+            let ext_priv = call_method(meterpreter, "ext_priv", &[])?;
+            if ext_priv.is_nil() {
+                return Err(AssassinateError::RubyError(
+                    "priv extension not available".to_string(),
+                ));
+            }
+        }
+
+        // Get the extension again after potential load
+        let ext_priv = call_method(meterpreter, "ext_priv", &[])?;
+        let pid_val = ruby.integer_from_i64(pid).as_value();
+
+        match call_method(ext_priv, "fs_steal_token", &[pid_val]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 
     // ========== Post Module Execution ==========

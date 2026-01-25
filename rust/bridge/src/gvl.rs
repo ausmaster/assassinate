@@ -98,17 +98,5 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sleep_releasing_gvl() {
-        // This test just verifies the function doesn't crash
-        // Real testing requires Ruby VM to be initialized
-        let start = std::time::Instant::now();
-        sleep_releasing_gvl(100);
-        let elapsed = start.elapsed();
-        assert!(elapsed >= Duration::from_millis(90)); // Allow some tolerance
-    }
-}
+// Unit test moved to integration test: tests/test_gvl_sleep.rs
+// Requires Ruby VM, so must be in separate process

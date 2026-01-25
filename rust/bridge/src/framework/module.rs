@@ -621,11 +621,376 @@ impl Module {
         Ok(missing)
     }
 
+    // ========== Exploit Target Constraints (4.5C) ==========
+
+    /// Get available payload space for the current target
+    ///
+    /// This returns the maximum size (in bytes) that the payload can be
+    /// for the currently selected exploit target.
+    pub fn payload_space(&self) -> Result<Option<i64>> {
+        // Try target-specific payload_space first
+        let target = self.current_target_obj()?;
+        if !target.is_nil() {
+            if let Ok(opts) = call_method(target, "opts", &[]) {
+                if !opts.is_nil() {
+                    let ruby = crate::ruby_bridge::get_ruby()?;
+                    let key = ruby.str_new("Payload").as_value();
+                    if let Ok(payload_opts) = call_method(opts, "[]", &[key]) {
+                        if !payload_opts.is_nil() {
+                            let space_key = ruby.str_new("Space").as_value();
+                            if let Ok(space_val) = call_method(payload_opts, "[]", &[space_key]) {
+                                if !space_val.is_nil() {
+                                    let space: i64 = TryConvert::try_convert(space_val)
+                                        .map_err(|e: magnus::Error| {
+                                            AssassinateError::ConversionError(format!(
+                                                "Failed to convert payload space: {}",
+                                                e
+                                            ))
+                                        })?;
+                                    return Ok(Some(space));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to module's payload_space method
+        if let Ok(space_val) = call_method(self.ruby_module, "payload_space", &[]) {
+            if !space_val.is_nil() {
+                let space: i64 = TryConvert::try_convert(space_val).map_err(|e: magnus::Error| {
+                    AssassinateError::ConversionError(format!(
+                        "Failed to convert payload space: {}",
+                        e
+                    ))
+                })?;
+                return Ok(Some(space));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get bad characters that should be avoided in payloads for the current target
+    ///
+    /// Returns the bytes that cannot appear in the payload. These are typically
+    /// characters that would break the exploit (e.g., null bytes, newlines).
+    pub fn payload_badchars(&self) -> Result<Vec<u8>> {
+        // Try target-specific badchars first
+        let target = self.current_target_obj()?;
+        if !target.is_nil() {
+            if let Ok(opts) = call_method(target, "opts", &[]) {
+                if !opts.is_nil() {
+                    let ruby = crate::ruby_bridge::get_ruby()?;
+                    let key = ruby.str_new("Payload").as_value();
+                    if let Ok(payload_opts) = call_method(opts, "[]", &[key]) {
+                        if !payload_opts.is_nil() {
+                            let badchars_key = ruby.str_new("BadChars").as_value();
+                            if let Ok(badchars_val) = call_method(payload_opts, "[]", &[badchars_key]) {
+                                if !badchars_val.is_nil() {
+                                    let rstring: magnus::RString = TryConvert::try_convert(badchars_val)
+                                        .map_err(|e: magnus::Error| {
+                                            AssassinateError::ConversionError(format!(
+                                                "Failed to convert badchars: {}",
+                                                e
+                                            ))
+                                        })?;
+                                    return Ok(unsafe { rstring.as_slice() }.to_vec());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to module's payload_badchars method
+        if let Ok(badchars_val) = call_method(self.ruby_module, "payload_badchars", &[]) {
+            if !badchars_val.is_nil() {
+                let rstring: magnus::RString = TryConvert::try_convert(badchars_val)
+                    .map_err(|e: magnus::Error| {
+                        AssassinateError::ConversionError(format!("Failed to convert badchars: {}", e))
+                    })?;
+                return Ok(unsafe { rstring.as_slice() }.to_vec());
+            }
+        }
+
+        Ok(Vec::new())
+    }
+
+    /// Get the platform of the current exploit target
+    ///
+    /// Returns the platform string (e.g., "linux", "windows") for the
+    /// currently selected target.
+    pub fn target_platform(&self) -> Result<Option<String>> {
+        let target = self.current_target_obj()?;
+        if target.is_nil() {
+            return Ok(None);
+        }
+
+        // Get target.platform
+        if let Ok(platform_val) = call_method(target, "platform", &[]) {
+            if !platform_val.is_nil() {
+                // Platform is a PlatformList - get first name
+                if let Ok(names_val) = call_method(platform_val, "names", &[]) {
+                    if let Some(names_array) = RArray::from_value(names_val) {
+                        if names_array.len() > 0 {
+                            let name_val: Value = names_array.entry(0).map_err(|e| {
+                                AssassinateError::ConversionError(format!(
+                                    "Failed to get platform name: {}",
+                                    e
+                                ))
+                            })?;
+                            return Ok(Some(value_to_string(name_val)?));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get the architecture of the current exploit target
+    ///
+    /// Returns the architecture string (e.g., "x86", "x64", "aarch64") for the
+    /// currently selected target.
+    pub fn target_arch(&self) -> Result<Option<String>> {
+        let target = self.current_target_obj()?;
+        if target.is_nil() {
+            return Ok(None);
+        }
+
+        // Get target.arch
+        if let Ok(arch_val) = call_method(target, "arch", &[]) {
+            if !arch_val.is_nil() {
+                // Arch is an array - get first element
+                if let Some(arch_array) = RArray::from_value(arch_val) {
+                    if arch_array.len() > 0 {
+                        let arch_obj: Value = arch_array.entry(0).map_err(|e| {
+                            AssassinateError::ConversionError(format!("Failed to get arch: {}", e))
+                        })?;
+                        return Ok(Some(value_to_string(arch_obj)?));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get the currently selected target index
+    pub fn target_index(&self) -> Result<Option<i64>> {
+        if !responds_to_public(self.ruby_module, "target") {
+            return Ok(None);
+        }
+
+        // Get the datastore TARGET value
+        if let Ok(Some(target_str)) = self.get_option("TARGET") {
+            if let Ok(idx) = target_str.parse::<i64>() {
+                return Ok(Some(idx));
+            }
+        }
+
+        // Fall back to default_target if available
+        if let Ok(default_val) = call_method(self.ruby_module, "default_target", &[]) {
+            if !default_val.is_nil() {
+                let idx: i64 = TryConvert::try_convert(default_val).unwrap_or(0);
+                return Ok(Some(idx));
+            }
+        }
+
+        Ok(Some(0))
+    }
+
+    /// Get the current target object (internal helper)
+    fn current_target_obj(&self) -> Result<Value> {
+        // Check if module responds to targets
+        if !responds_to_public(self.ruby_module, "targets") {
+            return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
+        }
+
+        let targets_val = call_method(self.ruby_module, "targets", &[])?;
+        if targets_val.is_nil() {
+            return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
+        }
+
+        let targets_array = RArray::from_value(targets_val).ok_or_else(|| {
+            AssassinateError::ConversionError("targets did not return an array".into())
+        })?;
+
+        if targets_array.len() == 0 {
+            return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
+        }
+
+        // Get target index from datastore or use default
+        let target_idx = self.target_index()?.unwrap_or(0) as usize;
+
+        if target_idx < targets_array.len() {
+            let target: Value = targets_array.entry(target_idx as isize).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get target: {}", e))
+            })?;
+            Ok(target)
+        } else {
+            // Fall back to first target
+            let target: Value = targets_array.entry(0).map_err(|e| {
+                AssassinateError::ConversionError(format!("Failed to get target: {}", e))
+            })?;
+            Ok(target)
+        }
+    }
+
+    /// Perform a detailed vulnerability check
+    ///
+    /// Returns a structured CheckCode result with:
+    /// - code: The check result code (Safe, Vulnerable, etc.)
+    /// - message: Human-readable message
+    /// - reason: Why the check returned this result
+    /// - details: Additional diagnostic details
+    pub fn check_detailed(&self) -> Result<serde_json::Value> {
+        let mut opts = Options::new();
+        opts.insert("Quiet".into(), RubyVal::Bool(true));
+        let opts_val = build_opts(Some(opts))?;
+
+        // Call check_simple on the module
+        let result = call_method(self.ruby_module, "check_simple", &[opts_val]);
+
+        match result {
+            Ok(check_code) => {
+                // CheckCode is a complex object with multiple attributes
+                let mut details = serde_json::Map::new();
+
+                // Get the code (symbol like :safe, :vulnerable, etc.)
+                let code_str = value_to_string(check_code)?;
+                details.insert("code".to_string(), serde_json::json!(code_str));
+
+                // Try to get message
+                if let Ok(msg_val) = call_method(check_code, "message", &[]) {
+                    if !msg_val.is_nil() {
+                        if let Ok(msg) = value_to_string(msg_val) {
+                            details.insert("message".to_string(), serde_json::json!(msg));
+                        }
+                    }
+                }
+
+                // Try to get reason (if available)
+                if let Ok(reason_val) = call_method(check_code, "reason", &[]) {
+                    if !reason_val.is_nil() {
+                        if let Ok(reason) = value_to_string(reason_val) {
+                            details.insert("reason".to_string(), serde_json::json!(reason));
+                        }
+                    }
+                }
+
+                // Try to get details hash (if available)
+                if let Ok(details_val) = call_method(check_code, "details", &[]) {
+                    if !details_val.is_nil() {
+                        if let Ok(details_json) = crate::ruby_bridge::hash_to_json(details_val) {
+                            details.insert("details".to_string(), details_json);
+                        }
+                    }
+                }
+
+                Ok(serde_json::Value::Object(details))
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                let mut details = serde_json::Map::new();
+
+                if err_msg.contains("NotImplementedError") || err_msg.contains("Unsupported") {
+                    details.insert("code".to_string(), serde_json::json!("Unsupported"));
+                    details.insert(
+                        "message".to_string(),
+                        serde_json::json!("Check method not implemented for this module"),
+                    );
+                } else {
+                    details.insert("code".to_string(), serde_json::json!("Unknown"));
+                    details.insert("message".to_string(), serde_json::json!(err_msg));
+                }
+
+                Ok(serde_json::Value::Object(details))
+            }
+        }
+    }
+
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!(
             "<Module name='{}' type='{}'>",
             self.fullname()?,
             self.module_type()?
         ))
+    }
+
+    // ========== NOP Module Operations ==========
+
+    /// Generate a NOP sled of specified length
+    ///
+    /// This is only valid for NOP modules (nop/*).
+    ///
+    /// # Arguments
+    /// * `length` - Desired length of the NOP sled in bytes
+    /// * `badchars` - Optional bytes to avoid in output
+    /// * `save_registers` - Optional list of registers to preserve
+    ///
+    /// # Returns
+    /// NOP sled bytes
+    pub fn generate_sled(
+        &self,
+        length: i32,
+        badchars: Option<&[u8]>,
+        save_registers: Option<Vec<String>>,
+    ) -> Result<Vec<u8>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash: magnus::RHash = ruby.hash_new();
+
+        // Add BadChars if provided
+        if let Some(bc) = badchars {
+            let key = ruby.str_new("BadChars").as_value();
+            let val = ruby.str_from_slice(bc).as_value();
+            opts_hash.aset(key, val).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set BadChars: {}", e))
+            })?;
+        }
+
+        // Add SaveRegisters if provided
+        if let Some(regs) = save_registers {
+            let key = ruby.str_new("SaveRegisters").as_value();
+            let regs_array: magnus::RArray = ruby.ary_new();
+            for reg in regs {
+                regs_array.push(ruby.str_new(&reg).as_value()).map_err(|e| {
+                    AssassinateError::RubyError(format!("Failed to add register: {}", e))
+                })?;
+            }
+            opts_hash.aset(key, regs_array.as_value()).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set SaveRegisters: {}", e))
+            })?;
+        }
+
+        // Convert length to Ruby integer
+        let length_val = ruby.integer_from_i64(length as i64).as_value();
+
+        // Call nop_module.generate_sled(length, opts)
+        let sled_val = call_method(self.ruby_module, "generate_sled", &[length_val, opts_hash.as_value()])?;
+
+        // Handle nil result
+        if sled_val.is_nil() {
+            return Err(AssassinateError::ModuleExecutionError(
+                "NOP sled generation returned nil".into(),
+            ));
+        }
+
+        // Convert Ruby string to bytes
+        let sled_str: magnus::RString = TryConvert::try_convert(sled_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!(
+                "Failed to convert NOP sled to bytes: {}",
+                e
+            ))
+        })?;
+
+        // Get raw bytes from Ruby string (may contain non-UTF8 data)
+        Ok(unsafe { sled_str.as_slice() }.to_vec())
     }
 }

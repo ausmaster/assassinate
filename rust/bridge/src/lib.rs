@@ -8,7 +8,7 @@
 //! ## Example (Rust)
 //!
 //! ```no_run
-//! use bridge::{Framework, init_metasploit};
+//! use msf::{Framework, init_metasploit};
 //!
 //! // Initialize MSF environment
 //! init_metasploit("/path/to/metasploit-framework").unwrap();

@@ -343,6 +343,11 @@ impl Framework {
         self.routes()?.best_comm(addr)
     }
 
+    /// Get the payload generator
+    pub fn payload_generator(&self) -> Result<PayloadGenerator> {
+        PayloadGenerator::new(self)
+    }
+
     pub fn __repr__(&self) -> Result<String> {
         Ok(format!("<Framework version={}>", self.version()?))
     }

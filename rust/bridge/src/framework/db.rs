@@ -282,7 +282,16 @@ impl DbManager {
         }
 
         let result_val = call_method(self.ruby_db, method_name, &[opts_val])?;
-        let id: i64 = TryConvert::try_convert(result_val).unwrap_or(0);
+
+        // MSF report_* methods return ActiveRecord objects (Mdm::Host, Mdm::Service, etc.)
+        // We need to extract the ID from the object
+        if result_val.is_nil() {
+            return Ok(0);
+        }
+
+        // Try to get .id from the returned object
+        let id_val = call_method(result_val, "id", &[])?;
+        let id: i64 = TryConvert::try_convert(id_val).unwrap_or(0);
         Ok(id)
     }
 
@@ -677,6 +686,407 @@ impl DbManager {
             Ok(deleted_array.len())
         } else {
             Ok(0)
+        }
+    }
+
+    // ========== Individual Record Queries (4.5B) ==========
+
+    /// Get a single host by address
+    ///
+    /// # Arguments
+    /// * `address` - IP address of the host to find
+    ///
+    /// # Returns
+    /// Host info as JSON or None if not found
+    pub fn get_host(&self, address: &str) -> Result<Option<serde_json::Value>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash with :address key
+        let opts_hash = ruby.hash_new();
+        let addr_sym = ruby.to_symbol("address");
+        opts_hash.aset(addr_sym, ruby.str_new(address)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set address: {}", e))
+        })?;
+
+        // MSF's get_host requires :workspace parameter
+        // Inject the current workspace object
+        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        if !workspace_obj.is_nil() {
+            let workspace_sym = ruby.to_symbol("workspace");
+            opts_hash.aset(workspace_sym, workspace_obj).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set workspace: {}", e))
+            })?;
+        }
+
+        let host_obj = call_method(self.ruby_db, "get_host", &[opts_hash.as_value()])?;
+
+        if host_obj.is_nil() {
+            return Ok(None);
+        }
+
+        // Extract host attributes
+        let mut host_map = serde_json::Map::new();
+
+        if let Ok(id_val) = call_method(host_obj, "id", &[]) {
+            if let Ok(id) = crate::ruby_bridge::value_to_i64(id_val) {
+                host_map.insert("id".to_string(), serde_json::json!(id));
+            }
+        }
+
+        if let Ok(addr_val) = call_method(host_obj, "address", &[]) {
+            if let Ok(addr) = value_to_string(addr_val) {
+                host_map.insert("address".to_string(), serde_json::json!(addr));
+            }
+        }
+
+        if let Ok(os_name_val) = call_method(host_obj, "os_name", &[]) {
+            if !os_name_val.is_nil() {
+                if let Ok(os_name) = value_to_string(os_name_val) {
+                    host_map.insert("os_name".to_string(), serde_json::json!(os_name));
+                }
+            }
+        }
+
+        if let Ok(os_flavor_val) = call_method(host_obj, "os_flavor", &[]) {
+            if !os_flavor_val.is_nil() {
+                if let Ok(os_flavor) = value_to_string(os_flavor_val) {
+                    host_map.insert("os_flavor".to_string(), serde_json::json!(os_flavor));
+                }
+            }
+        }
+
+        if let Ok(name_val) = call_method(host_obj, "name", &[]) {
+            if !name_val.is_nil() {
+                if let Ok(name) = value_to_string(name_val) {
+                    host_map.insert("name".to_string(), serde_json::json!(name));
+                }
+            }
+        }
+
+        if let Ok(state_val) = call_method(host_obj, "state", &[]) {
+            if !state_val.is_nil() {
+                if let Ok(state) = value_to_string(state_val) {
+                    host_map.insert("state".to_string(), serde_json::json!(state));
+                }
+            }
+        }
+
+        Ok(Some(serde_json::Value::Object(host_map)))
+    }
+
+    /// Get a single service by host and port
+    ///
+    /// # Arguments
+    /// * `host` - IP address of the host
+    /// * `port` - Port number
+    /// * `proto` - Protocol (default: "tcp")
+    ///
+    /// # Returns
+    /// Service info as JSON or None if not found
+    pub fn get_service(&self, host: &str, port: i32, proto: Option<&str>) -> Result<Option<serde_json::Value>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash
+        let opts_hash = ruby.hash_new();
+
+        let host_sym = ruby.to_symbol("host");
+        let port_sym = ruby.to_symbol("port");
+        let proto_sym = ruby.to_symbol("proto");
+
+        opts_hash.aset(host_sym, ruby.str_new(host)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set host: {}", e))
+        })?;
+
+        opts_hash.aset(port_sym, ruby.integer_from_i64(port as i64)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set port: {}", e))
+        })?;
+
+        let protocol = proto.unwrap_or("tcp");
+        opts_hash.aset(proto_sym, ruby.str_new(protocol)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set proto: {}", e))
+        })?;
+
+        // MSF's get_service requires :workspace parameter
+        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        if !workspace_obj.is_nil() {
+            let workspace_sym = ruby.to_symbol("workspace");
+            opts_hash.aset(workspace_sym, workspace_obj).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set workspace: {}", e))
+            })?;
+        }
+
+        let service_obj = call_method(self.ruby_db, "get_service", &[opts_hash.as_value()])?;
+
+        if service_obj.is_nil() {
+            return Ok(None);
+        }
+
+        // Extract service attributes
+        let mut svc_map = serde_json::Map::new();
+
+        if let Ok(id_val) = call_method(service_obj, "id", &[]) {
+            if let Ok(id) = crate::ruby_bridge::value_to_i64(id_val) {
+                svc_map.insert("id".to_string(), serde_json::json!(id));
+            }
+        }
+
+        if let Ok(port_val) = call_method(service_obj, "port", &[]) {
+            if let Ok(port) = crate::ruby_bridge::value_to_i64(port_val) {
+                svc_map.insert("port".to_string(), serde_json::json!(port));
+            }
+        }
+
+        if let Ok(proto_val) = call_method(service_obj, "proto", &[]) {
+            if let Ok(proto_str) = value_to_string(proto_val) {
+                svc_map.insert("proto".to_string(), serde_json::json!(proto_str));
+            }
+        }
+
+        if let Ok(name_val) = call_method(service_obj, "name", &[]) {
+            if !name_val.is_nil() {
+                if let Ok(name) = value_to_string(name_val) {
+                    svc_map.insert("name".to_string(), serde_json::json!(name));
+                }
+            }
+        }
+
+        if let Ok(state_val) = call_method(service_obj, "state", &[]) {
+            if !state_val.is_nil() {
+                if let Ok(state) = value_to_string(state_val) {
+                    svc_map.insert("state".to_string(), serde_json::json!(state));
+                }
+            }
+        }
+
+        if let Ok(info_val) = call_method(service_obj, "info", &[]) {
+            if !info_val.is_nil() {
+                if let Ok(info) = value_to_string(info_val) {
+                    svc_map.insert("info".to_string(), serde_json::json!(info));
+                }
+            }
+        }
+
+        // Get host address
+        if let Ok(host_obj) = call_method(service_obj, "host", &[]) {
+            if !host_obj.is_nil() {
+                if let Ok(addr_val) = call_method(host_obj, "address", &[]) {
+                    if let Ok(addr) = value_to_string(addr_val) {
+                        svc_map.insert("host".to_string(), serde_json::json!(addr));
+                    }
+                }
+            }
+        }
+
+        Ok(Some(serde_json::Value::Object(svc_map)))
+    }
+
+    /// Get a single vulnerability by opts
+    ///
+    /// # Arguments
+    /// * `opts` - Query options (host, name, etc.)
+    ///
+    /// # Returns
+    /// Vulnerability info as JSON or None if not found
+    pub fn get_vuln(&self, opts: Options) -> Result<Option<serde_json::Value>> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash with symbol keys
+        let opts_hash = ruby.hash_new();
+
+        for (key, value) in opts {
+            let key_sym = ruby.to_symbol(&key);
+            opts_hash.aset(key_sym, value.into_value_with(&ruby)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set option: {}", e))
+            })?;
+        }
+
+        // MSF's get_vuln requires :workspace parameter
+        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        if !workspace_obj.is_nil() {
+            let workspace_sym = ruby.to_symbol("workspace");
+            opts_hash.aset(workspace_sym, workspace_obj).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set workspace: {}", e))
+            })?;
+        }
+
+        let vuln_obj = call_method(self.ruby_db, "get_vuln", &[opts_hash.as_value()])?;
+
+        if vuln_obj.is_nil() {
+            return Ok(None);
+        }
+
+        // Extract vuln attributes
+        let mut vuln_map = serde_json::Map::new();
+
+        if let Ok(id_val) = call_method(vuln_obj, "id", &[]) {
+            if let Ok(id) = crate::ruby_bridge::value_to_i64(id_val) {
+                vuln_map.insert("id".to_string(), serde_json::json!(id));
+            }
+        }
+
+        if let Ok(name_val) = call_method(vuln_obj, "name", &[]) {
+            if let Ok(name) = value_to_string(name_val) {
+                vuln_map.insert("name".to_string(), serde_json::json!(name));
+            }
+        }
+
+        if let Ok(info_val) = call_method(vuln_obj, "info", &[]) {
+            if !info_val.is_nil() {
+                if let Ok(info) = value_to_string(info_val) {
+                    vuln_map.insert("info".to_string(), serde_json::json!(info));
+                }
+            }
+        }
+
+        // Get refs if present
+        if let Ok(refs_val) = call_method(vuln_obj, "refs", &[]) {
+            if !refs_val.is_nil() {
+                let refs_array = call_method(refs_val, "to_a", &[])?;
+                if let Some(refs) = RArray::from_value(refs_array) {
+                    let mut ref_list = Vec::new();
+                    for i in 0..refs.len() {
+                        if let Ok(ref_obj) = refs.entry::<Value>(i as isize) {
+                            if let Ok(name_val) = call_method(ref_obj, "name", &[]) {
+                                if let Ok(name) = value_to_string(name_val) {
+                                    ref_list.push(serde_json::json!(name));
+                                }
+                            }
+                        }
+                    }
+                    if !ref_list.is_empty() {
+                        vuln_map.insert("refs".to_string(), serde_json::json!(ref_list));
+                    }
+                }
+            }
+        }
+
+        Ok(Some(serde_json::Value::Object(vuln_map)))
+    }
+
+    /// Update a host by ID
+    ///
+    /// # Arguments
+    /// * `id` - Host ID
+    /// * `opts` - Fields to update (os_name, os_flavor, name, state, etc.)
+    ///
+    /// # Returns
+    /// true if update succeeded
+    pub fn update_host(&self, id: i64, opts: Options) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash with symbol keys
+        let opts_hash = ruby.hash_new();
+
+        // Add the ID
+        let id_sym = ruby.to_symbol("id");
+        opts_hash.aset(id_sym, ruby.integer_from_i64(id)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set id: {}", e))
+        })?;
+
+        // Add other options
+        for (key, value) in opts {
+            let key_sym = ruby.to_symbol(&key);
+            opts_hash.aset(key_sym, value.into_value_with(&ruby)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set option: {}", e))
+            })?;
+        }
+
+        // Call update_host
+        let result = call_method(self.ruby_db, "update_host", &[opts_hash.as_value()])?;
+
+        // Returns the updated host object or nil
+        Ok(!result.is_nil())
+    }
+
+    /// Delete a host by ID
+    ///
+    /// # Arguments
+    /// * `id` - Host ID to delete
+    ///
+    /// # Returns
+    /// true if delete succeeded
+    pub fn delete_host(&self, id: i64) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash with :ids array
+        let opts_hash = ruby.hash_new();
+
+        let ids_array = ruby.ary_new();
+        ids_array.push(ruby.integer_from_i64(id)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to push ID to array: {}", e))
+        })?;
+
+        opts_hash.aset(*sym::IDS, ids_array).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set ids: {}", e))
+        })?;
+
+        // Call delete_host (or delete_hosts depending on MSF version)
+        match call_method(self.ruby_db, "delete_host", &[opts_hash.as_value()]) {
+            Ok(_) => Ok(true),
+            Err(_) => {
+                // Try plural form
+                match call_method(self.ruby_db, "delete_hosts", &[opts_hash.as_value()]) {
+                    Ok(_) => Ok(true),
+                    Err(_) => Ok(false),
+                }
+            }
+        }
+    }
+
+    /// Update a service
+    ///
+    /// # Arguments
+    /// * `id` - Service ID
+    /// * `opts` - Fields to update (name, state, info, etc.)
+    ///
+    /// # Returns
+    /// true if update succeeded
+    pub fn update_service(&self, id: i64, opts: Options) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        // Build options hash with symbol keys
+        let opts_hash = ruby.hash_new();
+
+        // Add the ID
+        let id_sym = ruby.to_symbol("id");
+        opts_hash.aset(id_sym, ruby.integer_from_i64(id)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set id: {}", e))
+        })?;
+
+        // Add other options
+        for (key, value) in opts {
+            let key_sym = ruby.to_symbol(&key);
+            opts_hash.aset(key_sym, value.into_value_with(&ruby)).map_err(|e| {
+                AssassinateError::RubyError(format!("Failed to set option: {}", e))
+            })?;
+        }
+
+        let result = call_method(self.ruby_db, "update_service", &[opts_hash.as_value()])?;
+        Ok(!result.is_nil())
+    }
+
+    /// Delete a service by ID
+    pub fn delete_service(&self, id: i64) -> Result<bool> {
+        let ruby = crate::ruby_bridge::get_ruby()?;
+
+        let opts_hash = ruby.hash_new();
+        let ids_array = ruby.ary_new();
+        ids_array.push(ruby.integer_from_i64(id)).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to push ID: {}", e))
+        })?;
+
+        opts_hash.aset(*sym::IDS, ids_array).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to set ids: {}", e))
+        })?;
+
+        match call_method(self.ruby_db, "delete_service", &[opts_hash.as_value()]) {
+            Ok(_) => Ok(true),
+            Err(_) => {
+                match call_method(self.ruby_db, "delete_services", &[opts_hash.as_value()]) {
+                    Ok(_) => Ok(true),
+                    Err(_) => Ok(false),
+                }
+            }
         }
     }
 

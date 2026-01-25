@@ -114,3 +114,58 @@ class TestFrameworkJobs:
         """Test that job_list returns a list."""
         jobs = msf.job_list()
         assert isinstance(jobs, list)
+
+
+class TestFrameworkStats:
+    """Tests for framework module statistics."""
+
+    def test_module_stats_returns_dict(self, msf_init):
+        """Test that module_stats returns a dictionary."""
+        stats = msf.module_stats()
+        assert isinstance(stats, dict)
+
+    def test_module_stats_has_expected_keys(self, msf_init):
+        """Test that module_stats contains expected module types."""
+        stats = msf.module_stats()
+        expected_keys = ["exploits", "auxiliary", "post", "payloads", "encoders", "nops"]
+        for key in expected_keys:
+            assert key in stats, f"module_stats should contain '{key}'"
+
+    def test_module_stats_values_are_positive(self, msf_init):
+        """Test that module counts are positive integers."""
+        stats = msf.module_stats()
+        for key, value in stats.items():
+            assert isinstance(value, int), f"{key} should be an integer"
+            assert value >= 0, f"{key} should be non-negative"
+
+    def test_module_stats_has_reasonable_counts(self, msf_init):
+        """Test that stats show reasonable module counts."""
+        stats = msf.module_stats()
+        # MSF should have thousands of exploits
+        assert stats.get("exploits", 0) > 1000, "Should have >1000 exploits"
+        # MSF should have hundreds of auxiliary modules
+        assert stats.get("auxiliary", 0) > 500, "Should have >500 auxiliary"
+        # MSF should have payloads
+        assert stats.get("payloads", 0) > 100, "Should have >100 payloads"
+
+
+class TestFrameworkReload:
+    """Tests for framework module reload functionality."""
+
+    def test_reload_modules_returns_dict(self, msf_init):
+        """Test that reload_modules returns a dictionary."""
+        result = msf.reload_modules()
+        assert isinstance(result, dict)
+
+    def test_reload_modules_preserves_counts(self, msf_init):
+        """Test that reload doesn't lose modules."""
+        stats_before = msf.module_stats()
+        msf.reload_modules()
+        stats_after = msf.module_stats()
+        # Counts should be similar (might change slightly if dev modules change)
+        for key in stats_before:
+            if key in stats_after:
+                # Allow some variance but not dramatic loss
+                assert stats_after[key] >= stats_before[key] * 0.9, (
+                    f"{key} count dropped significantly after reload"
+                )

@@ -135,11 +135,16 @@ impl RouteManager {
         // Get routes array
         let routes_val = call_method(self.ruby_switchboard, "routes", &[])?;
 
+        // Handle nil/empty case
+        if routes_val.is_nil() {
+            return Ok(routes);
+        }
+
         // routes is an array - iterate over it
-        let routes_array: magnus::RArray = TryConvert::try_convert(routes_val)
-            .map_err(|e: magnus::Error| {
-                AssassinateError::ConversionError(format!("Failed to convert routes to array: {}", e))
-            })?;
+        let routes_array: magnus::RArray = match magnus::RArray::from_value(routes_val) {
+            Some(arr) => arr,
+            None => return Ok(routes), // Empty or nil
+        };
 
         for route_obj in routes_array.into_iter() {
             // Extract subnet, netmask, comm from Route object
@@ -269,10 +274,5 @@ impl RouteManager {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests require the Ruby VM to be initialized
-    // Run with integration tests in Docker
-}
+// Note: Tests for routing are in tests/test_route_basic.rs and tests/test_route_integration.rs
+// They require Docker containers to be running.

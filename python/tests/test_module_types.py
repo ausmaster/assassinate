@@ -176,11 +176,23 @@ class TestPayloadModuleAPI:
         module = msf.create_module("payload/cmd/unix/reverse_bash")
         assert not hasattr(module, "exploit")
 
-    def test_generate_raises_not_implemented(self, msf_init):
-        """generate() is not yet implemented in Rust bridge."""
-        module = msf.create_module("payload/cmd/unix/reverse_bash")
-        with pytest.raises(NotImplementedError):
-            module.generate()
+    def test_generate_produces_shellcode(self, msf_init):
+        """generate() should produce shellcode bytes."""
+        module = msf.create_module("payload/linux/x64/shell_reverse_tcp")
+        module.options.LHOST = "127.0.0.1"
+        module.options.LPORT = 4444
+        shellcode = module.generate()
+        assert isinstance(shellcode, bytes)
+        assert len(shellcode) > 0
+
+    def test_to_handler_creates_handler_module(self, msf_init):
+        """to_handler() should create a configured exploit/multi/handler."""
+        module = msf.create_module("payload/linux/x64/shell_reverse_tcp")
+        module.options.LHOST = "127.0.0.1"
+        module.options.LPORT = 4444
+        handler = module.to_handler()
+        assert handler.fullname == "exploit/multi/handler"
+        assert isinstance(handler, msf.ExploitModule)
 
 
 class TestEncoderModuleAPI:
@@ -196,11 +208,23 @@ class TestEncoderModuleAPI:
         module = msf.create_module("encoder/x86/shikata_ga_nai")
         assert not hasattr(module, "exploit")
 
-    def test_encode_raises_not_implemented(self, msf_init):
-        """encode() is not yet implemented in Rust bridge."""
+    def test_encode_raw_bytes_raises_not_implemented(self, msf_init):
+        """encode() for raw bytes is not supported - use encode_payload instead."""
         module = msf.create_module("encoder/x86/shikata_ga_nai")
         with pytest.raises(NotImplementedError):
             module.encode(b"\x90\x90")
+
+    def test_encode_payload_produces_encoded_shellcode(self, msf_init):
+        """encode_payload() should produce encoded shellcode."""
+        module = msf.create_module("encoder/x86/shikata_ga_nai")
+        encoded = module.encode_payload(
+            "linux/x86/shell_reverse_tcp",
+            iterations=1,
+            LHOST="127.0.0.1",
+            LPORT=4444
+        )
+        assert isinstance(encoded, bytes)
+        assert len(encoded) > 0
 
 
 class TestNopModuleAPI:
@@ -216,11 +240,20 @@ class TestNopModuleAPI:
         module = msf.create_module("nop/x86/single_byte")
         assert not hasattr(module, "exploit")
 
-    def test_generate_sled_raises_not_implemented(self, msf_init):
-        """generate_sled() is not yet implemented in Rust bridge."""
+    def test_generate_sled_produces_nop_bytes(self, msf_init):
+        """generate_sled() should produce NOP bytes of requested length."""
         module = msf.create_module("nop/x86/single_byte")
-        with pytest.raises(NotImplementedError):
-            module.generate_sled(100)
+        sled = module.generate_sled(100)
+        assert isinstance(sled, bytes)
+        assert len(sled) == 100
+
+    def test_generate_sled_avoids_badchars(self, msf_init):
+        """generate_sled() should avoid specified bad characters."""
+        module = msf.create_module("nop/x86/single_byte")
+        sled = module.generate_sled(50, badchars=b"\x00")
+        assert isinstance(sled, bytes)
+        assert len(sled) == 50
+        assert b"\x00" not in sled
 
 
 class TestBaseModuleShared:

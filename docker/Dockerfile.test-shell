@@ -1,0 +1,26 @@
+# Simple test container with bind shell for integration testing
+# This provides a reliable, minimal target for session/routing tests
+#
+# Usage:
+#   docker compose up -d test-shell
+#   # Connect via: nc <container-ip> 4444 or MSF bind_tcp handler
+
+FROM alpine:3.19
+
+# Install minimal tools
+RUN apk add --no-cache \
+    busybox-extras \
+    socat
+
+# Create a simple bind shell that restarts on disconnect
+# socat provides a more reliable shell than raw netcat
+COPY docker/scripts/test-shell-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 4444
+
+# Health check - verify socat is listening
+HEALTHCHECK --interval=5s --timeout=3s --retries=3 \
+    CMD nc -z localhost 4444 || exit 1
+
+CMD ["/entrypoint.sh"]

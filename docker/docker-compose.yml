@@ -26,6 +26,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - assassinate-net
+    # Expose to host for local development/testing
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U assassinate"]
       interval: 5s
@@ -262,6 +265,32 @@ services:
     volumes:
       - ../python/tests:/app/python/tests:ro
     command: bash -c "pytest python/tests/ -v --tb=short"
+
+  # ===========================================================================
+  # Simple Test Targets (for unit/integration tests)
+  # ===========================================================================
+
+  # Simple bind shell for testing sessions and routing
+  # Provides reliable, minimal target without complex vulnerabilities
+  test-shell:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test-shell
+    image: assassinate:test-shell
+    container_name: assassinate-test-shell
+    networks:
+      - assassinate-net
+    # Expose to host for local testing
+    ports:
+      - "4444:4444"
+    expose:
+      - "4444"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4444"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
 
   # ===========================================================================
   # Test Target Containers (Vulnerable Services)

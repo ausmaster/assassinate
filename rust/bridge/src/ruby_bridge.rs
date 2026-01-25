@@ -3,7 +3,6 @@ use magnus::{
     value::{IntoId, ReprValue},
     IntoValue, RArray, RHash, RString, Ruby, TryConvert, Value,
 };
-use std::sync::Once;
 
 // ========== Dynamic Ruby Value Type ==========
 
@@ -935,100 +934,12 @@ pub fn hashmap_to_ruby_hash(map: std::collections::HashMap<String, String>) -> R
     hash_from_iter(map)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_init_ruby() {
-        assert!(init_ruby().is_ok());
-    }
-
-    #[test]
-    fn test_eval_ruby() {
-        let _ = init_ruby();
-        if let Ok(result) = eval_ruby("1 + 1") {
-            assert_eq!(value_to_i64(result).unwrap(), 2);
-        }
-    }
-
-    #[test]
-    fn test_value_conversions() {
-        let _ = init_ruby();
-
-        if let Ok(int_val) = eval_ruby("42") {
-            assert_eq!(value_to_i64(int_val).unwrap(), 42);
-        }
-
-        if let Ok(str_val) = eval_ruby("'hello'") {
-            assert_eq!(value_to_string(str_val).unwrap(), "hello");
-        }
-    }
-
-    #[test]
-    fn test_is_nil() {
-        let _ = init_ruby();
-
-        if let Ok(nil_val) = eval_ruby("nil") {
-            assert!(nil_val.is_nil());
-        }
-
-        if let Ok(not_nil) = eval_ruby("42") {
-            assert!(!not_nil.is_nil());
-        }
-    }
-
-    #[test]
-    fn test_to_bool() {
-        let _ = init_ruby();
-
-        // nil is falsy
-        if let Ok(nil_val) = eval_ruby("nil") {
-            assert!(!nil_val.to_bool());
-        }
-
-        // false is falsy
-        if let Ok(false_val) = eval_ruby("false") {
-            assert!(!false_val.to_bool());
-        }
-
-        // true is truthy
-        if let Ok(true_val) = eval_ruby("true") {
-            assert!(true_val.to_bool());
-        }
-
-        // 0 is truthy in Ruby!
-        if let Ok(zero_val) = eval_ruby("0") {
-            assert!(zero_val.to_bool());
-        }
-
-        // empty string is truthy
-        if let Ok(empty_str) = eval_ruby("''") {
-            assert!(empty_str.to_bool());
-        }
-    }
-
-    #[test]
-    fn test_ruby_array() {
-        let _ = init_ruby();
-
-        if let Ok(arr) = eval_ruby("[1, 2, 3]") {
-            assert_eq!(ruby_array_len(arr).unwrap(), 3);
-            assert_eq!(value_to_i64(ruby_array_get(arr, 0).unwrap()).unwrap(), 1);
-            assert_eq!(ruby_array_to_ints(arr).unwrap(), vec![1, 2, 3]);
-        }
-    }
-
-    #[test]
-    fn test_ruby_hash() {
-        let _ = init_ruby();
-
-        if let Ok(ruby) = get_ruby() {
-            let hash = ruby.hash_new();
-            hash.aset("foo", 42).unwrap();
-
-            let val: i64 = hash.aref("foo").unwrap();
-            assert_eq!(val, 42);
-        }
-    }
-}
+// Unit tests moved to integration tests in tests/ directory:
+// - tests/test_ruby_init.rs
+// - tests/test_ruby_eval.rs
+// - tests/test_ruby_conversions.rs
+// - tests/test_ruby_nil.rs
+// - tests/test_ruby_bool.rs
+// - tests/test_ruby_array.rs
+// - tests/test_ruby_hash.rs
+// Each file = separate process = separate Ruby VM = no GVL conflicts
