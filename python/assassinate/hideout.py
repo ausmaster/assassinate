@@ -36,7 +36,7 @@ import os
 from os import environ
 from pathlib import Path
 from subprocess import DEVNULL, CalledProcessError, TimeoutExpired, run
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Union
 
 import msf
 from assassinate.log_config import get_logger
@@ -269,7 +269,7 @@ class Hideout:
         weapon: Union["Weapon", str],
         bullet: Optional[Union["Bullet", str]] = None,
         timeout: int = 60,
-        **options: Any,
+        options: Optional[Mapping[str, Any]] = None,
     ) -> Optional["Kill"]:
         """One-liner: configure and execute immediately.
 
@@ -281,7 +281,7 @@ class Hideout:
             weapon: Weapon object or module name
             bullet: Bullet (auto-selected if not provided)
             timeout: Seconds to wait for session
-            **options: Weapon configuration options
+            options: Weapon configuration options (e.g., {"RHOSTS": "...", "SMBUser": "..."})
 
         Returns:
             Kill on success, None on failure
@@ -290,13 +290,14 @@ class Hideout:
             >>> kill = hideout.quick_hit(
             ...     target="192.168.1.100",
             ...     weapon="exploit/linux/samba/is_known_pipename",
-            ...     SMB_SHARE_NAME="myshare"
+            ...     options={"SMB_SHARE_NAME": "myshare", "SMBUser": "root"}
             ... )
             >>> if kill:
             ...     print(kill.interrogate("id"))
         """
         contract = self.contract(target, weapon, bullet)
-        contract.configure(**options)
+        if options:
+            contract.configure(**options)
         kill = contract.execute(timeout)
 
         if kill:

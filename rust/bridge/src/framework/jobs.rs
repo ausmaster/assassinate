@@ -2,18 +2,19 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, value_to_string, Options};
-use magnus::{value::ReprValue, IntoValue, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, IntoValue, TryConvert, Value};
 
 /// Job manager
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct JobManager {
-    pub(crate) ruby_jobs: Value,
+    pub(crate) ruby_jobs: BoxValue<Value>,
 }
 
 impl JobManager {
     /// List all job IDs
     pub fn list(&self) -> Result<Vec<String>> {
-        let keys_val = call_method(self.ruby_jobs, "keys", &[])?;
+        let keys_val = call_method(*self.ruby_jobs, "keys", &[])?;
 
         let job_ids: Vec<String> =
             TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
@@ -28,7 +29,7 @@ impl JobManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.str_new(job_id).as_value();
 
-        let job_val = call_method(self.ruby_jobs, "[]", &[id_val])?;
+        let job_val = call_method(*self.ruby_jobs, "[]", &[id_val])?;
 
         if job_val.is_nil() {
             Ok(None)
@@ -42,7 +43,8 @@ impl JobManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.str_new(job_id).as_value();
 
-        match call_method(self.ruby_jobs, "stop", &[id_val]) {
+        // MSF uses stop_job on the job container
+        match call_method(*self.ruby_jobs, "stop_job", &[id_val]) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -54,9 +56,10 @@ impl JobManager {
 }
 
 /// Plugin manager
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct PluginManager {
-    pub(crate) ruby_plugins: Value,
+    pub(crate) ruby_plugins: BoxValue<Value>,
 }
 
 impl PluginManager {
@@ -65,7 +68,7 @@ impl PluginManager {
         // PluginManager is an array of plugin instances
         // Call to_a to convert to array
         let plugins_array: magnus::RArray =
-            TryConvert::try_convert(self.ruby_plugins).map_err(|e: magnus::Error| {
+            TryConvert::try_convert(*self.ruby_plugins).map_err(|e: magnus::Error| {
                 AssassinateError::ConversionError(format!(
                     "Failed to convert plugins to array: {}",
                     e
@@ -100,7 +103,7 @@ impl PluginManager {
 
         // Load the plugin
         let path_val = ruby.str_new(path).as_value();
-        let plugin_instance = call_method(self.ruby_plugins, "load", &[path_val, opts_hash.as_value()])?;
+        let plugin_instance = call_method(*self.ruby_plugins, "load", &[path_val, opts_hash.as_value()])?;
 
         // Get plugin name
         let name_val = call_method(plugin_instance, "name", &[])?;
@@ -113,7 +116,7 @@ impl PluginManager {
     pub fn unload(&self, plugin_name: &str) -> Result<bool> {
         // PluginManager is an array, so we need to find the plugin by name
         let plugins_array: magnus::RArray =
-            TryConvert::try_convert(self.ruby_plugins).map_err(|e: magnus::Error| {
+            TryConvert::try_convert(*self.ruby_plugins).map_err(|e: magnus::Error| {
                 AssassinateError::ConversionError(format!(
                     "Failed to convert plugins to array: {}",
                     e
@@ -127,7 +130,7 @@ impl PluginManager {
 
             if name == plugin_name {
                 // Found it, unload it
-                call_method(self.ruby_plugins, "unload", &[plugin_val])?;
+                call_method(*self.ruby_plugins, "unload", &[plugin_val])?;
                 return Ok(true);
             }
         }

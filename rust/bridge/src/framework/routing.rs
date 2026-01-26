@@ -23,7 +23,7 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, get_ruby, value_to_string};
-use magnus::{value::ReprValue, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, TryConvert, Value};
 use serde::{Deserialize, Serialize};
 
 /// Represents a route in the MSF routing table
@@ -40,11 +40,13 @@ pub struct Route {
 }
 
 /// Route manager for adding/removing routes through sessions
+///
+/// Uses `BoxValue` to protect Ruby values from garbage collection.
 pub struct RouteManager {
     /// Reference to the SwitchBoard singleton
-    pub(crate) ruby_switchboard: Value,
+    pub(crate) ruby_switchboard: BoxValue<Value>,
     /// Reference to sessions manager (for looking up sessions by ID)
-    pub(crate) ruby_sessions: Value,
+    pub(crate) ruby_sessions: BoxValue<Value>,
 }
 
 impl RouteManager {
@@ -58,8 +60,8 @@ impl RouteManager {
             .map_err(|e| AssassinateError::RubyError(format!("Failed to get SwitchBoard: {}", e)))?;
 
         Ok(RouteManager {
-            ruby_switchboard: switchboard,
-            ruby_sessions,
+            ruby_switchboard: BoxValue::new(switchboard),
+            ruby_sessions: BoxValue::new(ruby_sessions),
         })
     }
 
@@ -77,7 +79,7 @@ impl RouteManager {
 
         // Get the session object
         let sid_val = ruby.integer_from_i64(session_id).as_value();
-        let session = call_method(self.ruby_sessions, "[]", &[sid_val])?;
+        let session = call_method(*self.ruby_sessions, "[]", &[sid_val])?;
 
         if session.is_nil() {
             return Err(AssassinateError::SessionNotFound(session_id));
@@ -87,7 +89,7 @@ impl RouteManager {
         let netmask_val = ruby.str_new(netmask).as_value();
 
         let result = call_method(
-            self.ruby_switchboard,
+            *self.ruby_switchboard,
             "add_route",
             &[subnet_val, netmask_val, session],
         )?;
@@ -109,7 +111,7 @@ impl RouteManager {
 
         // Get the session object
         let sid_val = ruby.integer_from_i64(session_id).as_value();
-        let session = call_method(self.ruby_sessions, "[]", &[sid_val])?;
+        let session = call_method(*self.ruby_sessions, "[]", &[sid_val])?;
 
         if session.is_nil() {
             return Err(AssassinateError::SessionNotFound(session_id));
@@ -119,7 +121,7 @@ impl RouteManager {
         let netmask_val = ruby.str_new(netmask).as_value();
 
         let result = call_method(
-            self.ruby_switchboard,
+            *self.ruby_switchboard,
             "remove_route",
             &[subnet_val, netmask_val, session],
         )?;
@@ -133,7 +135,7 @@ impl RouteManager {
         let mut routes = Vec::new();
 
         // Get routes array
-        let routes_val = call_method(self.ruby_switchboard, "routes", &[])?;
+        let routes_val = call_method(*self.ruby_switchboard, "routes", &[])?;
 
         // Handle nil/empty case
         if routes_val.is_nil() {
@@ -189,7 +191,7 @@ impl RouteManager {
 
     /// Flush all routes from the routing table
     pub fn flush_routes(&self) -> Result<()> {
-        call_method(self.ruby_switchboard, "flush_routes", &[])?;
+        call_method(*self.ruby_switchboard, "flush_routes", &[])?;
         Ok(())
     }
 
@@ -208,7 +210,7 @@ impl RouteManager {
         let netmask_val = ruby.str_new(netmask).as_value();
 
         let result = call_method(
-            self.ruby_switchboard,
+            *self.ruby_switchboard,
             "route_exists?",
             &[subnet_val, netmask_val],
         )?;
@@ -228,7 +230,7 @@ impl RouteManager {
 
         let addr_val = ruby.str_new(addr).as_value();
 
-        let comm = call_method(self.ruby_switchboard, "best_comm", &[addr_val])?;
+        let comm = call_method(*self.ruby_switchboard, "best_comm", &[addr_val])?;
 
         if comm.is_nil() {
             return Ok(None);
@@ -256,13 +258,13 @@ impl RouteManager {
 
         // Get the session object
         let sid_val = ruby.integer_from_i64(session_id).as_value();
-        let session = call_method(self.ruby_sessions, "[]", &[sid_val])?;
+        let session = call_method(*self.ruby_sessions, "[]", &[sid_val])?;
 
         if session.is_nil() {
             return Err(AssassinateError::SessionNotFound(session_id));
         }
 
-        call_method(self.ruby_switchboard, "remove_by_comm", &[session])?;
+        call_method(*self.ruby_switchboard, "remove_by_comm", &[session])?;
 
         Ok(())
     }

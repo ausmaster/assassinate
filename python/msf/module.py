@@ -31,13 +31,15 @@ Example:
 from __future__ import annotations
 
 import asyncio
-import time
-from typing import Any, List, Optional, Set, TYPE_CHECKING
+from typing import Any, List, Mapping, Optional, Union, TYPE_CHECKING
 
 from .options import ModuleOptions
 
 if TYPE_CHECKING:
     from .session import Session
+
+# Type alias for payload parameter
+PayloadSpec = Union[str, "PayloadModule"]
 
 
 # =============================================================================
@@ -150,6 +152,19 @@ class BaseModule:
         """Set option value (prefer module.options.KEY = value)."""
         self._rust._set_option(key, str(value))
 
+    def _get_all_options(self) -> dict:
+        """Get all currently set options as a dictionary."""
+        opts = {}
+        try:
+            structured = self._rust._options_structured()
+            for key in structured:
+                val = self._rust._get_option(key)
+                if val is not None and val != "":
+                    opts[key] = val
+        except Exception:
+            pass
+        return opts
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}: {self.fullname}>"
 
@@ -197,30 +212,85 @@ class ExploitModule(BaseModule):
         """Run vulnerability check against target."""
         return self._rust.check()
 
-    def exploit(self, payload: str, timeout: int = 60) -> Optional["Session"]:
+    def exploit(
+        self,
+        payload: PayloadSpec,
+        timeout: int = 60,
+        job: bool = False,
+        payload_options: Optional[Mapping[str, Any]] = None,
+    ) -> "Optional[Union[Session, str]]":
         """
-        Run exploit and wait for session.
+        Run exploit and wait for session, or run as background job.
 
         Args:
-            payload: Payload name (e.g., "cmd/unix/interact")
-            timeout: Seconds to wait for session (default: 60)
+            payload: Payload name string (e.g., "cmd/unix/interact") or
+                     a configured PayloadModule object
+            timeout: Seconds to wait for session (default: 60, ignored if job=True)
+            job: If True, run as background job and return job ID immediately
+            payload_options: Optional dict of payload options (e.g., {"LHOST": "10.0.0.1"}).
+                            These are set on the exploit's datastore before execution.
+                            Ignored if payload is a PayloadModule (uses its options instead).
 
         Returns:
-            Session object if successful, None otherwise
+            - If job=False: Session object if successful, None otherwise
+            - If job=True: Job ID (str) if job started, None otherwise
 
         Example:
+            # Simple - use payload name with defaults
             session = module.exploit("cmd/unix/interact")
-            if session:
-                print(session.run_cmd("whoami"))
+
+            # With payload options dict
+            session = module.exploit(
+                "cmd/unix/reverse_bash",
+                payload_options={"LHOST": "10.0.0.1", "LPORT": 4444}
+            )
+
+            # With configured PayloadModule (extracts options automatically)
+            payload = create_module("payload/cmd/unix/reverse_bash")
+            payload.options.LHOST = "10.0.0.1"
+            payload.options.LPORT = 4444
+            session = module.exploit(payload)
+
+            # Run as background job
+            job_id = module.exploit("cmd/unix/interact", job=True)
         """
         from .session import Session
 
-        rust_session = self._rust.exploit_expect_session(payload, timeout)
-        if rust_session is not None:
-            return Session(rust_session)
-        return None
+        # Extract payload name and options
+        if isinstance(payload, str):
+            payload_name = payload
+            # Apply payload_options if provided
+            if payload_options:
+                for key, value in payload_options.items():
+                    self._rust._set_option(key, str(value))
+        else:
+            # PayloadModule - extract fullname and configured options
+            payload_name = payload.fullname
+            # MSF expects payload name without "payload/" prefix
+            if payload_name.startswith("payload/"):
+                payload_name = payload_name[8:]
+            # Copy all configured options from payload to exploit's datastore
+            payload_opts = payload._get_all_options()
+            for key, value in payload_opts.items():
+                self._rust._set_option(key, str(value))
 
-    async def exploit_async(self, payload: str, timeout: int = 60) -> Optional["Session"]:
+        result = self._rust.exploit(payload_name, timeout, job)
+
+        # If job=True, result is job_id (str) or None
+        # If job=False, result is PySession or None
+        if result is None:
+            return None
+        if job:
+            return result  # str job_id
+        return Session(result)  # Wrap PySession
+
+    async def exploit_async(
+        self,
+        payload: PayloadSpec,
+        timeout: int = 60,
+        job: bool = False,
+        payload_options: Optional[Mapping[str, Any]] = None,
+    ) -> "Optional[Union[Session, str]]":
         """
         Run exploit asynchronously with parallel execution support.
 
@@ -229,15 +299,26 @@ class ExploitModule(BaseModule):
         exploitation of multiple targets.
 
         Args:
-            payload: Payload name (e.g., "cmd/unix/interact")
-            timeout: Seconds to wait for session (default: 60)
+            payload: Payload name string (e.g., "cmd/unix/interact") or
+                     a configured PayloadModule object
+            timeout: Seconds to wait for session (default: 60, ignored if job=True)
+            job: If True, return immediately after job is registered
+            payload_options: Optional dict of payload options (e.g., {"LHOST": "10.0.0.1"}).
+                            Ignored if payload is a PayloadModule.
 
         Returns:
-            Session object if successful, None otherwise
+            - If job=False: Session object if successful, None otherwise
+            - If job=True: Job ID (str) if job started, None otherwise
 
         Example:
-            # Single async exploit
+            # Wait for session (default)
             session = await module.exploit_async("cmd/unix/interact")
+
+            # With payload options
+            session = await module.exploit_async(
+                "cmd/unix/reverse_bash",
+                payload_options={"LHOST": "10.0.0.1", "LPORT": 4444}
+            )
 
             # Parallel exploitation of multiple targets
             async def exploit_targets(targets):
@@ -248,46 +329,47 @@ class ExploitModule(BaseModule):
                     tasks.append(module.exploit_async("cmd/unix/interact"))
                 return await asyncio.gather(*tasks)
         """
-        from . import sleep_releasing_gvl, list_sessions, get_session
+        # Extract payload name and apply options
+        if isinstance(payload, str):
+            payload_name = payload
+            if payload_options:
+                for key, value in payload_options.items():
+                    self._rust._set_option(key, str(value))
+        else:
+            payload_name = payload.fullname
+            # MSF expects payload name without "payload/" prefix
+            if payload_name.startswith("payload/"):
+                payload_name = payload_name[8:]
+            payload_opts = payload._get_all_options()
+            for key, value in payload_opts.items():
+                self._rust._set_option(key, str(value))
+
+        if job:
+            # Just register the job and return
+            job_id = self._rust.exploit(payload_name, timeout, True)
+            await asyncio.sleep(0)  # Yield to event loop
+            return job_id
+
+        from . import wait_for_new_session, list_sessions
+        from .session import Session
+
+        # Track sessions before launching exploit
+        existing_sessions = set(list_sessions())
 
         # Launch exploit as background job (creates Ruby thread)
-        self._rust.exploit_job(payload)
+        self._rust.exploit(payload_name, timeout, True)
 
-        # Track sessions that existed before our exploit
-        seen_sessions: Set[int] = set(list_sessions())
-        start_time = time.time()
+        # Wait for session with GVL released (allows Ruby threads to run)
+        session = wait_for_new_session(
+            existing_sessions=existing_sessions,
+            timeout_ms=timeout * 1000,
+            interval_ms=100,
+        )
 
-        # Poll for new sessions, releasing GVL between checks
-        while time.time() - start_time < timeout:
-            # Release GVL so Ruby background threads can execute
-            sleep_releasing_gvl(100)  # 100ms with GVL released
+        # Yield to asyncio event loop
+        await asyncio.sleep(0)
 
-            # Check for new sessions
-            current_sessions = set(list_sessions())
-            new_sessions = current_sessions - seen_sessions
-
-            if new_sessions:
-                session_id = next(iter(new_sessions))
-                rust_session = get_session(session_id)
-                if rust_session:
-                    return rust_session
-                seen_sessions = current_sessions
-
-            await asyncio.sleep(0)
-
-        return None
-
-    def exploit_job(self, payload: str) -> Optional[str]:
-        """
-        Run exploit as background job (non-blocking).
-
-        Args:
-            payload: Payload name (e.g., "cmd/unix/interact")
-
-        Returns:
-            Job ID (as string) if job was started, None if it completed immediately
-        """
-        return self._rust.exploit_job(payload)
+        return session
 
 
 # =============================================================================
@@ -549,19 +631,6 @@ class PayloadModule(BaseModule):
                 pass
 
         return handler
-
-    def _get_all_options(self) -> dict:
-        """Get all currently set options as a dictionary."""
-        opts = {}
-        try:
-            structured = self._rust._options_structured()
-            for key in structured:
-                val = self._rust._get_option(key)
-                if val is not None and val != "":
-                    opts[key] = val
-        except Exception:
-            pass
-        return opts
 
 
 # =============================================================================

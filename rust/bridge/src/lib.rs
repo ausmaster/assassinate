@@ -50,7 +50,7 @@ pub use framework::{
     SessionManager,
 };
 pub use ruby_bootstrap::{ensure_ruby, init_ruby, require_all};
-pub use ruby_bridge::init_metasploit;
+pub use ruby_bridge::{init_metasploit, Options, RubyVal};
 
 // =============================================================================
 // Python Bindings (pyo3 feature)

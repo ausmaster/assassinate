@@ -346,74 +346,86 @@ impl MsfModule {
         Ok(self.module.module_type()?)
     }
 
-    /// Execute the exploit with the specified payload
+    /// Execute the exploit
     ///
-    /// Returns the session ID if a session was created, None otherwise.
-    fn exploit(&self, payload: &str) -> PyResult<Option<i64>> {
-        Ok(self.module.exploit(payload, None)?)
-    }
-
-    /// Execute the exploit as a background job
+    /// # Arguments
+    /// * `payload` - Payload name (e.g., "cmd/unix/interact")
+    /// * `timeout_secs` - Seconds to wait for session (ignored if job=true)
+    /// * `job` - If true, run as background job and return job ID immediately
     ///
-    /// Returns the job ID if successful, None otherwise.
-    fn exploit_job(&self, payload: &str) -> PyResult<Option<String>> {
-        let mut options = Options::new();
-        options.insert("RunAsJob".into(), RubyVal::Bool(true));
-
-        let framework = self.module.framework()?;
-        let jobs_before: Vec<String> = framework.jobs()?.list()?;
-
-        let _ = self.module.exploit(payload, Some(options))?;
-
-        let jobs_after: Vec<String> = framework.jobs()?.list()?;
-
-        for job_id in jobs_after {
-            if !jobs_before.contains(&job_id) {
-                return Ok(Some(job_id));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Execute the exploit and wait for a session
-    ///
-    /// Polls for new sessions up to `timeout_secs` seconds.
-    fn exploit_expect_session(
+    /// # Returns
+    /// * If job=false: PySession if successful, None otherwise
+    /// * If job=true: Job ID (str) if job started, None otherwise
+    #[pyo3(signature = (payload, timeout_secs=60, job=false))]
+    fn exploit(
         &self,
+        py: Python<'_>,
         payload: &str,
         timeout_secs: u64,
-    ) -> PyResult<Option<PySession>> {
-        use std::thread;
-        use std::time::Duration;
-
+        job: bool,
+    ) -> PyResult<PyObject> {
         let framework = self.module.framework()?;
-        let session_manager = framework.sessions()?;
-        let sessions_before = session_manager.list()?;
 
-        let mut options = Options::new();
-        options.insert("Quiet".into(), RubyVal::Bool(false));
+        if job {
+            // Run as background job - return job ID immediately
+            let mut options = Options::new();
+            options.insert("RunAsJob".into(), RubyVal::Bool(true));
 
-        if let Some(sid) = self.module.exploit(payload, Some(options))? {
-            if let Some(s) = session_manager.get(sid)? {
-                return Ok(Some(PySession { session: s }));
-            }
-        }
+            let jobs_before: Vec<String> = framework.jobs()?.list()?;
+            let _ = self.module.exploit(payload, Some(options))?;
+            let jobs_after: Vec<String> = framework.jobs()?.list()?;
 
-        for _ in 0..timeout_secs {
-            thread::sleep(Duration::from_secs(1));
-
-            let sessions_now = session_manager.list()?;
-            for sid in &sessions_now {
-                if !sessions_before.contains(sid) {
-                    if let Some(s) = session_manager.get(*sid)? {
-                        return Ok(Some(PySession { session: s }));
-                    }
+            // Find new job ID
+            for job_id in jobs_after {
+                if !jobs_before.contains(&job_id) {
+                    return Ok(job_id.into_py(py));
                 }
             }
-        }
+            Ok(py.None())
+        } else {
+            // Wait for session
+            let session_manager = framework.sessions()?;
+            let sessions_before = session_manager.list()?;
 
-        Ok(None)
+            let mut options = Options::new();
+            options.insert("Quiet".into(), RubyVal::Bool(false));
+            // AutoVerifySession ensures session is valid before exploit_simple returns
+            options.insert("AutoVerifySession".into(), RubyVal::Bool(true));
+
+            // Try to get session directly from exploit (some exploits return it immediately)
+            if let Some(sid) = self.module.exploit(payload, Some(options))? {
+                if let Some(s) = session_manager.get(sid)? {
+                    return Ok(PySession { session: s }.into_py(py));
+                }
+            }
+
+            // Poll for new sessions, releasing GVL between checks
+            let mut found_session: Option<PySession> = None;
+            let timeout_ms = timeout_secs * 1000;
+
+            crate::gvl::poll_releasing_gvl(
+                || {
+                    if let Ok(sessions_now) = session_manager.list() {
+                        for sid in &sessions_now {
+                            if !sessions_before.contains(sid) {
+                                if let Ok(Some(s)) = session_manager.get(*sid) {
+                                    found_session = Some(PySession { session: s });
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                },
+                Some(1000),
+                Some(timeout_ms),
+            );
+
+            match found_session {
+                Some(session) => Ok(session.into_py(py)),
+                None => Ok(py.None()),
+            }
+        }
     }
 
     /// Run an auxiliary module
@@ -733,9 +745,57 @@ fn create_shell_session(host: &str, port: u16, timeout: Option<u32>) -> PyResult
     })?)
 }
 
-/// Sleep while releasing the Ruby GVL
+/// Poll for a condition while releasing the Ruby GVL between checks.
 ///
-/// Useful for allowing other Ruby threads to run during long operations.
+/// This is the primary mechanism for waiting on Ruby background operations.
+/// It releases the GVL during sleep intervals, allowing Ruby threads to run.
+///
+/// Args:
+///     check_fn: Callable that returns True when condition is met
+///     interval_ms: Sleep interval between checks (default: 100ms)
+///     timeout_ms: Total timeout in ms (default: 60000ms, 0 = no timeout)
+///
+/// Returns:
+///     True if condition was met, False if timeout
+///
+/// Example:
+///     >>> # Wait for a session to appear
+///     >>> found = poll_releasing_gvl(
+///     ...     lambda: len(list_sessions()) > 0,
+///     ...     interval_ms=100,
+///     ...     timeout_ms=30000
+///     ... )
+#[pyfunction]
+#[pyo3(signature = (check_fn, interval_ms=None, timeout_ms=None))]
+fn poll_releasing_gvl(
+    _py: Python<'_>,
+    check_fn: PyObject,
+    interval_ms: Option<u64>,
+    timeout_ms: Option<u64>,
+) -> PyResult<bool> {
+    let result = crate::gvl::poll_releasing_gvl(
+        || {
+            // Call the Python check function
+            Python::with_gil(|py| {
+                check_fn
+                    .call0(py)
+                    .and_then(|result| result.extract::<bool>(py))
+                    .unwrap_or(false)
+            })
+        },
+        interval_ms,
+        timeout_ms,
+    );
+    Ok(result)
+}
+
+/// Sleep while releasing the Ruby GVL.
+///
+/// Convenience wrapper for simple sleep without a condition check.
+/// Useful for allowing Ruby background threads to run.
+///
+/// Args:
+///     duration_ms: How long to sleep in milliseconds
 #[pyfunction]
 fn sleep_releasing_gvl(duration_ms: u64) {
     crate::gvl::sleep_releasing_gvl(duration_ms);
@@ -760,11 +820,24 @@ fn job_info(job_id: &str) -> PyResult<Option<String>> {
 }
 
 /// Kill a job by ID
+///
+/// Accepts either a string or integer job ID for convenience.
 #[pyfunction]
-fn job_kill(job_id: &str) -> PyResult<bool> {
+fn job_kill(py: Python<'_>, job_id: PyObject) -> PyResult<bool> {
+    // Convert job_id to string, accepting both int and str
+    let job_id_str: String = if let Ok(s) = job_id.extract::<String>(py) {
+        s
+    } else if let Ok(i) = job_id.extract::<i64>(py) {
+        i.to_string()
+    } else {
+        return Err(PyRuntimeError::new_err(
+            "job_id must be a string or integer",
+        ));
+    };
+
     Ok(with_framework(|framework| {
         let jobs = framework.jobs()?;
-        jobs.kill(job_id)
+        jobs.kill(&job_id_str)
     })?)
 }
 
@@ -1463,6 +1536,7 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
             "exploit",
             "check",
             "AssassinateError",
+            "poll_releasing_gvl",
             "sleep_releasing_gvl",
             "job_list",
             "job_info",
@@ -1534,6 +1608,7 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
     module.add_function(wrap_pyfunction!(create_module, module)?)?;
     module.add_function(wrap_pyfunction!(exploit, module)?)?;
     module.add_function(wrap_pyfunction!(check, module)?)?;
+    module.add_function(wrap_pyfunction!(poll_releasing_gvl, module)?)?;
     module.add_function(wrap_pyfunction!(sleep_releasing_gvl, module)?)?;
     module.add_function(wrap_pyfunction!(job_list, module)?)?;
     module.add_function(wrap_pyfunction!(job_info, module)?)?;

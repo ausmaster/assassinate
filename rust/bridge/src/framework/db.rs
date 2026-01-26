@@ -2,12 +2,13 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, get_string_attr, sym, value_to_string, Options};
-use magnus::{value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
 
 /// Database manager
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct DbManager {
-    pub(crate) ruby_db: Value,
+    pub(crate) ruby_db: BoxValue<Value>,
 }
 
 impl DbManager {
@@ -15,7 +16,7 @@ impl DbManager {
     pub fn hosts(&self) -> Result<Vec<String>> {
         // MSF hosts() returns an ActiveRecord relation of Mdm::Host objects
         // We need to convert each host to a string representation (IP address)
-        let hosts_val = call_method(self.ruby_db, "hosts", &[])?;
+        let hosts_val = call_method(*self.ruby_db, "hosts", &[])?;
 
         // Check if nil (database might be empty or not configured)
         if hosts_val.is_nil() {
@@ -47,7 +48,7 @@ impl DbManager {
 
     /// Get all services
     pub fn services(&self) -> Result<Vec<String>> {
-        let services_val = call_method(self.ruby_db, "services", &[])?;
+        let services_val = call_method(*self.ruby_db, "services", &[])?;
 
         // Check if nil (database might be empty or not configured)
         if services_val.is_nil() {
@@ -143,7 +144,7 @@ impl DbManager {
         // MSF vulns() expects a workspace parameter, use empty hash for default workspace
         let opts_val = ruby.hash_new().as_value();
 
-        let vulns_val = call_method(self.ruby_db, "vulns", &[opts_val])?;
+        let vulns_val = call_method(*self.ruby_db, "vulns", &[opts_val])?;
 
         // Check if nil (database might be empty or not configured)
         if vulns_val.is_nil() {
@@ -175,7 +176,7 @@ impl DbManager {
 
     /// Get all credentials
     pub fn creds(&self) -> Result<Vec<String>> {
-        let creds_val = call_method(self.ruby_db, "creds", &[])?;
+        let creds_val = call_method(*self.ruby_db, "creds", &[])?;
 
         // Check if nil (database might be empty or not configured)
         if creds_val.is_nil() {
@@ -193,7 +194,7 @@ impl DbManager {
 
     /// Get all loot
     pub fn loot(&self) -> Result<Vec<String>> {
-        let loot_val = call_method(self.ruby_db, "loot", &[])?;
+        let loot_val = call_method(*self.ruby_db, "loot", &[])?;
 
         // Check if nil (database might be empty or not configured)
         if loot_val.is_nil() {
@@ -256,7 +257,7 @@ impl DbManager {
 
             // Find existing workspace
             let mut workspace_obj = call_method(
-                self.ruby_db,
+                *self.ruby_db,
                 "find_workspace",
                 &[ruby.str_new(&workspace_name).as_value()],
             )?;
@@ -273,7 +274,7 @@ impl DbManager {
                         ruby.str_new(&workspace_name).as_value(),
                     ],
                 )?;
-                workspace_obj = call_method(self.ruby_db, "add_workspace", &[add_opts])?;
+                workspace_obj = call_method(*self.ruby_db, "add_workspace", &[add_opts])?;
             }
 
             // Inject workspace object into options hash
@@ -281,7 +282,7 @@ impl DbManager {
             call_method(opts_val, "[]=", &[workspace_sym.as_value(), workspace_obj])?;
         }
 
-        let result_val = call_method(self.ruby_db, method_name, &[opts_val])?;
+        let result_val = call_method(*self.ruby_db, method_name, &[opts_val])?;
 
         // MSF report_* methods return ActiveRecord objects (Mdm::Host, Mdm::Service, etc.)
         // We need to extract the ID from the object
@@ -304,7 +305,7 @@ impl DbManager {
         // Create empty opts hash
         let opts_val = ruby.hash_new().as_value();
 
-        let workspaces_val = call_method(self.ruby_db, "workspaces", &[opts_val])?;
+        let workspaces_val = call_method(*self.ruby_db, "workspaces", &[opts_val])?;
 
         // Check if nil
         if workspaces_val.is_nil() {
@@ -359,7 +360,7 @@ impl DbManager {
 
     /// Get current workspace
     pub fn workspace(&self) -> Result<serde_json::Value> {
-        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        let workspace_obj = call_method(*self.ruby_db, "workspace", &[])?;
 
         if workspace_obj.is_nil() {
             return Ok(serde_json::json!(null));
@@ -389,7 +390,7 @@ impl DbManager {
 
         // Find the workspace first
         let workspace_obj = call_method(
-            self.ruby_db,
+            *self.ruby_db,
             "find_workspace",
             &[ruby.str_new(name).as_value()],
         )?;
@@ -402,7 +403,7 @@ impl DbManager {
         }
 
         // Set it as current workspace
-        call_method(self.ruby_db, "workspace=", &[workspace_obj])?;
+        call_method(*self.ruby_db, "workspace=", &[workspace_obj])?;
 
         Ok(())
     }
@@ -415,7 +416,7 @@ impl DbManager {
         // The proxy internally converts it to { name: workspace_name } before calling
         // the underlying data service. This matches find_workspace's signature.
         let workspace_obj = call_method(
-            self.ruby_db,
+            *self.ruby_db,
             "add_workspace",
             &[ruby.str_new(name).as_value()],
         )?;
@@ -450,7 +451,7 @@ impl DbManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let workspace_obj = call_method(
-            self.ruby_db,
+            *self.ruby_db,
             "find_workspace",
             &[ruby.str_new(name).as_value()],
         )?;
@@ -495,7 +496,7 @@ impl DbManager {
         })?;
 
         // Call delete_workspaces
-        match call_method(self.ruby_db, "delete_workspaces", &[opts_hash.as_value()]) {
+        match call_method(*self.ruby_db, "delete_workspaces", &[opts_hash.as_value()]) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -519,7 +520,7 @@ impl DbManager {
             }
         }
 
-        let notes_val = call_method(self.ruby_db, "notes", &[opts_hash.as_value()])?;
+        let notes_val = call_method(*self.ruby_db, "notes", &[opts_hash.as_value()])?;
 
         if notes_val.is_nil() {
             return Ok(Vec::new());
@@ -605,7 +606,7 @@ impl DbManager {
             })?;
         }
 
-        let result_val = call_method(self.ruby_db, "report_note", &[opts_hash.as_value()])?;
+        let result_val = call_method(*self.ruby_db, "report_note", &[opts_hash.as_value()])?;
 
         // Check if the result is nil
         if result_val.is_nil() {
@@ -679,7 +680,7 @@ impl DbManager {
         })?;
 
         // Call delete_note
-        let deleted_val = call_method(self.ruby_db, "delete_note", &[opts_hash.as_value()])?;
+        let deleted_val = call_method(*self.ruby_db, "delete_note", &[opts_hash.as_value()])?;
 
         // Returns array of deleted notes - use RArray::len() for efficient length
         if let Some(deleted_array) = RArray::from_value(deleted_val) {
@@ -710,7 +711,7 @@ impl DbManager {
 
         // MSF's get_host requires :workspace parameter
         // Inject the current workspace object
-        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        let workspace_obj = call_method(*self.ruby_db, "workspace", &[])?;
         if !workspace_obj.is_nil() {
             let workspace_sym = ruby.to_symbol("workspace");
             opts_hash.aset(workspace_sym, workspace_obj).map_err(|e| {
@@ -718,7 +719,7 @@ impl DbManager {
             })?;
         }
 
-        let host_obj = call_method(self.ruby_db, "get_host", &[opts_hash.as_value()])?;
+        let host_obj = call_method(*self.ruby_db, "get_host", &[opts_hash.as_value()])?;
 
         if host_obj.is_nil() {
             return Ok(None);
@@ -807,7 +808,7 @@ impl DbManager {
         })?;
 
         // MSF's get_service requires :workspace parameter
-        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        let workspace_obj = call_method(*self.ruby_db, "workspace", &[])?;
         if !workspace_obj.is_nil() {
             let workspace_sym = ruby.to_symbol("workspace");
             opts_hash.aset(workspace_sym, workspace_obj).map_err(|e| {
@@ -815,7 +816,7 @@ impl DbManager {
             })?;
         }
 
-        let service_obj = call_method(self.ruby_db, "get_service", &[opts_hash.as_value()])?;
+        let service_obj = call_method(*self.ruby_db, "get_service", &[opts_hash.as_value()])?;
 
         if service_obj.is_nil() {
             return Ok(None);
@@ -901,7 +902,7 @@ impl DbManager {
         }
 
         // MSF's get_vuln requires :workspace parameter
-        let workspace_obj = call_method(self.ruby_db, "workspace", &[])?;
+        let workspace_obj = call_method(*self.ruby_db, "workspace", &[])?;
         if !workspace_obj.is_nil() {
             let workspace_sym = ruby.to_symbol("workspace");
             opts_hash.aset(workspace_sym, workspace_obj).map_err(|e| {
@@ -909,7 +910,7 @@ impl DbManager {
             })?;
         }
 
-        let vuln_obj = call_method(self.ruby_db, "get_vuln", &[opts_hash.as_value()])?;
+        let vuln_obj = call_method(*self.ruby_db, "get_vuln", &[opts_hash.as_value()])?;
 
         if vuln_obj.is_nil() {
             return Ok(None);
@@ -992,7 +993,7 @@ impl DbManager {
         }
 
         // Call update_host
-        let result = call_method(self.ruby_db, "update_host", &[opts_hash.as_value()])?;
+        let result = call_method(*self.ruby_db, "update_host", &[opts_hash.as_value()])?;
 
         // Returns the updated host object or nil
         Ok(!result.is_nil())
@@ -1021,11 +1022,11 @@ impl DbManager {
         })?;
 
         // Call delete_host (or delete_hosts depending on MSF version)
-        match call_method(self.ruby_db, "delete_host", &[opts_hash.as_value()]) {
+        match call_method(*self.ruby_db, "delete_host", &[opts_hash.as_value()]) {
             Ok(_) => Ok(true),
             Err(_) => {
                 // Try plural form
-                match call_method(self.ruby_db, "delete_hosts", &[opts_hash.as_value()]) {
+                match call_method(*self.ruby_db, "delete_hosts", &[opts_hash.as_value()]) {
                     Ok(_) => Ok(true),
                     Err(_) => Ok(false),
                 }
@@ -1061,7 +1062,7 @@ impl DbManager {
             })?;
         }
 
-        let result = call_method(self.ruby_db, "update_service", &[opts_hash.as_value()])?;
+        let result = call_method(*self.ruby_db, "update_service", &[opts_hash.as_value()])?;
         Ok(!result.is_nil())
     }
 
@@ -1079,10 +1080,10 @@ impl DbManager {
             AssassinateError::RubyError(format!("Failed to set ids: {}", e))
         })?;
 
-        match call_method(self.ruby_db, "delete_service", &[opts_hash.as_value()]) {
+        match call_method(*self.ruby_db, "delete_service", &[opts_hash.as_value()]) {
             Ok(_) => Ok(true),
             Err(_) => {
-                match call_method(self.ruby_db, "delete_services", &[opts_hash.as_value()]) {
+                match call_method(*self.ruby_db, "delete_services", &[opts_hash.as_value()]) {
                     Ok(_) => Ok(true),
                     Err(_) => Ok(false),
                 }
@@ -1094,12 +1095,12 @@ impl DbManager {
 
     /// Check if database is active/connected
     pub fn active(&self) -> Result<bool> {
-        crate::ruby_bridge::get_bool_attr(self.ruby_db, "active")
+        crate::ruby_bridge::get_bool_attr(*self.ruby_db, "active")
     }
 
     /// Get database driver name
     pub fn driver(&self) -> Result<String> {
-        get_string_attr(self.ruby_db, "driver")
+        get_string_attr(*self.ruby_db, "driver")
     }
 
     pub fn __repr__(&self) -> Result<String> {

@@ -5,52 +5,53 @@ use crate::ruby_bridge::{
     build_opts, call_method, get_bool_attr, get_string_attr, responds_to_public, sym,
     value_to_string, Options, RubyVal,
 };
-use magnus::{value::ReprValue, RArray, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, RArray, TryConvert, Value};
 use std::collections::HashMap;
 
 use super::DataStore;
 
 /// Metasploit module instance
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection when stored on the heap.
 pub struct Module {
-    pub(crate) ruby_module: Value,
+    pub(crate) ruby_module: BoxValue<Value>,
 }
 
 impl Module {
     /// Get module name
     pub fn name(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "name")
+        get_string_attr(*self.ruby_module, "name")
     }
 
     /// Get module full name
     pub fn fullname(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "fullname")
+        get_string_attr(*self.ruby_module, "fullname")
     }
 
     /// Get module description
     pub fn description(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "description")
+        get_string_attr(*self.ruby_module, "description")
     }
 
     /// Get module type
     pub fn module_type(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "type")
+        get_string_attr(*self.ruby_module, "type")
     }
 
     /// Get the framework instance this module belongs to
     pub fn framework(&self) -> Result<super::Framework> {
-        let fw_val = call_method(self.ruby_module, "framework", &[])?;
+        let fw_val = call_method(*self.ruby_module, "framework", &[])?;
         Ok(super::Framework {
-            ruby_framework: fw_val,
+            ruby_framework: BoxValue::new(fw_val),
         })
     }
 
     /// Get module datastore
     pub fn datastore(&self) -> Result<DataStore> {
-        let datastore_val = call_method(self.ruby_module, "datastore", &[])?;
+        let datastore_val = call_method(*self.ruby_module, "datastore", &[])?;
 
         Ok(DataStore {
-            ruby_datastore: datastore_val,
+            ruby_datastore: BoxValue::new(datastore_val),
         })
     }
 
@@ -68,12 +69,29 @@ impl Module {
     }
 
     /// Validate module configuration
+    ///
+    /// Returns Ok(true) if valid, Ok(false) if invalid.
+    /// Only returns Err for unexpected errors (not validation failures).
     pub fn validate(&self) -> Result<bool> {
-        let result = call_method(self.ruby_module, "validate", &[]);
+        let result = call_method(*self.ruby_module, "validate", &[]);
 
         match result {
             Ok(_) => Ok(true),
-            Err(e) => Err(AssassinateError::ModuleValidationError(e.to_string())),
+            Err(e) => {
+                // Ruby's validate method raises an exception with the validation
+                // error message when options are invalid. This is expected behavior,
+                // not an error - return Ok(false) to indicate invalid configuration.
+                let error_msg = e.to_string();
+                if error_msg.contains("options failed to validate")
+                    || error_msg.contains("required option")
+                    || error_msg.contains("is not set")
+                {
+                    Ok(false)
+                } else {
+                    // Unexpected error, propagate it
+                    Err(AssassinateError::ModuleValidationError(error_msg))
+                }
+            }
         }
     }
 
@@ -111,7 +129,7 @@ impl Module {
         let opts_val = build_opts(Some(opts))?;
 
         // Call exploit_simple on the module
-        let session_val = call_method(self.ruby_module, "exploit_simple", &[opts_val])?;
+        let session_val = call_method(*self.ruby_module, "exploit_simple", &[opts_val])?;
 
         // Handle all failure cases: nil, false, or non-session objects
         // In Ruby: nil and false are falsy, everything else is truthy
@@ -150,7 +168,7 @@ impl Module {
         let opts_val = build_opts(Some(opts))?;
 
         // Call run_simple on the module
-        match call_method(self.ruby_module, "run_simple", &[opts_val]) {
+        match call_method(*self.ruby_module, "run_simple", &[opts_val]) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -164,7 +182,7 @@ impl Module {
         let opts_val = build_opts(Some(opts))?;
 
         // Call check_simple on the module
-        match call_method(self.ruby_module, "check_simple", &[opts_val]) {
+        match call_method(*self.ruby_module, "check_simple", &[opts_val]) {
             Ok(result) => Ok(value_to_string(result)?),
             Err(e) => {
                 let err_msg = e.to_string();
@@ -179,19 +197,19 @@ impl Module {
 
     /// Check if module has check method
     pub fn has_check(&self) -> Result<bool> {
-        let result = call_method(self.ruby_module, "has_check?", &[])?;
+        let result = call_method(*self.ruby_module, "has_check?", &[])?;
         Ok(result.to_bool())
     }
 
     /// Get available payloads for this exploit
     pub fn compatible_payloads(&self) -> Result<Vec<String>> {
         // Check if module responds to compatible_payloads using Magnus built-in
-        if !responds_to_public(self.ruby_module, "compatible_payloads") {
+        if !responds_to_public(*self.ruby_module, "compatible_payloads") {
             return Ok(vec![]);
         }
 
         // Get compatible payloads - returns array of [name, class] tuples
-        let payloads_val = call_method(self.ruby_module, "compatible_payloads", &[])?;
+        let payloads_val = call_method(*self.ruby_module, "compatible_payloads", &[])?;
 
         // Use RArray for efficient array access
         let payloads_array = RArray::from_value(payloads_val).ok_or_else(|| {
@@ -222,12 +240,12 @@ impl Module {
     /// Returns list of action names
     pub fn actions(&self) -> Result<Vec<String>> {
         // Check if module responds to actions using Magnus built-in
-        if !responds_to_public(self.ruby_module, "actions") {
+        if !responds_to_public(*self.ruby_module, "actions") {
             return Ok(vec![]);
         }
 
         // Get actions array
-        let actions_val = call_method(self.ruby_module, "actions", &[])?;
+        let actions_val = call_method(*self.ruby_module, "actions", &[])?;
 
         // Use RArray for efficient array access
         let actions_array = RArray::from_value(actions_val).ok_or_else(|| {
@@ -254,11 +272,11 @@ impl Module {
     /// Returns None if module doesn't support actions or has no default
     pub fn default_action(&self) -> Result<Option<String>> {
         // Check if module responds to default_action using Magnus built-in
-        if !responds_to_public(self.ruby_module, "default_action") {
+        if !responds_to_public(*self.ruby_module, "default_action") {
             return Ok(None);
         }
 
-        let default_val = call_method(self.ruby_module, "default_action", &[])?;
+        let default_val = call_method(*self.ruby_module, "default_action", &[])?;
 
         if default_val.is_nil() {
             Ok(None)
@@ -273,11 +291,11 @@ impl Module {
     /// Returns None if module doesn't support actions
     pub fn action(&self) -> Result<Option<String>> {
         // Check if module responds to action using Magnus built-in
-        if !responds_to_public(self.ruby_module, "action") {
+        if !responds_to_public(*self.ruby_module, "action") {
             return Ok(None);
         }
 
-        let action_val = call_method(self.ruby_module, "action", &[])?;
+        let action_val = call_method(*self.ruby_module, "action", &[])?;
 
         if action_val.is_nil() {
             Ok(None)
@@ -292,7 +310,7 @@ impl Module {
 
     /// Get module authors
     pub fn author(&self) -> Result<Vec<String>> {
-        let author_val = call_method(self.ruby_module, "author", &[])?;
+        let author_val = call_method(*self.ruby_module, "author", &[])?;
 
         // author is an array of Author objects - must call to_s on each
         let author_array = RArray::from_value(author_val).ok_or_else(|| {
@@ -312,7 +330,7 @@ impl Module {
 
     /// Get module references (CVE, BID, URL, etc.)
     pub fn references(&self) -> Result<Vec<String>> {
-        let refs_val = call_method(self.ruby_module, "references", &[])?;
+        let refs_val = call_method(*self.ruby_module, "references", &[])?;
 
         // References is an array of Ref objects - must call to_s on each
         let refs_array = RArray::from_value(refs_val).ok_or_else(|| {
@@ -332,12 +350,12 @@ impl Module {
 
     /// Get module options (returns the options attribute reader)
     pub fn options(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "options")
+        get_string_attr(*self.ruby_module, "options")
     }
 
     /// Get module target platforms
     pub fn platform(&self) -> Result<Vec<String>> {
-        let platform_val = call_method(self.ruby_module, "platform", &[])?;
+        let platform_val = call_method(*self.ruby_module, "platform", &[])?;
 
         // Platform can be PlatformList or nil
         if platform_val.is_nil() {
@@ -364,7 +382,7 @@ impl Module {
 
     /// Get module target architectures
     pub fn arch(&self) -> Result<Vec<String>> {
-        let arch_val = call_method(self.ruby_module, "arch", &[])?;
+        let arch_val = call_method(*self.ruby_module, "arch", &[])?;
 
         // Arch can be an array or nil
         if arch_val.is_nil() {
@@ -390,11 +408,11 @@ impl Module {
     /// Get exploit targets (for exploit modules only)
     pub fn targets(&self) -> Result<Vec<String>> {
         // Check if module responds to targets using Magnus built-in
-        if !responds_to_public(self.ruby_module, "targets") {
+        if !responds_to_public(*self.ruby_module, "targets") {
             return Ok(vec![]);
         }
 
-        let targets_val = call_method(self.ruby_module, "targets", &[])?;
+        let targets_val = call_method(*self.ruby_module, "targets", &[])?;
 
         if targets_val.is_nil() {
             return Ok(vec![]);
@@ -422,7 +440,7 @@ impl Module {
 
     /// Get vulnerability disclosure date
     pub fn disclosure_date(&self) -> Result<Option<String>> {
-        let date_val = call_method(self.ruby_module, "disclosure_date", &[])?;
+        let date_val = call_method(*self.ruby_module, "disclosure_date", &[])?;
 
         if date_val.is_nil() {
             Ok(None)
@@ -433,22 +451,22 @@ impl Module {
 
     /// Get module rank (e.g., "excellent", "great", "good", "normal", "average", "low", "manual")
     pub fn rank(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "rank")
+        get_string_attr(*self.ruby_module, "rank")
     }
 
     /// Check if module requires privileged access
     pub fn privileged(&self) -> Result<bool> {
-        get_bool_attr(self.ruby_module, "privileged")
+        get_bool_attr(*self.ruby_module, "privileged")
     }
 
     /// Get module license
     pub fn license(&self) -> Result<String> {
-        get_string_attr(self.ruby_module, "license")
+        get_string_attr(*self.ruby_module, "license")
     }
 
     /// Get module aliases
     pub fn aliases(&self) -> Result<Vec<String>> {
-        let aliases_val = call_method(self.ruby_module, "aliases", &[])?;
+        let aliases_val = call_method(*self.ruby_module, "aliases", &[])?;
 
         // Convert to array of strings
         let aliases: Vec<String> =
@@ -461,7 +479,7 @@ impl Module {
 
     /// Get module notes
     pub fn notes(&self) -> Result<HashMap<String, String>> {
-        let notes_val = call_method(self.ruby_module, "notes", &[])?;
+        let notes_val = call_method(*self.ruby_module, "notes", &[])?;
 
         if notes_val.is_nil() {
             return Ok(HashMap::new());
@@ -502,7 +520,7 @@ impl Module {
     /// Get structured options with full details (type, required, default, description)
     pub fn options_structured(&self) -> Result<HashMap<String, serde_json::Value>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
-        let options_val = call_method(self.ruby_module, "options", &[])?;
+        let options_val = call_method(*self.ruby_module, "options", &[])?;
 
         if options_val.is_nil() {
             return Ok(HashMap::new());
@@ -570,7 +588,7 @@ impl Module {
     /// Get list of missing required options
     pub fn missing_required(&self) -> Result<Vec<String>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
-        let options_val = call_method(self.ruby_module, "options", &[])?;
+        let options_val = call_method(*self.ruby_module, "options", &[])?;
 
         if options_val.is_nil() {
             return Ok(Vec::new());
@@ -586,7 +604,7 @@ impl Module {
             })?;
 
         // Get datastore once
-        let datastore_val = call_method(self.ruby_module, "datastore", &[])?;
+        let datastore_val = call_method(*self.ruby_module, "datastore", &[])?;
 
         // Iterate through each option
         for opt_name in keys {
@@ -657,7 +675,7 @@ impl Module {
         }
 
         // Fall back to module's payload_space method
-        if let Ok(space_val) = call_method(self.ruby_module, "payload_space", &[]) {
+        if let Ok(space_val) = call_method(*self.ruby_module, "payload_space", &[]) {
             if !space_val.is_nil() {
                 let space: i64 = TryConvert::try_convert(space_val).map_err(|e: magnus::Error| {
                     AssassinateError::ConversionError(format!(
@@ -706,7 +724,7 @@ impl Module {
         }
 
         // Fall back to module's payload_badchars method
-        if let Ok(badchars_val) = call_method(self.ruby_module, "payload_badchars", &[]) {
+        if let Ok(badchars_val) = call_method(*self.ruby_module, "payload_badchars", &[]) {
             if !badchars_val.is_nil() {
                 let rstring: magnus::RString = TryConvert::try_convert(badchars_val)
                     .map_err(|e: magnus::Error| {
@@ -782,7 +800,7 @@ impl Module {
 
     /// Get the currently selected target index
     pub fn target_index(&self) -> Result<Option<i64>> {
-        if !responds_to_public(self.ruby_module, "target") {
+        if !responds_to_public(*self.ruby_module, "target") {
             return Ok(None);
         }
 
@@ -794,7 +812,7 @@ impl Module {
         }
 
         // Fall back to default_target if available
-        if let Ok(default_val) = call_method(self.ruby_module, "default_target", &[]) {
+        if let Ok(default_val) = call_method(*self.ruby_module, "default_target", &[]) {
             if !default_val.is_nil() {
                 let idx: i64 = TryConvert::try_convert(default_val).unwrap_or(0);
                 return Ok(Some(idx));
@@ -807,11 +825,11 @@ impl Module {
     /// Get the current target object (internal helper)
     fn current_target_obj(&self) -> Result<Value> {
         // Check if module responds to targets
-        if !responds_to_public(self.ruby_module, "targets") {
+        if !responds_to_public(*self.ruby_module, "targets") {
             return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
         }
 
-        let targets_val = call_method(self.ruby_module, "targets", &[])?;
+        let targets_val = call_method(*self.ruby_module, "targets", &[])?;
         if targets_val.is_nil() {
             return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
         }
@@ -854,7 +872,7 @@ impl Module {
         let opts_val = build_opts(Some(opts))?;
 
         // Call check_simple on the module
-        let result = call_method(self.ruby_module, "check_simple", &[opts_val]);
+        let result = call_method(*self.ruby_module, "check_simple", &[opts_val]);
 
         match result {
             Ok(check_code) => {
@@ -973,7 +991,7 @@ impl Module {
         let length_val = ruby.integer_from_i64(length as i64).as_value();
 
         // Call nop_module.generate_sled(length, opts)
-        let sled_val = call_method(self.ruby_module, "generate_sled", &[length_val, opts_hash.as_value()])?;
+        let sled_val = call_method(*self.ruby_module, "generate_sled", &[length_val, opts_hash.as_value()])?;
 
         // Handle nil result
         if sled_val.is_nil() {

@@ -27,16 +27,17 @@ pub use session::{Session, SessionManager};
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, create_framework, value_to_string};
-use magnus::{value::ReprValue, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
 /// Core Metasploit Framework interface
 ///
 /// This type provides access to the Metasploit Framework functionality through Ruby FFI.
 /// Python bindings use a thread-local singleton pattern instead of exposing Framework directly.
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection when stored on the heap.
 pub struct Framework {
-    pub(crate) ruby_framework: Value,
+    pub(crate) ruby_framework: BoxValue<Value>,
 }
 
 impl Framework {
@@ -46,24 +47,28 @@ impl Framework {
 
         let ruby_framework = create_framework(opts_json)?;
 
-        Ok(Framework { ruby_framework })
+        Ok(Framework {
+            ruby_framework: BoxValue::new(ruby_framework),
+        })
     }
 
     /// Create a Framework wrapper from an existing Ruby framework object
     /// Useful for tests and when you already have a framework Value
     pub fn from_raw(ruby_framework: Value) -> Self {
-        Framework { ruby_framework }
+        Framework {
+            ruby_framework: BoxValue::new(ruby_framework),
+        }
     }
 
     /// Get the Metasploit Framework version
     pub fn version(&self) -> Result<String> {
-        let version_val = call_method(self.ruby_framework, "version", &[])?;
+        let version_val = call_method(*self.ruby_framework, "version", &[])?;
         value_to_string(version_val)
     }
 
     /// List all module reference names for a given type
     pub fn list_modules(&self, module_type: &str) -> Result<Vec<String>> {
-        let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         // MSF uses plural names for module types (exploits, not exploit)
         let plural_type = match module_type {
@@ -94,7 +99,7 @@ impl Framework {
 
     /// Create a module instance by name
     pub fn create_module(&self, module_name: &str) -> Result<Module> {
-        let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         let name_val = crate::ruby_bridge::get_ruby()?
             .str_new(module_name)
@@ -108,33 +113,33 @@ impl Framework {
         }
 
         Ok(Module {
-            ruby_module: module_instance,
+            ruby_module: BoxValue::new(module_instance),
         })
     }
 
     /// Get the sessions manager
     pub fn sessions(&self) -> Result<SessionManager> {
-        let sessions_val = call_method(self.ruby_framework, "sessions", &[])?;
+        let sessions_val = call_method(*self.ruby_framework, "sessions", &[])?;
 
         Ok(SessionManager {
-            ruby_sessions: sessions_val,
+            ruby_sessions: BoxValue::new(sessions_val),
         })
     }
 
     /// Get the datastore
     pub fn datastore(&self) -> Result<DataStore> {
-        let datastore_val = call_method(self.ruby_framework, "datastore", &[])?;
+        let datastore_val = call_method(*self.ruby_framework, "datastore", &[])?;
 
         Ok(DataStore {
-            ruby_datastore: datastore_val,
+            ruby_datastore: BoxValue::new(datastore_val),
         })
     }
 
     /// Get database manager
     pub fn db(&self) -> Result<DbManager> {
-        let db_val = call_method(self.ruby_framework, "db", &[])?;
+        let db_val = call_method(*self.ruby_framework, "db", &[])?;
 
-        Ok(DbManager { ruby_db: db_val })
+        Ok(DbManager { ruby_db: BoxValue::new(db_val) })
     }
 
     /// Search for modules
@@ -142,7 +147,7 @@ impl Framework {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let query_val = ruby.str_new(query).as_value();
 
-        let results_val = call_method(self.ruby_framework, "search", &[query_val])?;
+        let results_val = call_method(*self.ruby_framework, "search", &[query_val])?;
 
         // Search returns an array of metadata objects - extract fullname from each
         let results_array: magnus::RArray =
@@ -166,25 +171,25 @@ impl Framework {
 
     /// Get jobs manager
     pub fn jobs(&self) -> Result<JobManager> {
-        let jobs_val = call_method(self.ruby_framework, "jobs", &[])?;
+        let jobs_val = call_method(*self.ruby_framework, "jobs", &[])?;
 
         Ok(JobManager {
-            ruby_jobs: jobs_val,
+            ruby_jobs: BoxValue::new(jobs_val),
         })
     }
 
     /// Get plugin manager
     pub fn plugins(&self) -> Result<PluginManager> {
-        let plugins_val = call_method(self.ruby_framework, "plugins", &[])?;
+        let plugins_val = call_method(*self.ruby_framework, "plugins", &[])?;
 
         Ok(PluginManager {
-            ruby_plugins: plugins_val,
+            ruby_plugins: BoxValue::new(plugins_val),
         })
     }
 
     /// Get framework threads configuration
     pub fn threads(&self) -> Result<i64> {
-        let threads_val = call_method(self.ruby_framework, "threads", &[])?;
+        let threads_val = call_method(*self.ruby_framework, "threads", &[])?;
 
         // MSF returns ThreadManager object - check if it responds to max_threads or similar
         // Try to get the thread count - if threads is nil, return 0
@@ -213,7 +218,7 @@ impl Framework {
 
     /// Check if framework has threads configured
     pub fn threads_enabled(&self) -> Result<bool> {
-        let threads_val = call_method(self.ruby_framework, "threads?", &[])?;
+        let threads_val = call_method(*self.ruby_framework, "threads?", &[])?;
         Ok(threads_val.to_bool())
     }
 
@@ -223,7 +228,7 @@ impl Framework {
     ///
     /// Returns module counts by type after reloading
     pub fn reload_modules(&self) -> Result<HashMap<String, i64>> {
-        let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         // Call reload_modules which returns a hash of counts by type
         let result_val = call_method(modules_manager, "reload_modules", &[])?;
@@ -238,7 +243,7 @@ impl Framework {
 
     /// Save framework configuration to disk
     pub fn save(&self) -> Result<()> {
-        call_method(self.ruby_framework, "save_config", &[])?;
+        call_method(*self.ruby_framework, "save_config", &[])?;
         Ok(())
     }
 
@@ -248,7 +253,7 @@ impl Framework {
     /// (exploits, auxiliary, post, encoders, nops, payloads, evasion)
     pub fn add_module_path(&self, path: &str) -> Result<HashMap<String, i64>> {
         let ruby = crate::ruby_bridge::get_ruby()?;
-        let modules_manager = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         let path_val = ruby.str_new(path).as_value();
 
@@ -265,7 +270,7 @@ impl Framework {
 
     /// Get module statistics (counts by type)
     pub fn module_stats(&self) -> Result<HashMap<String, i64>> {
-        let stats_val = call_method(self.ruby_framework, "stats", &[])?;
+        let stats_val = call_method(*self.ruby_framework, "stats", &[])?;
 
         let mut stats = HashMap::new();
 
@@ -293,7 +298,7 @@ impl Framework {
 
     /// Get the route manager for adding/removing routes
     pub fn routes(&self) -> Result<RouteManager> {
-        let sessions_val = call_method(self.ruby_framework, "sessions", &[])?;
+        let sessions_val = call_method(*self.ruby_framework, "sessions", &[])?;
         RouteManager::new(sessions_val)
     }
 
@@ -358,9 +363,10 @@ impl Framework {
 // functions use a thread-local singleton pattern for Python API.
 
 /// DataStore for framework and module configuration
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct DataStore {
-    pub(crate) ruby_datastore: Value,
+    pub(crate) ruby_datastore: BoxValue<Value>,
 }
 
 impl DataStore {
@@ -369,7 +375,7 @@ impl DataStore {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
         let value_val = crate::ruby_bridge::get_ruby()?.str_new(value).as_value();
 
-        call_method(self.ruby_datastore, "[]=", &[key_val, value_val])?;
+        call_method(*self.ruby_datastore, "[]=", &[key_val, value_val])?;
 
         Ok(())
     }
@@ -378,7 +384,7 @@ impl DataStore {
     pub fn get(&self, key: &str) -> Result<Option<String>> {
         let key_val = crate::ruby_bridge::get_ruby()?.str_new(key).as_value();
 
-        let result = call_method(self.ruby_datastore, "[]", &[key_val])?;
+        let result = call_method(*self.ruby_datastore, "[]", &[key_val])?;
 
         // Check if nil
         if result.is_nil() {
@@ -390,7 +396,7 @@ impl DataStore {
 
     /// Convert datastore to dict
     pub fn to_dict(&self) -> Result<HashMap<String, String>> {
-        let hash_val = call_method(self.ruby_datastore, "to_h", &[])?;
+        let hash_val = call_method(*self.ruby_datastore, "to_h", &[])?;
 
         let json = crate::ruby_bridge::hash_to_json(hash_val)?;
 
@@ -424,13 +430,13 @@ impl DataStore {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let key_val = ruby.str_new(key).as_value();
 
-        call_method(self.ruby_datastore, "delete", &[key_val])?;
+        call_method(*self.ruby_datastore, "delete", &[key_val])?;
         Ok(())
     }
 
     /// Get all keys
     pub fn keys(&self) -> Result<Vec<String>> {
-        let keys_val = call_method(self.ruby_datastore, "keys", &[])?;
+        let keys_val = call_method(*self.ruby_datastore, "keys", &[])?;
 
         let keys: Vec<String> = TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
             AssassinateError::ConversionError(format!("Failed to convert keys: {}", e))
@@ -441,7 +447,7 @@ impl DataStore {
 
     /// Clear all values
     pub fn clear(&self) -> Result<()> {
-        call_method(self.ruby_datastore, "clear", &[])?;
+        call_method(*self.ruby_datastore, "clear", &[])?;
         Ok(())
     }
 

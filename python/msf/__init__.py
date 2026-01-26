@@ -52,7 +52,9 @@ from .msf import (
     list_modules,
     list_sessions,
     search,
-    sleep_releasing_gvl,
+    # GVL functions imported but not re-exported (internal use only)
+    poll_releasing_gvl as _poll_releasing_gvl,
+    sleep_releasing_gvl as _sleep_releasing_gvl,
     job_list,
     job_info,
     job_kill,
@@ -197,6 +199,56 @@ def get_session(session_id: int) -> Optional[Session]:
     return None
 
 
+def wait_for_new_session(
+    existing_sessions: Optional[set] = None,
+    timeout_ms: Optional[int] = None,
+    interval_ms: Optional[int] = None,
+) -> Optional[Session]:
+    """
+    Wait for a new session to appear while releasing the GVL.
+
+    This function polls for new sessions, releasing the Ruby GVL between
+    checks so that background Ruby threads (like MSF exploit jobs) can
+    execute.
+
+    Args:
+        existing_sessions: Set of session IDs that existed before waiting.
+                          If None, captures current sessions at call time.
+        timeout_ms: Maximum time to wait in milliseconds (default: 60000)
+        interval_ms: Polling interval in milliseconds (default: 100)
+
+    Returns:
+        Session object if a new session appears, None if timeout
+
+    Example:
+        # Launch exploit as background job
+        exploit.exploit_job("cmd/unix/interact")
+
+        # Wait for session with GVL released
+        session = wait_for_new_session(timeout_ms=30000)
+        if session:
+            print(session.run_cmd("whoami"))
+    """
+    if existing_sessions is None:
+        existing_sessions = set(list_sessions())
+
+    new_session_id = [None]  # Use list to allow mutation in closure
+
+    def check_for_session() -> bool:
+        current = set(list_sessions())
+        new_sessions = current - existing_sessions
+        if new_sessions:
+            new_session_id[0] = next(iter(new_sessions))
+            return True
+        return False
+
+    found = _poll_releasing_gvl(check_for_session, interval_ms, timeout_ms)
+
+    if found and new_session_id[0] is not None:
+        return get_session(new_session_id[0])
+    return None
+
+
 __all__ = [
     # Core
     "init_msf",
@@ -229,6 +281,7 @@ __all__ = [
     "list_sessions",
     "kill_session",
     "create_shell_session",
+    "wait_for_new_session",
     "Session",
     # Jobs
     "job_list",
@@ -278,8 +331,6 @@ __all__ = [
     "route_flush",
     "route_exists",
     "route_get",
-    # GVL
-    "sleep_releasing_gvl",
     # Exception
     "AssassinateError",
     # Type alias

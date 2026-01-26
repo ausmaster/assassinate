@@ -18,7 +18,7 @@ pyo3 = ["dep:pyo3"]
 
 [dependencies]
 # Magnus for Ruby FFI with embed feature for proper VM initialization
-magnus = { version = "0.8", features = ["embed"] }
+magnus = { version = "0.8", features = ["embed", "rb-sys"] }
 rb-sys = "0.9"
 
 # Error handling

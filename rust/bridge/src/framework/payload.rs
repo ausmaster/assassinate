@@ -2,18 +2,19 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, Options};
-use magnus::{value::ReprValue, IntoValue, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, IntoValue, TryConvert, Value};
 
 /// Payload generator
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct PayloadGenerator {
-    ruby_framework: Value,
+    ruby_framework: BoxValue<Value>,
 }
 
 impl PayloadGenerator {
     pub fn new(framework: &super::Framework) -> Result<Self> {
         Ok(PayloadGenerator {
-            ruby_framework: framework.ruby_framework,
+            ruby_framework: BoxValue::new(*framework.ruby_framework),
         })
     }
 
@@ -27,7 +28,7 @@ impl PayloadGenerator {
 
         // Create payload instance
         let name_val = ruby.str_new(payload_name).as_value();
-        let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_mgr = call_method(*self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
         if payload.is_nil() {
@@ -89,7 +90,7 @@ impl PayloadGenerator {
 
         // Create payload instance
         let name_val = ruby.str_new(payload_name).as_value();
-        let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_mgr = call_method(*self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
         if payload.is_nil() {
@@ -136,7 +137,7 @@ impl PayloadGenerator {
 
         // Create the encoder module instance
         // framework.encoders.create(encoder_name)
-        let encoders_mgr = call_method(self.ruby_framework, "encoders", &[])?;
+        let encoders_mgr = call_method(*self.ruby_framework, "encoders", &[])?;
         let encoder_name_val = ruby.str_new(encoder_name).as_value();
         let encoder_module = call_method(encoders_mgr, "create", &[encoder_name_val])?;
 
@@ -186,7 +187,7 @@ impl PayloadGenerator {
 
     /// List all available payloads
     pub fn list_payloads(&self) -> Result<Vec<String>> {
-        let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_mgr = call_method(*self.ruby_framework, "modules", &[])?;
         let payloads = call_method(modules_mgr, "payloads", &[])?;
         let refnames = call_method(payloads, "module_refnames", &[])?;
 
@@ -210,7 +211,7 @@ impl PayloadGenerator {
 
         // Create payload instance
         let name_val = ruby.str_new(payload_name).as_value();
-        let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_mgr = call_method(*self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
         if payload.is_nil() {
@@ -273,7 +274,7 @@ impl PayloadGenerator {
             .funcall(
                 "to_executable",
                 (
-                    self.ruby_framework,
+                    *self.ruby_framework,
                     payload_arch,
                     payload_platform,
                     raw_payload,
@@ -333,7 +334,7 @@ impl PayloadGenerator {
 
         // Create payload instance
         let name_val = ruby.str_new(payload_name).as_value();
-        let modules_mgr = call_method(self.ruby_framework, "modules", &[])?;
+        let modules_mgr = call_method(*self.ruby_framework, "modules", &[])?;
         let payload = call_method(modules_mgr, "create", &[name_val])?;
 
         if payload.is_nil() {
@@ -382,7 +383,7 @@ impl PayloadGenerator {
         let payload_arch = call_method(payload, "arch", &[])?;
         let payload_platform = call_method(payload, "platform", &[])?;
 
-        let encoders_mgr = call_method(self.ruby_framework, "encoders", &[])?;
+        let encoders_mgr = call_method(*self.ruby_framework, "encoders", &[])?;
 
         // Build options hash for filtering
         let opts_hash = ruby.hash_new();

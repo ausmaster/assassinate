@@ -9,18 +9,19 @@ use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
     get_i64_attr, get_string_attr, sym, to_ruby_str, value_to_string, Options,
 };
-use magnus::{value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
+use magnus::{value::BoxValue, value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
 
 /// Session manager for listing and accessing sessions
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct SessionManager {
-    pub(crate) ruby_sessions: Value,
+    pub(crate) ruby_sessions: BoxValue<Value>,
 }
 
 impl SessionManager {
     /// List all session IDs
     pub fn list(&self) -> Result<Vec<i64>> {
-        let keys_val = call_method(self.ruby_sessions, "keys", &[])?;
+        let keys_val = call_method(*self.ruby_sessions, "keys", &[])?;
 
         let session_ids: Vec<i64> =
             TryConvert::try_convert(keys_val).map_err(|e: magnus::Error| {
@@ -35,14 +36,14 @@ impl SessionManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.integer_from_i64(session_id).as_value();
 
-        let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
+        let session_val = call_method(*self.ruby_sessions, "[]", &[id_val])?;
 
         // Check if nil
         if session_val.is_nil() {
             Ok(None)
         } else {
             Ok(Some(Session {
-                ruby_session: session_val,
+                ruby_session: BoxValue::new(session_val),
                 session_id,
             }))
         }
@@ -54,7 +55,7 @@ impl SessionManager {
         let id_val = ruby.integer_from_i64(session_id).as_value();
 
         // Call delete method on sessions hash
-        let result_val = call_method(self.ruby_sessions, "delete", &[id_val])?;
+        let result_val = call_method(*self.ruby_sessions, "delete", &[id_val])?;
 
         // If delete returns nil, session didn't exist
         Ok(!result_val.is_nil())
@@ -65,7 +66,7 @@ impl SessionManager {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.integer_from_i64(session_id).as_value();
 
-        let session_val = call_method(self.ruby_sessions, "[]", &[id_val])?;
+        let session_val = call_method(*self.ruby_sessions, "[]", &[id_val])?;
 
         // Check if nil
         if session_val.is_nil() {
@@ -153,7 +154,7 @@ impl SessionManager {
         call_method(session, "exploit_datastore=", &[empty_hash])?;
 
         // Register the session with framework
-        call_method(self.ruby_sessions, "register", &[session])?;
+        call_method(*self.ruby_sessions, "register", &[session])?;
 
         // Get the session ID - it's assigned during registration
         // The session's sid attribute will be set
@@ -167,31 +168,32 @@ impl SessionManager {
 }
 
 /// Individual session with FS, Process, and Post module operations
-#[derive(Clone)]
+///
+/// Uses `BoxValue` to protect the Ruby value from garbage collection.
 pub struct Session {
-    pub(crate) ruby_session: Value,
+    pub(crate) ruby_session: BoxValue<Value>,
     pub session_id: i64,
 }
 
 impl Session {
     /// Get session type
     pub fn session_type(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "type")
+        get_string_attr(*self.ruby_session, "type")
     }
 
     /// Get session info
     pub fn info(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "info")
+        get_string_attr(*self.ruby_session, "info")
     }
 
     /// Check if session is alive
     pub fn alive(&self) -> Result<bool> {
-        crate::ruby_bridge::get_bool_attr(self.ruby_session, "alive?")
+        crate::ruby_bridge::get_bool_attr(*self.ruby_session, "alive?")
     }
 
     /// Kill the session
     pub fn kill(&self) -> Result<()> {
-        call_method(self.ruby_session, "kill", &[])?;
+        call_method(*self.ruby_session, "kill", &[])?;
         Ok(())
     }
 
@@ -200,7 +202,7 @@ impl Session {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
 
-        let result = call_method(self.ruby_session, "write", &[data_val])?;
+        let result = call_method(*self.ruby_session, "write", &[data_val])?;
 
         // Try to convert to integer (bytes written)
         let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
@@ -214,9 +216,9 @@ impl Session {
 
         let result = if let Some(len) = length {
             let len_val = ruby.integer_from_i64(len as i64).as_value();
-            call_method(self.ruby_session, "read", &[len_val])?
+            call_method(*self.ruby_session, "read", &[len_val])?
         } else {
-            call_method(self.ruby_session, "read", &[])?
+            call_method(*self.ruby_session, "read", &[])?
         };
 
         if result.is_nil() {
@@ -260,7 +262,7 @@ impl Session {
         let timeout_val = ruby.integer_from_i64(timeout.unwrap_or(5) as i64).as_value();
 
         // Call Ruby's shell_command(cmd, timeout) directly
-        let result = call_method(self.ruby_session, "shell_command", &[cmd_val, timeout_val])?;
+        let result = call_method(*self.ruby_session, "shell_command", &[cmd_val, timeout_val])?;
 
         if result.is_nil() {
             Ok(String::new())
@@ -271,43 +273,43 @@ impl Session {
 
     /// Get session description
     pub fn desc(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "desc")
+        get_string_attr(*self.ruby_session, "desc")
     }
 
     /// Get tunnel peer (remote address)
     pub fn tunnel_peer(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "tunnel_peer")
+        get_string_attr(*self.ruby_session, "tunnel_peer")
     }
 
     /// Get target host
     pub fn target_host(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "target_host")
+        get_string_attr(*self.ruby_session, "target_host")
     }
 
     /// Get session host
     pub fn session_host(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "session_host")
+        get_string_attr(*self.ruby_session, "session_host")
     }
 
     /// Get session port
     pub fn session_port(&self) -> Result<i64> {
-        get_i64_attr(self.ruby_session, "session_port")
+        get_i64_attr(*self.ruby_session, "session_port")
     }
 
     /// Get exploit that created this session
     pub fn via_exploit(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "via_exploit")
+        get_string_attr(*self.ruby_session, "via_exploit")
     }
 
     /// Get payload that created this session
     pub fn via_payload(&self) -> Result<String> {
-        get_string_attr(self.ruby_session, "via_payload")
+        get_string_attr(*self.ruby_session, "via_payload")
     }
 
     /// Create Session from raw Ruby value (for daemon use)
     pub fn from_raw(session_val: Value, session_id: i64) -> Self {
         Session {
-            ruby_session: session_val,
+            ruby_session: BoxValue::new(session_val),
             session_id,
         }
     }
@@ -326,7 +328,7 @@ impl Session {
     /// Read output from shell session
     /// Only works for command shell sessions (not Meterpreter)
     pub fn shell_read(&self) -> Result<String> {
-        let result = call_method(self.ruby_session, "shell_read", &[])?;
+        let result = call_method(*self.ruby_session, "shell_read", &[])?;
 
         if result.is_nil() {
             Ok(String::new())
@@ -342,7 +344,7 @@ impl Session {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
 
-        let result = call_method(self.ruby_session, "shell_write", &[data_val])?;
+        let result = call_method(*self.ruby_session, "shell_write", &[data_val])?;
 
         // Try to convert to integer (bytes written)
         let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
@@ -406,7 +408,7 @@ impl Session {
 
     /// Get the fs extension object (caches fs access pattern)
     fn fs(&self) -> Result<Value> {
-        call_method(self.ruby_session, "fs", &[])
+        call_method(*self.ruby_session, "fs", &[])
     }
 
     /// Get fs.dir for directory operations
@@ -421,7 +423,7 @@ impl Session {
 
     /// Get the sys extension object for system operations
     fn sys(&self) -> Result<Value> {
-        call_method(self.ruby_session, "sys", &[])
+        call_method(*self.ruby_session, "sys", &[])
     }
 
     /// Get sys.process for process operations
@@ -438,7 +440,7 @@ impl Session {
     /// Get the net extension object for network operations
     #[allow(dead_code)]
     fn net(&self) -> Result<Value> {
-        call_method(self.ruby_session, "net", &[])
+        call_method(*self.ruby_session, "net", &[])
     }
 
     /// Get net.config for network configuration
@@ -449,7 +451,7 @@ impl Session {
     /// Get the core extension object for Meterpreter client core operations
     /// This provides access to migrate, use, shutdown, machine_id, etc.
     fn core(&self) -> Result<Value> {
-        call_method(self.ruby_session, "core", &[])
+        call_method(*self.ruby_session, "core", &[])
     }
 
     // ========== Meterpreter Filesystem Operations ==========
@@ -728,7 +730,7 @@ impl Session {
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Get priv extension for token operations
-        let meterpreter = call_method(self.ruby_session, "meterpreter", &[])?;
+        let meterpreter = call_method(*self.ruby_session, "meterpreter", &[])?;
         if meterpreter.is_nil() {
             return Err(AssassinateError::RubyError(
                 "Session is not a meterpreter".to_string(),
@@ -778,7 +780,7 @@ impl Session {
         // Get framework from the session (NOT a new framework!)
         // The session's framework has this session registered in its sessions collection.
         // Creating a new framework would result in an empty sessions collection.
-        let framework = call_method(self.ruby_session, "framework", &[])?;
+        let framework = call_method(*self.ruby_session, "framework", &[])?;
 
         if framework.is_nil() {
             return Err(AssassinateError::RubyError(
@@ -1735,13 +1737,13 @@ impl Session {
     pub fn set_response_timeout(&self, timeout_secs: u32) -> Result<()> {
         let ruby = crate::ruby_bridge::get_ruby()?;
         let timeout_val = ruby.integer_from_u64(timeout_secs as u64).as_value();
-        call_method(self.ruby_session, "response_timeout=", &[timeout_val])?;
+        call_method(*self.ruby_session, "response_timeout=", &[timeout_val])?;
         Ok(())
     }
 
     /// Get the current response timeout for Meterpreter commands (in seconds)
     pub fn get_response_timeout(&self) -> Result<u32> {
-        let result = call_method(self.ruby_session, "response_timeout", &[])?;
+        let result = call_method(*self.ruby_session, "response_timeout", &[])?;
         let timeout: i64 = TryConvert::try_convert(result)
             .map_err(|e: magnus::Error| AssassinateError::ConversionError(e.to_string()))?;
         Ok(timeout as u32)
