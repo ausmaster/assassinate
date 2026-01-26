@@ -93,6 +93,20 @@ from assassinate.contract import Contract, MassContract
 from assassinate.kill import Kill
 from assassinate.catalog import WeaponCatalog, BulletCatalog, WeaponInfo, BulletInfo
 
+# Configuration system
+from assassinate.config import (
+    get_config,
+    reload_config,
+    reset_config,
+    get_user_config_path,
+    AssassinateSettings,
+    MetasploitConfig,
+    RubyConfig,
+    LoggingConfig,
+    DatabaseConfig,
+    DefaultsConfig,
+)
+
 # Logging configuration
 from assassinate.log_config import (
     setup_logging,
@@ -108,27 +122,31 @@ from assassinate.log_config import (
     SUCCESS,
 )
 
-# Re-export key types from msf for convenience
-import msf
-from msf import (
-    # Module classes (for type hints and isinstance checks)
-    ExploitModule,
-    AuxiliaryModule,
-    PostModule,
-    PayloadModule,
-    EncoderModule,
-    EvasionModule,
-    NopModule,
-    BaseModule,
-    # Session class
-    Session,
-    # Options
-    ModuleOptions,
-    # Exception
-    AssassinateError,
-    # Type alias
-    AnyModule,
-)
+# Lazy import msf to avoid circular import (msf/module.py imports from assassinate.console)
+# Users can import these directly from msf if needed
+def __getattr__(name: str):
+    """Lazy import msf types to avoid circular imports."""
+    _msf_exports = {
+        "ExploitModule",
+        "AuxiliaryModule",
+        "PostModule",
+        "PayloadModule",
+        "EncoderModule",
+        "EvasionModule",
+        "NopModule",
+        "BaseModule",
+        "Session",
+        "ModuleOptions",
+        "AssassinateError",
+        "AnyModule",
+        "msf",
+    }
+    if name in _msf_exports:
+        import msf as _msf
+        if name == "msf":
+            return _msf
+        return getattr(_msf, name)
+    raise AttributeError(f"module 'assassinate' has no attribute {name!r}")
 
 __all__ = [
     # Core
@@ -147,6 +165,17 @@ __all__ = [
     "BulletCatalog",
     "WeaponInfo",
     "BulletInfo",
+    # Configuration
+    "get_config",
+    "reload_config",
+    "reset_config",
+    "get_user_config_path",
+    "AssassinateSettings",
+    "MetasploitConfig",
+    "RubyConfig",
+    "LoggingConfig",
+    "DatabaseConfig",
+    "DefaultsConfig",
     # Logging
     "setup_logging",
     "get_logger",
@@ -179,6 +208,10 @@ __all__ = [
     "msf",
 ]
 
-# Note: Logging is auto-configured from environment variables when log_config is imported
-# Use ASSASSINATE_LOG_LEVEL and ASSASSINATE_LOG_FILE to configure
-# Or call setup_logging() explicitly for programmatic configuration
+# Note: Configuration is loaded automatically from:
+# 1. Environment variables (ASAS_* prefix, e.g., ASAS_METASPLOIT__ROOT)
+# 2. Project config (.assassinate.yaml in cwd or parents)
+# 3. User config (~/.config/assassinate/config.yaml)
+# 4. Auto-detection (MSF path, Ruby version)
+#
+# Use get_config() to access configuration or reload_config() to refresh

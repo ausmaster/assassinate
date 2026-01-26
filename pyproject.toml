@@ -34,6 +34,9 @@ dependencies = [
     "packaging>=21.0",
     "setuptools>=80.9.0",
     "rich>=13.0.0", # Beautiful terminal output with auto-scaling
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0", # Automatic env var binding with ASAS_* prefix
+    "pyyaml>=6.0.0", # Config file support
 ]
 
 [project.optional-dependencies]

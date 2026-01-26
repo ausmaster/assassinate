@@ -38,8 +38,8 @@ from typing import Any
 # Environment Variables
 # =============================================================================
 
-ENV_LOG_LEVEL = "ASSASSINATE_LOG_LEVEL"
-ENV_LOG_FILE = "ASSASSINATE_LOG_FILE"
+ENV_LOG_LEVEL = "ASAS_LOGGING__LEVEL"
+ENV_LOG_FILE = "ASAS_LOGGING__FILE"
 
 # =============================================================================
 # Custom Log Levels
@@ -506,16 +506,51 @@ class PerformanceLogger:
 
 
 # =============================================================================
+# Config Integration
+# =============================================================================
+
+
+def setup_from_config() -> None:
+    """Configure logging from the Assassinate config system.
+
+    This reads from the configuration system (which already handles
+    env vars, config files, and auto-detection) and applies the
+    logging settings.
+
+    Example:
+        >>> from assassinate.log_config import setup_from_config
+        >>> setup_from_config()  # Uses ASAS_LOGGING__* or config files
+    """
+    try:
+        from assassinate.config import get_config
+
+        config = get_config()
+        setup_logging(
+            level=config.logging.level,
+            log_file=str(config.logging.file) if config.logging.file else None,
+            colors=config.logging.colors,
+            force=True,
+        )
+    except ImportError:
+        # Config module not available, use env vars directly
+        _auto_configure()
+    except Exception:
+        # Config loading failed, use env vars directly
+        _auto_configure()
+
+
+# =============================================================================
 # Auto-configuration
 # =============================================================================
 
-def _auto_configure() -> None:
-    """Auto-configure logging from environment variables."""
-    env_level = os.environ.get(ENV_LOG_LEVEL)
-    env_file = os.environ.get(ENV_LOG_FILE)
 
-    if env_level or env_file:
-        setup_logging(level=env_level, log_file=env_file)
+def _auto_configure() -> None:
+    """Auto-configure logging from ASAS_LOGGING__* environment variables."""
+    level = os.environ.get(ENV_LOG_LEVEL)
+    log_file = os.environ.get(ENV_LOG_FILE)
+
+    if level or log_file:
+        setup_logging(level=level, log_file=log_file)
 
 
 _auto_configure()

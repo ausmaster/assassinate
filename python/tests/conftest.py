@@ -63,7 +63,23 @@ def get_target_ftp_port() -> int:
 
 
 def get_msf_root() -> str:
-    """Get MSF installation path."""
+    """Get MSF installation path from config system.
+
+    Priority:
+    1. ASAS_METASPLOIT__ROOT env var (via config)
+    2. MSF_ROOT env var (legacy, deprecated)
+    3. Auto-detection from common paths
+    4. Fallback to ~/Projects/metasploit-framework
+    """
+    try:
+        from assassinate.config import get_config
+        config = get_config()
+        if config.metasploit.root:
+            return str(config.metasploit.root)
+    except ImportError:
+        pass  # Config module not available, fall back to legacy
+
+    # Legacy fallback
     path = os.environ.get("MSF_ROOT", "~/Projects/metasploit-framework")
     return os.path.expanduser(path)
 

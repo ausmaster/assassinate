@@ -44,31 +44,13 @@ from assassinate.log_config import get_logger
 if TYPE_CHECKING:
     from types import TracebackType
     from assassinate.arsenal import Arsenal
+    from assassinate.config import AssassinateSettings
     from assassinate.contract import Contract, MassContract
     from assassinate.kill import Kill
     from assassinate.target import Target
     from assassinate.weapon import Bullet, Weapon
 
 logger = get_logger("hideout")
-
-# Import shared constants from installer
-try:
-    from setup.installer import (
-        PROJECT_ROOT,
-        MSF_CLONE_PATH,
-    )
-except ImportError:
-    # Fallback if setup module not available
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-    MSF_CLONE_PATH = Path("/opt/metasploit-framework")
-
-# Known safehouse locations (MSF installation paths)
-KNOWN_SAFEHOUSES = [
-    Path("/opt/metasploit-framework"),
-    Path("/opt/metasploit-framework/embedded/framework"),
-    Path("/usr/share/metasploit-framework"),
-    Path.home() / "Projects" / "metasploit-framework",
-]
 
 
 class Hideout:
@@ -111,16 +93,24 @@ class Hideout:
         "_initialized",
         "_arsenal",
         "_kills",
+        "_config",
     )
 
-    def __init__(self, skip_verify: bool = False):
+    def __init__(
+        self,
+        safehouse: str | Path | None = None,
+        skip_verify: bool = False,
+    ):
         """Initialize the Hideout.
 
         Args:
+            safehouse: Path to MSF installation. If not provided, uses config
+                       or auto-detection.
             skip_verify: Skip environment verification (not recommended)
 
         Raises:
             RuntimeError: If environment not ready or initialization fails
+            EnvironmentError: If MSF installation cannot be found
         """
         logger.debug("Establishing hideout...")
         self._initialized = False
@@ -128,8 +118,21 @@ class Hideout:
         self._arsenal: Optional["Arsenal"] = None
         self._kills: Dict[int, "Kill"] = {}
 
+        # Load configuration
+        from assassinate.config import get_config
+
+        self._config: "AssassinateSettings" = get_config()
+
         # Discover the safehouse (MSF installation)
-        self.safehouse = self._locate_safehouse()
+        self.safehouse = self._locate_safehouse(safehouse)
+        if self.safehouse is None:
+            raise EnvironmentError(
+                "MSF installation not found. Either:\n"
+                "  1. Run 'assassinate-setup config' to auto-detect and save\n"
+                "  2. Set ASAS_METASPLOIT__ROOT environment variable\n"
+                "  3. Pass safehouse='/path/to/msf' to Hideout()\n"
+                "  4. Create ~/.config/assassinate/config.yaml with metasploit.root"
+            )
         logger.debug(f"Safehouse located: {self.safehouse}")
 
         # Verify environment is ready
@@ -564,41 +567,46 @@ class Hideout:
     # Path Discovery
     # =========================================================================
 
-    def _locate_safehouse(self) -> Path:
+    def _locate_safehouse(self, explicit_path: str | Path | None = None) -> Path | None:
         """Locate the MSF safehouse (installation directory).
 
-        Checks in order:
-        1. MSF_ROOT environment variable
-        2. Project-local metasploit-framework directory
-        3. Known system installation paths
+        Priority (highest first):
+        1. Explicit path argument
+        2. Configuration (env vars, config files, auto-detection)
+
+        Args:
+            explicit_path: Explicitly provided MSF path (overrides all else)
+
+        Returns:
+            Path to MSF installation, or None if not found
         """
-        # Check environment variable
-        msf_root_env = environ.get("MSF_ROOT")
-        if msf_root_env:
-            path = Path(msf_root_env).expanduser()
-            logger.debug(f"Safehouse from MSF_ROOT: {path}")
+        # 1. Explicit path argument takes precedence
+        if explicit_path is not None:
+            path = Path(explicit_path).expanduser().resolve()
+            logger.debug(f"Safehouse from explicit path: {path}")
             return path
 
-        # Check project-local directory
-        local_msf = PROJECT_ROOT / "metasploit-framework"
-        if local_msf.exists() and (local_msf / "Gemfile").exists():
-            logger.debug(f"Safehouse (local): {local_msf}")
-            return local_msf
+        # 2. Use configuration (already handles env vars, config files, auto-detection)
+        if self._config.metasploit.root is not None:
+            logger.debug(f"Safehouse from config: {self._config.metasploit.root}")
+            return self._config.metasploit.root
 
-        # Scan known locations
-        for path in KNOWN_SAFEHOUSES:
-            expanded = path.expanduser()
-            if expanded.exists() and (expanded / "Gemfile").exists():
-                logger.debug(f"Safehouse (detected): {expanded}")
-                return expanded
-
-        # Fall back to standard clone path
-        logger.debug(f"Safehouse (fallback): {MSF_CLONE_PATH}")
-        return MSF_CLONE_PATH
+        # Not found
+        logger.warning("No MSF installation found")
+        return None
 
     # =========================================================================
     # Representation
     # =========================================================================
+
+    @property
+    def config(self) -> "AssassinateSettings":
+        """Access the configuration settings.
+
+        Returns:
+            The AssassinateSettings instance used by this Hideout
+        """
+        return self._config
 
     def __repr__(self) -> str:
         status = "operational" if self._initialized else "compromised"

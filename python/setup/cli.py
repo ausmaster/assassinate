@@ -108,6 +108,94 @@ def setup_rust_env() -> dict[str, str]:
     return env
 
 
+def run_config(save: bool = False, show: bool = False) -> int:
+    """Run configuration wizard - detect environment and optionally save."""
+    from pathlib import Path
+
+    print(f"\n{BOLD}{'=' * 60}{RESET}")
+    print(f"{BOLD}  ASSASSINATE CONFIGURATION{RESET}")
+    print(f"{'=' * 60}\n")
+
+    # Import detection functions
+    try:
+        from assassinate.detection import (
+            detect_msf_root,
+            detect_ruby_manager,
+            detect_ruby_version,
+        )
+    except ImportError as e:
+        print(f"{icon(False)} Failed to import detection module: {e}")
+        return 1
+
+    print(f"{BOLD}[1/3] Detecting MSF installation...{RESET}")
+    msf_root = detect_msf_root()
+    if msf_root:
+        print(f"  {icon(True)} Found MSF: {msf_root}")
+    else:
+        print(f"  {icon(False)} MSF not found")
+        print(f"       Set ASAS_METASPLOIT__ROOT or install MSF")
+
+    print(f"\n{BOLD}[2/3] Detecting Ruby environment...{RESET}")
+    ruby_manager = detect_ruby_manager()
+    print(f"  {icon(True)} Ruby manager: {ruby_manager}")
+
+    ruby_version = None
+    if msf_root:
+        ruby_version = detect_ruby_version(msf_root)
+        if ruby_version:
+            print(f"  {icon(True)} Ruby version: {ruby_version} (from .ruby-version)")
+        else:
+            print(f"  {warn_icon()} Ruby version: not specified in MSF")
+
+    print(f"\n{BOLD}[3/3] Configuration summary...{RESET}")
+
+    # Build config dict
+    config_data = {}
+    if msf_root:
+        config_data["metasploit"] = {"root": str(msf_root)}
+    if ruby_manager != "system":
+        config_data["ruby"] = {"manager": ruby_manager}
+        if ruby_version:
+            config_data["ruby"]["version"] = ruby_version
+
+    if show or not save:
+        print(f"\n{CYAN}# Current detected configuration:{RESET}")
+        try:
+            import yaml
+            print(yaml.safe_dump(config_data, default_flow_style=False))
+        except ImportError:
+            print(f"  metasploit.root: {msf_root}")
+            print(f"  ruby.manager: {ruby_manager}")
+            print(f"  ruby.version: {ruby_version}")
+
+    if save:
+        config_path = Path.home() / ".config" / "assassinate" / "config.yaml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            import yaml
+            with open(config_path, "w") as f:
+                yaml.safe_dump(config_data, f, default_flow_style=False)
+            print(f"\n{icon(True)} Configuration saved to {config_path}")
+        except ImportError:
+            print(f"\n{icon(False)} PyYAML not installed, cannot save config")
+            print(f"       Install with: pip install pyyaml")
+            return 1
+        except Exception as e:
+            print(f"\n{icon(False)} Failed to save config: {e}")
+            return 1
+
+    print(f"\n{'=' * 60}")
+    if msf_root:
+        print(f"{BOLD}{GREEN}  CONFIGURATION COMPLETE{RESET}")
+    else:
+        print(f"{BOLD}{YELLOW}  CONFIGURATION INCOMPLETE{RESET}")
+        print(f"  MSF installation not found")
+    print(f"{'=' * 60}\n")
+
+    return 0 if msf_root else 1
+
+
 def run_recon(skip_msf: bool = False) -> int:
     """Quick reconnaissance - check what's installed without changes."""
     issues: list[str] = []
@@ -238,6 +326,8 @@ Examples:
     assassinate-setup --install --skip-steps msf   # Skip MSF
     assassinate-setup --verify                     # Check status
     assassinate-setup --recon-only                 # Quick check
+    assassinate-setup --config                     # Detect and show config
+    assassinate-setup --config --save              # Detect and save config
     assassinate-setup --install --force            # Force reinstall
     assassinate-setup --install -v                 # Verbose output
         """,
@@ -260,6 +350,11 @@ Examples:
         "--check-only",
         action="store_true",
         help="Quick reconnaissance without changes",
+    )
+    group.add_argument(
+        "--config",
+        action="store_true",
+        help="Auto-detect environment and show/save configuration",
     )
 
     # Step selection
@@ -303,6 +398,11 @@ Examples:
         action="store_true",
         help="Enable verbose output",
     )
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Save detected configuration to ~/.config/assassinate/config.yaml (use with --config)",
+    )
 
     args = parser.parse_args()
 
@@ -326,6 +426,8 @@ Examples:
         return run_verify()
     elif args.recon_only:
         return run_recon(skip_msf=args.skip_msf)
+    elif args.config:
+        return run_config(save=args.save, show=True)
     else:
         # Default: run recon
         return run_recon()
