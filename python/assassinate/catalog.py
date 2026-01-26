@@ -26,6 +26,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, Iterator, List, Optional, Set, Union
 
+from assassinate.console import print_weapon_info, print_bullet_info
+
 if TYPE_CHECKING:
     from assassinate.weapon import Bullet, Weapon
     from assassinate.arsenal import Arsenal
@@ -133,8 +135,97 @@ class WeaponInfo:
 
         return field_value == value
 
+    def __repr__(self) -> str:
+        parts = [f"<WeaponInfo {self.fullname} ({self.rank})"]
+        if self.service:
+            parts.append(f"service={self.service}")
+        if self.port:
+            parts.append(f"port={self.port}")
+        if self.cves:
+            parts.append(f"cves={len(self.cves)}")
+        return " ".join(parts) + ">"
+
     def __str__(self) -> str:
         return f"{self.fullname} ({self.rank})"
+
+    def summary(self, full: bool = False) -> str:
+        """Get a detailed multi-line summary of this weapon.
+
+        Args:
+            full: If True, show all authors without truncation.
+
+        Returns:
+            Formatted string with full weapon details
+        """
+        lines = [
+            f"{'═' * 70}",
+            f"  {self.fullname}",
+            f"{'═' * 70}",
+            f"",
+            f"  Type: {self.type.upper()}    Rank: {self.rank.upper()}",
+        ]
+
+        if self.service or self.port:
+            svc_info = []
+            if self.service:
+                svc_info.append(f"Service: {self.service}")
+            if self.port:
+                svc_info.append(f"Port: {self.port}")
+            lines.append(f"  {', '.join(svc_info)}")
+
+        if self.platforms:
+            lines.append(f"  Platforms: {', '.join(self.platforms)}")
+
+        if self.cves:
+            lines.append(f"  CVEs: {', '.join(self.cves)}")
+
+        if self.description:
+            lines.append(f"")
+            lines.append(f"  Description:")
+            # Word-wrap description at ~65 chars
+            desc = self.description
+            while desc:
+                if len(desc) <= 65:
+                    lines.append(f"    {desc}")
+                    break
+                # Find last space before 65 chars
+                idx = desc[:65].rfind(' ')
+                if idx == -1:
+                    idx = 65
+                lines.append(f"    {desc[:idx]}")
+                desc = desc[idx:].lstrip()
+
+        if self.authors:
+            lines.append(f"")
+            if full:
+                lines.append(f"  Authors: {', '.join(self.authors)}")
+            else:
+                lines.append(f"  Authors: {', '.join(self.authors[:3])}")
+                if len(self.authors) > 3:
+                    lines[-1] += f" (+{len(self.authors) - 3} more)"
+
+        lines.append(f"{'─' * 70}")
+        return "\n".join(lines)
+
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: If True, show all authors without truncation.
+        """
+        print_weapon_info(
+            fullname=self.fullname,
+            name=self.name,
+            weapon_type=self.type,
+            rank=self.rank,
+            service=self.service,
+            port=self.port,
+            platforms=self.platforms,
+            cves=self.cves,
+            description=self.description,
+            authors=self.authors,
+            full=full,
+        )
 
 
 @dataclass
@@ -197,8 +288,56 @@ class BulletInfo:
 
         return field_value == value
 
+    def __repr__(self) -> str:
+        parts = [f"<BulletInfo {self.name}"]
+        parts.append(f"({self.type}, {self.connection})")
+        if self.is_meterpreter:
+            parts.append("meterpreter")
+        elif self.is_shell:
+            parts.append("shell")
+        return " ".join(parts) + ">"
+
     def __str__(self) -> str:
         return self.name
+
+    def summary(self) -> str:
+        """Get a detailed multi-line summary of this bullet.
+
+        Returns:
+            Formatted string with full bullet details
+        """
+        payload_type = "Meterpreter" if self.is_meterpreter else "Shell" if self.is_shell else "Other"
+
+        lines = [
+            f"{'═' * 60}",
+            f"  {self.name}",
+            f"{'═' * 60}",
+            f"",
+            f"  Platform: {self.platform}    Arch: {self.arch}",
+            f"  Type: {self.type}    Connection: {self.connection}",
+            f"  Payload Type: {payload_type}",
+            f"  Handler: {self.handler}",
+            f"{'─' * 60}",
+        ]
+        return "\n".join(lines)
+
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: Reserved for future use (consistency with other classes).
+        """
+        print_bullet_info(
+            name=self.name,
+            platform=self.platform,
+            arch=self.arch,
+            bullet_type=self.type,
+            connection=self.connection,
+            is_meterpreter=self.is_meterpreter,
+            is_shell=self.is_shell,
+            handler=self.handler,
+            full=full,
+        )
 
 
 class WeaponCatalog:

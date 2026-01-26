@@ -1513,6 +1513,10 @@ fn route_get(addr: &str) -> PyResult<Option<i64>> {
 /// wrappers for a Pythonic API.
 #[pymodule]
 pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
+    // Initialize pyo3-log to bridge Rust log messages to Python logging
+    // This MUST be called first, before any log statements
+    pyo3_log::init();
+
     module.add("__doc__", "Python interface to Metasploit Framework via Rust/Pyo3")?;
     module.add(
         "__all__",

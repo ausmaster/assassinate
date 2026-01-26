@@ -14,12 +14,15 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-pyo3 = ["dep:pyo3"]
+pyo3 = ["dep:pyo3", "dep:pyo3-log"]
 
 [dependencies]
 # Magnus for Ruby FFI with embed feature for proper VM initialization
 magnus = { version = "0.8", features = ["embed", "rb-sys"] }
 rb-sys = "0.9"
+
+# Logging
+log = "0.4"
 
 # Error handling
 thiserror = "2.0"
@@ -36,6 +39,7 @@ serde_magnus = "0.10.0"
 
 # Optional Python bindings
 pyo3 = { version = "0.21", features = ["extension-module", "multiple-pymethods"], optional = true }
+pyo3-log = { version = "0.11", optional = true }
 
 [dev-dependencies]
 ntest = "0.9.5"

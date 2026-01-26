@@ -30,11 +30,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List, Optional, Dict
 
 import msf
+from assassinate.log_config import get_logger
 from assassinate.weapon import Weapon
 from assassinate.catalog import WeaponCatalog, BulletCatalog
 
 if TYPE_CHECKING:
     from assassinate.hideout import Hideout
+
+logger = get_logger("arsenal")
 
 
 class Arsenal:
@@ -79,6 +82,7 @@ class Arsenal:
         self._counts_cache: Optional[Dict[str, int]] = None
         self._weapons_catalog: Optional[WeaponCatalog] = None
         self._bullets_catalog: Optional[BulletCatalog] = None
+        logger.debug("Arsenal initialized")
 
     # =========================================================================
     # Catalog Access (New API)
@@ -176,6 +180,10 @@ class Arsenal:
             >>> # Find by CVE
             >>> weapons = arsenal.find("CVE-2017-7494")
         """
+        logger.debug(
+            f"Arsenal.find() called: query={query}, service={service}, platform={platform}, type={type}, rank={rank}"
+        )
+
         # Build MSF search query
         search_terms = []
         if query:
@@ -217,8 +225,9 @@ class Arsenal:
                     continue
 
                 weapons.append(weapon)
-            except Exception:
+            except Exception as e:
                 # Skip modules that fail to load
+                logger.debug(f"Failed to load module {name}: {e}")
                 continue
 
         # Sort by rank (highest first)
@@ -228,6 +237,7 @@ class Arsenal:
         if limit > 0:
             weapons = weapons[:limit]
 
+        logger.debug(f"Arsenal.find() returning {len(weapons)} weapons")
         return weapons
 
     def get(self, name: str) -> Weapon:
@@ -384,11 +394,13 @@ class Arsenal:
             >>> print(f"Exploits: {arsenal.count('exploit')}")
         """
         if self._counts_cache is None:
+            logger.debug("Building arsenal counts cache")
             self._counts_cache = {}
             for mod_type in ["exploit", "auxiliary", "post", "payload", "evasion", "encoder", "nop"]:
                 try:
                     self._counts_cache[mod_type] = len(msf.list_modules(mod_type))
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Failed to count {mod_type} modules: {e}")
                     self._counts_cache[mod_type] = 0
 
         if type:

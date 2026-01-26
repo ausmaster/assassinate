@@ -27,6 +27,7 @@ pub use session::{Session, SessionManager};
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, create_framework, value_to_string};
+use log::{debug, error, info, trace, warn};
 use magnus::{value::BoxValue, value::ReprValue, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -43,10 +44,14 @@ pub struct Framework {
 impl Framework {
     /// Create a new Framework instance
     pub fn new(options: Option<HashMap<String, String>>) -> Result<Self> {
+        info!(target: "msf::framework", "Creating new Framework instance");
+        trace!(target: "msf::framework", "Framework options: {:?}", options);
+
         let opts_json = options.and_then(|o| serde_json::to_value(o).ok());
 
         let ruby_framework = create_framework(opts_json)?;
 
+        info!(target: "msf::framework", "Framework created successfully");
         Ok(Framework {
             ruby_framework: BoxValue::new(ruby_framework),
         })
@@ -55,6 +60,7 @@ impl Framework {
     /// Create a Framework wrapper from an existing Ruby framework object
     /// Useful for tests and when you already have a framework Value
     pub fn from_raw(ruby_framework: Value) -> Self {
+        debug!(target: "msf::framework", "Creating Framework from raw Ruby value");
         Framework {
             ruby_framework: BoxValue::new(ruby_framework),
         }
@@ -62,12 +68,17 @@ impl Framework {
 
     /// Get the Metasploit Framework version
     pub fn version(&self) -> Result<String> {
+        trace!(target: "msf::framework", "Getting framework version");
         let version_val = call_method(*self.ruby_framework, "version", &[])?;
-        value_to_string(version_val)
+        let version = value_to_string(version_val)?;
+        debug!(target: "msf::framework", "Framework version: {}", version);
+        Ok(version)
     }
 
     /// List all module reference names for a given type
     pub fn list_modules(&self, module_type: &str) -> Result<Vec<String>> {
+        debug!(target: "msf::framework", "Listing modules of type: {}", module_type);
+
         let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         // MSF uses plural names for module types (exploits, not exploit)
@@ -94,11 +105,14 @@ impl Framework {
                 ))
             })?;
 
+        debug!(target: "msf::framework", "Found {} {} modules", refnames.len(), module_type);
         Ok(refnames)
     }
 
     /// Create a module instance by name
     pub fn create_module(&self, module_name: &str) -> Result<Module> {
+        info!(target: "msf::framework", "Creating module: {}", module_name);
+
         let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         let name_val = crate::ruby_bridge::get_ruby()?
@@ -109,9 +123,11 @@ impl Framework {
 
         // Check if module is nil
         if module_instance.is_nil() {
+            error!(target: "msf::framework", "Module not found: {}", module_name);
             return Err(AssassinateError::ModuleNotFound(module_name.to_string()));
         }
 
+        debug!(target: "msf::framework", "Module created: {}", module_name);
         Ok(Module {
             ruby_module: BoxValue::new(module_instance),
         })
@@ -119,6 +135,7 @@ impl Framework {
 
     /// Get the sessions manager
     pub fn sessions(&self) -> Result<SessionManager> {
+        trace!(target: "msf::framework", "Getting sessions manager");
         let sessions_val = call_method(*self.ruby_framework, "sessions", &[])?;
 
         Ok(SessionManager {
@@ -128,6 +145,7 @@ impl Framework {
 
     /// Get the datastore
     pub fn datastore(&self) -> Result<DataStore> {
+        trace!(target: "msf::framework", "Getting datastore");
         let datastore_val = call_method(*self.ruby_framework, "datastore", &[])?;
 
         Ok(DataStore {
@@ -137,6 +155,7 @@ impl Framework {
 
     /// Get database manager
     pub fn db(&self) -> Result<DbManager> {
+        trace!(target: "msf::framework", "Getting database manager");
         let db_val = call_method(*self.ruby_framework, "db", &[])?;
 
         Ok(DbManager { ruby_db: BoxValue::new(db_val) })
@@ -144,6 +163,8 @@ impl Framework {
 
     /// Search for modules
     pub fn search(&self, query: &str) -> Result<Vec<String>> {
+        info!(target: "msf::framework", "Searching modules: {}", query);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let query_val = ruby.str_new(query).as_value();
 
@@ -166,11 +187,13 @@ impl Framework {
             results.push(fullname);
         }
 
+        info!(target: "msf::framework", "Search found {} results for '{}'", results.len(), query);
         Ok(results)
     }
 
     /// Get jobs manager
     pub fn jobs(&self) -> Result<JobManager> {
+        trace!(target: "msf::framework", "Getting jobs manager");
         let jobs_val = call_method(*self.ruby_framework, "jobs", &[])?;
 
         Ok(JobManager {
@@ -180,6 +203,7 @@ impl Framework {
 
     /// Get plugin manager
     pub fn plugins(&self) -> Result<PluginManager> {
+        trace!(target: "msf::framework", "Getting plugin manager");
         let plugins_val = call_method(*self.ruby_framework, "plugins", &[])?;
 
         Ok(PluginManager {
@@ -189,6 +213,7 @@ impl Framework {
 
     /// Get framework threads configuration
     pub fn threads(&self) -> Result<i64> {
+        trace!(target: "msf::framework", "Getting threads configuration");
         let threads_val = call_method(*self.ruby_framework, "threads", &[])?;
 
         // MSF returns ThreadManager object - check if it responds to max_threads or similar
@@ -228,6 +253,8 @@ impl Framework {
     ///
     /// Returns module counts by type after reloading
     pub fn reload_modules(&self) -> Result<HashMap<String, i64>> {
+        info!(target: "msf::framework", "Reloading all modules");
+
         let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
         // Call reload_modules which returns a hash of counts by type
@@ -238,11 +265,13 @@ impl Framework {
         let stats: HashMap<String, i64> = serde_json::from_value(json)
             .map_err(|e| AssassinateError::ConversionError(format!("Failed to convert reload stats: {}", e)))?;
 
+        info!(target: "msf::framework", "Module reload complete: {:?}", stats);
         Ok(stats)
     }
 
     /// Save framework configuration to disk
     pub fn save(&self) -> Result<()> {
+        debug!(target: "msf::framework", "Saving framework configuration");
         call_method(*self.ruby_framework, "save_config", &[])?;
         Ok(())
     }
@@ -252,6 +281,8 @@ impl Framework {
     /// The path must be accessible and contain top-level directories for module types
     /// (exploits, auxiliary, post, encoders, nops, payloads, evasion)
     pub fn add_module_path(&self, path: &str) -> Result<HashMap<String, i64>> {
+        info!(target: "msf::framework", "Adding module path: {}", path);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let modules_manager = call_method(*self.ruby_framework, "modules", &[])?;
 
@@ -265,11 +296,14 @@ impl Framework {
         let stats: HashMap<String, i64> = serde_json::from_value(json)
             .map_err(|e| AssassinateError::ConversionError(format!("Failed to convert module path stats: {}", e)))?;
 
+        debug!(target: "msf::framework", "Module path added, loaded: {:?}", stats);
         Ok(stats)
     }
 
     /// Get module statistics (counts by type)
     pub fn module_stats(&self) -> Result<HashMap<String, i64>> {
+        debug!(target: "msf::framework", "Getting module statistics");
+
         let stats_val = call_method(*self.ruby_framework, "stats", &[])?;
 
         let mut stats = HashMap::new();
@@ -291,6 +325,7 @@ impl Framework {
         stats.insert("payloads".to_string(), TryConvert::try_convert(payloads_val).unwrap_or(0));
         stats.insert("evasions".to_string(), TryConvert::try_convert(evasions_val).unwrap_or(0));
 
+        trace!(target: "msf::framework", "Module stats: {:?}", stats);
         Ok(stats)
     }
 
@@ -298,6 +333,7 @@ impl Framework {
 
     /// Get the route manager for adding/removing routes
     pub fn routes(&self) -> Result<RouteManager> {
+        trace!(target: "msf::framework", "Getting route manager");
         let sessions_val = call_method(*self.ruby_framework, "sessions", &[])?;
         RouteManager::new(sessions_val)
     }
@@ -312,7 +348,14 @@ impl Framework {
     /// # Returns
     /// `true` if the route was added, `false` if it already exists
     pub fn route_add(&self, subnet: &str, netmask: &str, session_id: i64) -> Result<bool> {
-        self.routes()?.add_route(subnet, netmask, session_id)
+        info!(target: "msf::routing", "Adding route {}/{} via session {}", subnet, netmask, session_id);
+        let result = self.routes()?.add_route(subnet, netmask, session_id)?;
+        if result {
+            debug!(target: "msf::routing", "Route added successfully");
+        } else {
+            debug!(target: "msf::routing", "Route already exists");
+        }
+        Ok(result)
     }
 
     /// Remove a route through a session (convenience method)
@@ -325,31 +368,51 @@ impl Framework {
     /// # Returns
     /// `true` if the route was removed, `false` if it wasn't found
     pub fn route_remove(&self, subnet: &str, netmask: &str, session_id: i64) -> Result<bool> {
-        self.routes()?.remove_route(subnet, netmask, session_id)
+        info!(target: "msf::routing", "Removing route {}/{} via session {}", subnet, netmask, session_id);
+        let result = self.routes()?.remove_route(subnet, netmask, session_id)?;
+        if result {
+            debug!(target: "msf::routing", "Route removed successfully");
+        } else {
+            warn!(target: "msf::routing", "Route not found");
+        }
+        Ok(result)
     }
 
     /// List all routes (convenience method)
     pub fn route_list(&self) -> Result<Vec<Route>> {
-        self.routes()?.list_routes()
+        debug!(target: "msf::routing", "Listing all routes");
+        let routes = self.routes()?.list_routes()?;
+        trace!(target: "msf::routing", "Found {} routes", routes.len());
+        Ok(routes)
     }
 
     /// Flush all routes (convenience method)
     pub fn route_flush(&self) -> Result<()> {
+        info!(target: "msf::routing", "Flushing all routes");
         self.routes()?.flush_routes()
     }
 
     /// Check if a route exists (convenience method)
     pub fn route_exists(&self, subnet: &str, netmask: &str) -> Result<bool> {
+        trace!(target: "msf::routing", "Checking if route {}/{} exists", subnet, netmask);
         self.routes()?.route_exists(subnet, netmask)
     }
 
     /// Find the best session for routing to an address (convenience method)
     pub fn route_get(&self, addr: &str) -> Result<Option<i64>> {
-        self.routes()?.best_comm(addr)
+        debug!(target: "msf::routing", "Finding best route to {}", addr);
+        let result = self.routes()?.best_comm(addr)?;
+        if let Some(sid) = result {
+            debug!(target: "msf::routing", "Best route to {} via session {}", addr, sid);
+        } else {
+            trace!(target: "msf::routing", "No route to {}", addr);
+        }
+        Ok(result)
     }
 
     /// Get the payload generator
     pub fn payload_generator(&self) -> Result<PayloadGenerator> {
+        trace!(target: "msf::framework", "Getting payload generator");
         PayloadGenerator::new(self)
     }
 

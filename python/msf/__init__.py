@@ -29,7 +29,11 @@ Example:
 
 from __future__ import annotations
 
+import logging
 from typing import Optional, Union
+
+# Get logger for this module
+logger = logging.getLogger("msf")
 
 # Import from Rust extension
 from .msf import (
@@ -169,12 +173,20 @@ def create_module(module_name: str) -> AnyModule:
         assert isinstance(scanner, AuxiliaryModule)
         assert scanner.module_type == "auxiliary"
     """
-    rust_module = _create_module_rust(module_name)
-    module_type = rust_module.module_type()
+    logger.debug(f"create_module() called with: {module_name}")
+    try:
+        rust_module = _create_module_rust(module_name)
+        module_type = rust_module.module_type()
+        logger.debug(f"Module type detected: {module_type}")
 
-    # Get the appropriate class for this module type
-    module_class = _MODULE_CLASSES.get(module_type, BaseModule)
-    return module_class(rust_module)
+        # Get the appropriate class for this module type
+        module_class = _MODULE_CLASSES.get(module_type, BaseModule)
+        instance = module_class(rust_module)
+        logger.info(f"Created {module_class.__name__}: {module_name}")
+        return instance
+    except Exception as e:
+        logger.error(f"Failed to create module {module_name}: {e}")
+        raise
 
 
 def get_session(session_id: int) -> Optional[Session]:
@@ -193,10 +205,18 @@ def get_session(session_id: int) -> Optional[Session]:
             print(f"Got session: {session}")
             print(session.run_cmd("whoami"))
     """
-    rust_session = _get_session_rust(session_id)
-    if rust_session is not None:
-        return Session(rust_session)
-    return None
+    logger.debug(f"get_session() called with id: {session_id}")
+    try:
+        rust_session = _get_session_rust(session_id)
+        if rust_session is not None:
+            session = Session(rust_session)
+            logger.info(f"Retrieved session {session_id}: {session.session_type}")
+            return session
+        logger.debug(f"Session {session_id} not found")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to get session {session_id}: {e}")
+        raise
 
 
 def wait_for_new_session(
@@ -229,23 +249,40 @@ def wait_for_new_session(
         if session:
             print(session.run_cmd("whoami"))
     """
+    logger.debug(
+        f"wait_for_new_session() called (timeout_ms={timeout_ms}, interval_ms={interval_ms})"
+    )
+
     if existing_sessions is None:
         existing_sessions = set(list_sessions())
+        logger.debug(f"Captured existing sessions: {existing_sessions}")
 
     new_session_id = [None]  # Use list to allow mutation in closure
+    poll_count = [0]
 
     def check_for_session() -> bool:
+        poll_count[0] += 1
         current = set(list_sessions())
         new_sessions = current - existing_sessions
         if new_sessions:
             new_session_id[0] = next(iter(new_sessions))
+            logger.debug(
+                f"New session found: {new_session_id[0]} (after {poll_count[0]} polls)"
+            )
             return True
         return False
 
+    logger.info(f"Waiting for new session (timeout: {timeout_ms or 60000}ms)...")
     found = _poll_releasing_gvl(check_for_session, interval_ms, timeout_ms)
 
     if found and new_session_id[0] is not None:
-        return get_session(new_session_id[0])
+        session = get_session(new_session_id[0])
+        logger.success(f"New session established: {new_session_id[0]}")
+        return session
+
+    logger.warning(
+        f"Timeout waiting for session after {poll_count[0]} polls"
+    )
     return None
 
 
@@ -336,3 +373,14 @@ __all__ = [
     # Type alias
     "AnyModule",
 ]
+
+
+# =============================================================================
+# Auto-configure logging from environment variables
+# =============================================================================
+# Import shared logging configuration from assassinate.log_config
+# This ensures consistent logging setup whether using msf directly or via assassinate
+from assassinate.log_config import setup_logging as _setup_logging
+
+# The import of log_config triggers auto-configuration via _auto_configure()
+# which reads ASSASSINATE_LOG_LEVEL and ASSASSINATE_LOG_FILE environment variables

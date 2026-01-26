@@ -1,6 +1,12 @@
 """Pythonic wrapper for PySession with property-based access."""
 
+import logging
 from typing import Any, Dict, List, Optional
+
+from assassinate.console import print_session
+
+# Get logger for this module
+logger = logging.getLogger("msf.session")
 
 
 class Session:
@@ -27,6 +33,7 @@ class Session:
     def __init__(self, rust_session):
         """Initialize wrapper around a PySession from Rust."""
         self._rust = rust_session
+        logger.debug(f"Session initialized: sid={rust_session.sid()}")
 
     # =========================================================================
     # Properties (Pythonic attribute access)
@@ -102,11 +109,25 @@ class Session:
         Returns:
             Command output as string
         """
-        return self._rust.run_cmd(cmd, timeout)
+        logger.debug(f"run_cmd() on session {self.sid}: {cmd[:50] + '...' if len(cmd) > 50 else cmd}")
+        try:
+            result = self._rust.run_cmd(cmd, timeout)
+            logger.debug(f"run_cmd() returned {len(result)} chars")
+            return result
+        except Exception as e:
+            logger.error(f"run_cmd() failed on session {self.sid}: {e}")
+            raise
 
     def read(self, length: Optional[int] = None) -> str:
         """Read available data from session."""
-        return self._rust.read(length)
+        logger.debug(f"read() on session {self.sid} (length={length})")
+        try:
+            result = self._rust.read(length)
+            logger.debug(f"read() returned {len(result)} chars")
+            return result
+        except Exception as e:
+            logger.error(f"read() failed on session {self.sid}: {e}")
+            raise
 
     def write(self, data: str) -> int:
         """
@@ -118,19 +139,46 @@ class Session:
         Returns:
             Number of bytes written
         """
-        return self._rust.write(data)
+        logger.debug(f"write() on session {self.sid}: {len(data)} bytes")
+        try:
+            result = self._rust.write(data)
+            logger.debug(f"write() wrote {result} bytes")
+            return result
+        except Exception as e:
+            logger.error(f"write() failed on session {self.sid}: {e}")
+            raise
 
     def kill(self) -> None:
         """Kill this session."""
-        self._rust.kill()
+        logger.info(f"Killing session {self.sid}")
+        try:
+            self._rust.kill()
+            logger.info(f"Session {self.sid} killed")
+        except Exception as e:
+            logger.error(f"Failed to kill session {self.sid}: {e}")
+            raise
 
     def shell_read(self) -> str:
         """Read from shell session."""
-        return self._rust.shell_read()
+        logger.debug(f"shell_read() on session {self.sid}")
+        try:
+            result = self._rust.shell_read()
+            logger.debug(f"shell_read() returned {len(result)} chars")
+            return result
+        except Exception as e:
+            logger.error(f"shell_read() failed on session {self.sid}: {e}")
+            raise
 
     def shell_write(self, data: str) -> int:
         """Write to shell session."""
-        return self._rust.shell_write(data)
+        logger.debug(f"shell_write() on session {self.sid}: {len(data)} bytes")
+        try:
+            result = self._rust.shell_write(data)
+            logger.debug(f"shell_write() wrote {result} bytes")
+            return result
+        except Exception as e:
+            logger.error(f"shell_write() failed on session {self.sid}: {e}")
+            raise
 
     def shell_to_meterpreter(self, lhost: str, lport: int) -> bool:
         """
@@ -143,7 +191,19 @@ class Session:
         Returns:
             True if upgrade was initiated successfully
         """
-        return self._rust.shell_to_meterpreter(lhost, lport)
+        logger.info(
+            f"Upgrading session {self.sid} to meterpreter (lhost={lhost}, lport={lport})"
+        )
+        try:
+            result = self._rust.shell_to_meterpreter(lhost, lport)
+            if result:
+                logger.info(f"Meterpreter upgrade initiated for session {self.sid}")
+            else:
+                logger.warning(f"Meterpreter upgrade failed for session {self.sid}")
+            return result
+        except Exception as e:
+            logger.error(f"Meterpreter upgrade error for session {self.sid}: {e}")
+            raise
 
     # =========================================================================
     # Meterpreter Filesystem Operations
@@ -151,7 +211,10 @@ class Session:
 
     def fs_pwd(self) -> str:
         """Get current working directory on target."""
-        return self._rust.fs_pwd()
+        logger.debug(f"fs_pwd() on session {self.sid}")
+        result = self._rust.fs_pwd()
+        logger.debug(f"fs_pwd() -> {result}")
+        return result
 
     def fs_chdir(self, path: str) -> None:
         """
@@ -160,6 +223,7 @@ class Session:
         Args:
             path: Directory path to change to
         """
+        logger.debug(f"fs_chdir({path}) on session {self.sid}")
         self._rust.fs_chdir(path)
 
     def fs_ls(self, path: str) -> List[str]:
@@ -172,7 +236,10 @@ class Session:
         Returns:
             List of filenames in the directory
         """
-        return self._rust.fs_ls(path)
+        logger.debug(f"fs_ls({path}) on session {self.sid}")
+        result = self._rust.fs_ls(path)
+        logger.debug(f"fs_ls() returned {len(result)} entries")
+        return result
 
     def fs_mkdir(self, path: str) -> None:
         """
@@ -181,6 +248,7 @@ class Session:
         Args:
             path: Directory path to create
         """
+        logger.debug(f"fs_mkdir({path}) on session {self.sid}")
         self._rust.fs_mkdir(path)
 
     def fs_rmdir(self, path: str) -> None:
@@ -190,6 +258,7 @@ class Session:
         Args:
             path: Directory path to remove
         """
+        logger.debug(f"fs_rmdir({path}) on session {self.sid}")
         self._rust.fs_rmdir(path)
 
     def fs_exists(self, path: str) -> bool:
@@ -202,7 +271,10 @@ class Session:
         Returns:
             True if path exists
         """
-        return self._rust.fs_exists(path)
+        logger.debug(f"fs_exists({path}) on session {self.sid}")
+        result = self._rust.fs_exists(path)
+        logger.debug(f"fs_exists() -> {result}")
+        return result
 
     def fs_rm(self, path: str) -> None:
         """
@@ -211,6 +283,7 @@ class Session:
         Args:
             path: File path to remove
         """
+        logger.debug(f"fs_rm({path}) on session {self.sid}")
         self._rust.fs_rm(path)
 
     def fs_mv(self, old_path: str, new_path: str) -> None:
@@ -221,6 +294,7 @@ class Session:
             old_path: Current file path
             new_path: New file path
         """
+        logger.debug(f"fs_mv({old_path}, {new_path}) on session {self.sid}")
         self._rust.fs_mv(old_path, new_path)
 
     def fs_cp(self, src_path: str, dst_path: str) -> None:
@@ -231,6 +305,7 @@ class Session:
             src_path: Source file path
             dst_path: Destination file path
         """
+        logger.debug(f"fs_cp({src_path}, {dst_path}) on session {self.sid}")
         self._rust.fs_cp(src_path, dst_path)
 
     def fs_separator(self) -> str:
@@ -247,7 +322,10 @@ class Session:
         Returns:
             Expanded path
         """
-        return self._rust.fs_expand_path(path)
+        logger.debug(f"fs_expand_path({path}) on session {self.sid}")
+        result = self._rust.fs_expand_path(path)
+        logger.debug(f"fs_expand_path() -> {result}")
+        return result
 
     def fs_download_file(self, local_path: str, remote_path: str) -> str:
         """
@@ -260,7 +338,16 @@ class Session:
         Returns:
             Path to downloaded file
         """
-        return self._rust.fs_download_file(local_path, remote_path)
+        logger.info(
+            f"Downloading file on session {self.sid}: {remote_path} -> {local_path}"
+        )
+        try:
+            result = self._rust.fs_download_file(local_path, remote_path)
+            logger.info(f"Downloaded file to: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"File download failed: {e}")
+            raise
 
     def fs_upload_file(self, remote_path: str, local_path: str) -> None:
         """
@@ -270,7 +357,15 @@ class Session:
             remote_path: Remote destination path
             local_path: Local source path
         """
-        self._rust.fs_upload_file(remote_path, local_path)
+        logger.info(
+            f"Uploading file on session {self.sid}: {local_path} -> {remote_path}"
+        )
+        try:
+            self._rust.fs_upload_file(remote_path, local_path)
+            logger.info("File uploaded successfully")
+        except Exception as e:
+            logger.error(f"File upload failed: {e}")
+            raise
 
     def fs_stat(self, path: str) -> Dict[str, Any]:
         """
@@ -282,6 +377,7 @@ class Session:
         Returns:
             Dictionary with file stats (size, mode, mtime, etc.)
         """
+        logger.debug(f"fs_stat({path}) on session {self.sid}")
         return self._rust.fs_stat(path)
 
     def fs_md5(self, path: str) -> str:
@@ -294,7 +390,10 @@ class Session:
         Returns:
             MD5 hash as hex string
         """
-        return self._rust.fs_md5(path)
+        logger.debug(f"fs_md5({path}) on session {self.sid}")
+        result = self._rust.fs_md5(path)
+        logger.debug(f"fs_md5() -> {result}")
+        return result
 
     def fs_sha1(self, path: str) -> str:
         """
@@ -306,7 +405,10 @@ class Session:
         Returns:
             SHA1 hash as hex string
         """
-        return self._rust.fs_sha1(path)
+        logger.debug(f"fs_sha1({path}) on session {self.sid}")
+        result = self._rust.fs_sha1(path)
+        logger.debug(f"fs_sha1() -> {result}")
+        return result
 
     def fs_search(
         self, root: str, pattern: str, recurse: Optional[bool] = None
@@ -322,7 +424,12 @@ class Session:
         Returns:
             List of matching file dictionaries with path, name, size
         """
-        return self._rust.fs_search(root, pattern, recurse)
+        logger.debug(
+            f"fs_search({root}, {pattern}, recurse={recurse}) on session {self.sid}"
+        )
+        result = self._rust.fs_search(root, pattern, recurse)
+        logger.debug(f"fs_search() found {len(result)} files")
+        return result
 
     # =========================================================================
     # Meterpreter Process Operations
@@ -330,7 +437,10 @@ class Session:
 
     def process_getpid(self) -> int:
         """Get the PID of the meterpreter process on target."""
-        return self._rust.process_getpid()
+        logger.debug(f"process_getpid() on session {self.sid}")
+        pid = self._rust.process_getpid()
+        logger.debug(f"process_getpid() -> {pid}")
+        return pid
 
     def process_list(self) -> List[Dict[str, Any]]:
         """
@@ -339,7 +449,10 @@ class Session:
         Returns:
             List of process dictionaries with pid, name, user, etc.
         """
-        return self._rust.process_list()
+        logger.debug(f"process_list() on session {self.sid}")
+        procs = self._rust.process_list()
+        logger.debug(f"process_list() returned {len(procs)} processes")
+        return procs
 
     def process_kill(self, pid: int) -> None:
         """
@@ -348,7 +461,13 @@ class Session:
         Args:
             pid: Process ID to kill
         """
-        self._rust.process_kill(pid)
+        logger.info(f"Killing process {pid} on session {self.sid}")
+        try:
+            self._rust.process_kill(pid)
+            logger.info(f"Process {pid} killed")
+        except Exception as e:
+            logger.error(f"Failed to kill process {pid}: {e}")
+            raise
 
     def process_open(self, pid: int, perms: int) -> int:
         """
@@ -361,7 +480,10 @@ class Session:
         Returns:
             Process handle
         """
-        return self._rust.process_open(pid, perms)
+        logger.debug(f"process_open(pid={pid}, perms={perms}) on session {self.sid}")
+        handle = self._rust.process_open(pid, perms)
+        logger.debug(f"process_open() -> handle={handle}")
+        return handle
 
     def process_execute(
         self,
@@ -382,7 +504,16 @@ class Session:
         Returns:
             Process info dictionary with pid, handle, channel
         """
-        return self._rust.process_execute(path, args, hidden, channelized)
+        logger.info(
+            f"Executing process on session {self.sid}: {path} {args[:50] + '...' if len(args) > 50 else args}"
+        )
+        try:
+            result = self._rust.process_execute(path, args, hidden, channelized)
+            logger.info(f"Process executed: pid={result.get('pid')}")
+            return result
+        except Exception as e:
+            logger.error(f"Process execution failed: {e}")
+            raise
 
     # =========================================================================
     # Meterpreter System Operations
@@ -390,23 +521,34 @@ class Session:
 
     def sys_getuid(self) -> str:
         """Get current user ID on target."""
-        return self._rust.sys_getuid()
+        logger.debug(f"sys_getuid() on session {self.sid}")
+        uid = self._rust.sys_getuid()
+        logger.debug(f"sys_getuid() -> {uid}")
+        return uid
 
     def sys_getsid(self) -> str:
         """Get current session ID on target (Windows)."""
+        logger.debug(f"sys_getsid() on session {self.sid}")
         return self._rust.sys_getsid()
 
     def sys_is_system(self) -> bool:
         """Check if running as SYSTEM on target (Windows)."""
-        return self._rust.sys_is_system()
+        logger.debug(f"sys_is_system() on session {self.sid}")
+        result = self._rust.sys_is_system()
+        logger.debug(f"sys_is_system() -> {result}")
+        return result
 
     def sys_localtime(self) -> str:
         """Get local time on target."""
+        logger.debug(f"sys_localtime() on session {self.sid}")
         return self._rust.sys_localtime()
 
     def sys_getprivs(self) -> List[str]:
         """Get current privileges on target (Windows)."""
-        return self._rust.sys_getprivs()
+        logger.debug(f"sys_getprivs() on session {self.sid}")
+        privs = self._rust.sys_getprivs()
+        logger.debug(f"sys_getprivs() -> {len(privs)} privileges")
+        return privs
 
     def sys_sysinfo(self) -> Dict[str, Any]:
         """
@@ -415,7 +557,10 @@ class Session:
         Returns:
             Dictionary with OS, architecture, hostname, domain, etc.
         """
-        return self._rust.sys_sysinfo()
+        logger.debug(f"sys_sysinfo() on session {self.sid}")
+        info = self._rust.sys_sysinfo()
+        logger.debug(f"sys_sysinfo() -> {info.get('Computer', 'unknown')}")
+        return info
 
     def sys_steal_token(self, pid: int) -> bool:
         """
@@ -427,11 +572,24 @@ class Session:
         Returns:
             True if successful
         """
-        return self._rust.sys_steal_token(pid)
+        logger.info(f"Stealing token from pid {pid} on session {self.sid}")
+        try:
+            result = self._rust.sys_steal_token(pid)
+            if result:
+                logger.info(f"Token stolen successfully from pid {pid}")
+            else:
+                logger.warning(f"Failed to steal token from pid {pid}")
+            return result
+        except Exception as e:
+            logger.error(f"Token theft failed: {e}")
+            raise
 
     def sys_getdrivers(self) -> List[Dict[str, Any]]:
         """Get list of loaded drivers on target (Windows)."""
-        return self._rust.sys_getdrivers()
+        logger.debug(f"sys_getdrivers() on session {self.sid}")
+        drivers = self._rust.sys_getdrivers()
+        logger.debug(f"sys_getdrivers() -> {len(drivers)} drivers")
+        return drivers
 
     def sys_getenv(self, var_name: str) -> Optional[str]:
         """
@@ -443,6 +601,7 @@ class Session:
         Returns:
             Variable value, or None if not set
         """
+        logger.debug(f"sys_getenv({var_name}) on session {self.sid}")
         return self._rust.sys_getenv(var_name)
 
     def sys_getenvs(self, var_names: List[str]) -> Dict[str, str]:
@@ -455,6 +614,7 @@ class Session:
         Returns:
             Dictionary mapping variable names to values
         """
+        logger.debug(f"sys_getenvs({var_names}) on session {self.sid}")
         return self._rust.sys_getenvs(var_names)
 
     # =========================================================================
@@ -463,22 +623,35 @@ class Session:
 
     def net_get_interfaces(self) -> List[Dict[str, Any]]:
         """Get network interfaces on target."""
-        return self._rust.net_get_interfaces()
+        logger.debug(f"net_get_interfaces() on session {self.sid}")
+        ifaces = self._rust.net_get_interfaces()
+        logger.debug(f"net_get_interfaces() -> {len(ifaces)} interfaces")
+        return ifaces
 
     def net_get_routes(self) -> List[Dict[str, Any]]:
         """Get routing table on target."""
-        return self._rust.net_get_routes()
+        logger.debug(f"net_get_routes() on session {self.sid}")
+        routes = self._rust.net_get_routes()
+        logger.debug(f"net_get_routes() -> {len(routes)} routes")
+        return routes
 
     def net_get_arp_table(self) -> List[Dict[str, Any]]:
         """Get ARP table on target."""
-        return self._rust.net_get_arp_table()
+        logger.debug(f"net_get_arp_table() on session {self.sid}")
+        arp = self._rust.net_get_arp_table()
+        logger.debug(f"net_get_arp_table() -> {len(arp)} entries")
+        return arp
 
     def net_get_netstat(self) -> List[Dict[str, Any]]:
         """Get network connections on target."""
-        return self._rust.net_get_netstat()
+        logger.debug(f"net_get_netstat() on session {self.sid}")
+        conns = self._rust.net_get_netstat()
+        logger.debug(f"net_get_netstat() -> {len(conns)} connections")
+        return conns
 
     def net_get_proxy_config(self) -> Dict[str, Any]:
         """Get proxy configuration on target."""
+        logger.debug(f"net_get_proxy_config() on session {self.sid}")
         return self._rust.net_get_proxy_config()
 
     def net_add_route(self, subnet: str, netmask: str, gateway: str) -> None:
@@ -490,6 +663,9 @@ class Session:
             netmask: Subnet mask
             gateway: Gateway address
         """
+        logger.info(
+            f"Adding route on session {self.sid}: {subnet}/{netmask} via {gateway}"
+        )
         self._rust.net_add_route(subnet, netmask, gateway)
 
     def net_remove_route(self, subnet: str, netmask: str, gateway: str) -> None:
@@ -501,6 +677,9 @@ class Session:
             netmask: Subnet mask
             gateway: Gateway address
         """
+        logger.info(
+            f"Removing route on session {self.sid}: {subnet}/{netmask} via {gateway}"
+        )
         self._rust.net_remove_route(subnet, netmask, gateway)
 
     # =========================================================================
@@ -509,7 +688,17 @@ class Session:
 
     def meterpreter_shutdown(self) -> bool:
         """Gracefully shutdown the meterpreter session."""
-        return self._rust.meterpreter_shutdown()
+        logger.info(f"Shutting down meterpreter session {self.sid}")
+        try:
+            result = self._rust.meterpreter_shutdown()
+            if result:
+                logger.info(f"Meterpreter session {self.sid} shutdown complete")
+            else:
+                logger.warning(f"Meterpreter session {self.sid} shutdown returned false")
+            return result
+        except Exception as e:
+            logger.error(f"Meterpreter shutdown failed: {e}")
+            raise
 
     def meterpreter_use(self, extension_name: str) -> bool:
         """
@@ -521,10 +710,21 @@ class Session:
         Returns:
             True if extension loaded successfully
         """
-        return self._rust.meterpreter_use(extension_name)
+        logger.debug(f"Loading meterpreter extension: {extension_name}")
+        try:
+            result = self._rust.meterpreter_use(extension_name)
+            if result:
+                logger.debug(f"Extension {extension_name} loaded successfully")
+            else:
+                logger.warning(f"Extension {extension_name} failed to load")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to load extension {extension_name}: {e}")
+            raise
 
     def meterpreter_secure(self) -> bool:
         """Enable encrypted communication for session."""
+        logger.debug(f"Enabling secure communication on session {self.sid}")
         return self._rust.meterpreter_secure()
 
     def meterpreter_machine_id(self, timeout: Optional[int] = None) -> str:
@@ -537,6 +737,7 @@ class Session:
         Returns:
             Machine ID string
         """
+        logger.debug(f"meterpreter_machine_id() on session {self.sid}")
         return self._rust.meterpreter_machine_id(timeout)
 
     def meterpreter_native_arch(self, timeout: Optional[int] = None) -> str:
@@ -549,7 +750,10 @@ class Session:
         Returns:
             Architecture string (e.g., "x64", "x86")
         """
-        return self._rust.meterpreter_native_arch(timeout)
+        logger.debug(f"meterpreter_native_arch() on session {self.sid}")
+        arch = self._rust.meterpreter_native_arch(timeout)
+        logger.debug(f"meterpreter_native_arch() -> {arch}")
+        return arch
 
     def meterpreter_session_guid(self, timeout: Optional[int] = None) -> str:
         """
@@ -561,6 +765,7 @@ class Session:
         Returns:
             Session GUID string
         """
+        logger.debug(f"meterpreter_session_guid() on session {self.sid}")
         return self._rust.meterpreter_session_guid(timeout)
 
     def meterpreter_migrate(
@@ -580,7 +785,19 @@ class Session:
         Returns:
             True if migration was successful
         """
-        return self._rust.meterpreter_migrate(target_pid, writable_dir, timeout)
+        logger.info(
+            f"Migrating session {self.sid} to pid {target_pid} (writable_dir={writable_dir})"
+        )
+        try:
+            result = self._rust.meterpreter_migrate(target_pid, writable_dir, timeout)
+            if result:
+                logger.info(f"Migration to pid {target_pid} successful")
+            else:
+                logger.warning(f"Migration to pid {target_pid} failed")
+            return result
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
+            raise
 
     # =========================================================================
     # Meterpreter Transport Operations
@@ -588,6 +805,7 @@ class Session:
 
     def transport_list(self) -> Dict[str, Any]:
         """Get list of configured transports."""
+        logger.debug(f"transport_list() on session {self.sid}")
         return self._rust.transport_list()
 
     def transport_sleep(self, seconds: int) -> bool:
@@ -600,14 +818,17 @@ class Session:
         Returns:
             True if sleep was initiated
         """
+        logger.info(f"Session {self.sid} sleeping for {seconds} seconds")
         return self._rust.transport_sleep(seconds)
 
     def transport_next(self) -> bool:
         """Switch to the next configured transport."""
+        logger.info(f"Switching to next transport on session {self.sid}")
         return self._rust.transport_next()
 
     def transport_prev(self) -> bool:
         """Switch to the previous configured transport."""
+        logger.info(f"Switching to previous transport on session {self.sid}")
         return self._rust.transport_prev()
 
     def transport_add(
@@ -637,16 +858,28 @@ class Session:
         Returns:
             True if transport was added
         """
-        return self._rust.transport_add(
-            transport,
-            lport,
-            lhost,
-            ua,
-            comm_timeout,
-            session_exp,
-            retry_total,
-            retry_wait,
+        logger.info(
+            f"Adding transport to session {self.sid}: {transport} (lhost={lhost}, lport={lport})"
         )
+        try:
+            result = self._rust.transport_add(
+                transport,
+                lport,
+                lhost,
+                ua,
+                comm_timeout,
+                session_exp,
+                retry_total,
+                retry_wait,
+            )
+            if result:
+                logger.info("Transport added successfully")
+            else:
+                logger.warning("Failed to add transport")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to add transport: {e}")
+            raise
 
     def transport_remove(
         self, transport: str, lport: int, lhost: Optional[str] = None
@@ -662,6 +895,9 @@ class Session:
         Returns:
             True if transport was removed
         """
+        logger.info(
+            f"Removing transport from session {self.sid}: {transport} (lhost={lhost}, lport={lport})"
+        )
         return self._rust.transport_remove(transport, lport, lhost)
 
     def transport_change(
@@ -678,6 +914,9 @@ class Session:
         Returns:
             True if transport change was initiated
         """
+        logger.info(
+            f"Changing transport on session {self.sid} to: {transport} (lhost={lhost}, lport={lport})"
+        )
         return self._rust.transport_change(transport, lport, lhost)
 
     def set_transport_timeouts(
@@ -699,6 +938,9 @@ class Session:
         Returns:
             Dictionary with updated timeout values
         """
+        logger.debug(
+            f"Setting transport timeouts on session {self.sid}: exp={session_exp}, comm={comm_timeout}, retry={retry_total}/{retry_wait}"
+        )
         return self._rust.set_transport_timeouts(
             session_exp, comm_timeout, retry_total, retry_wait
         )
@@ -709,6 +951,7 @@ class Session:
 
     def get_response_timeout(self) -> int:
         """Get the response timeout in seconds."""
+        logger.debug(f"get_response_timeout() on session {self.sid}")
         return self._rust.get_response_timeout()
 
     def set_response_timeout(self, timeout_secs: int) -> None:
@@ -718,6 +961,7 @@ class Session:
         Args:
             timeout_secs: Timeout in seconds
         """
+        logger.debug(f"set_response_timeout({timeout_secs}) on session {self.sid}")
         self._rust.set_response_timeout(timeout_secs)
 
     # =========================================================================
@@ -737,7 +981,22 @@ class Session:
         Returns:
             True if module ran successfully
         """
-        return self._rust.run_post_module(module_path, options)
+        logger.info(
+            f"Running post module {module_path} on session {self.sid}"
+        )
+        if options:
+            logger.debug(f"Post module options: {options}")
+
+        try:
+            result = self._rust.run_post_module(module_path, options)
+            if result:
+                logger.info(f"Post module {module_path} completed successfully")
+            else:
+                logger.warning(f"Post module {module_path} returned false")
+            return result
+        except Exception as e:
+            logger.error(f"Post module {module_path} failed: {e}")
+            raise
 
     # =========================================================================
     # Magic Methods
@@ -745,9 +1004,126 @@ class Session:
 
     def __repr__(self) -> str:
         try:
-            return f"<Session {self.sid}: {self.session_type} @ {self.host}:{self.port}>"
+            parts = [f"<Session {self.sid}: {self.session_type} @ {self.host}:{self.port}"]
+            if self.via_exploit:
+                # Get just the module name from full path
+                exploit_name = self.via_exploit.split('/')[-1] if '/' in self.via_exploit else self.via_exploit
+                parts.append(f"via={exploit_name}")
+            status = "alive" if self.alive else "dead"
+            parts.append(f"[{status}]")
+            return " ".join(parts) + ">"
         except Exception:
             return f"<Session {self._rust.sid()}>"
+
+    def __str__(self) -> str:
+        try:
+            return f"Session #{self.sid} ({self.session_type} @ {self.host})"
+        except Exception:
+            return f"Session #{self._rust.sid()}"
+
+    def summary(self, full: bool = False) -> str:
+        """Get a detailed multi-line summary of this session.
+
+        Args:
+            full: Reserved for future use (consistency with other classes).
+
+        Returns:
+            Formatted string with full session details including
+            connection info, exploit/payload used, and status.
+
+        Example:
+            >>> print(session.summary())
+            >>> session.p()  # Shorthand
+        """
+        _ = full  # Reserved for future use
+        try:
+            status = "✓ ALIVE" if self.alive else "✗ DEAD"
+            lines = [
+                f"{'═' * 60}",
+                f"  Session #{self.sid} - {self.session_type.upper()}",
+                f"{'═' * 60}",
+                f"",
+                f"  Status: {status}",
+                f"  Target: {self.host}:{self.port}",
+            ]
+
+            if self.tunnel_peer:
+                lines.append(f"  Tunnel: {self.tunnel_peer}")
+
+            if self.info:
+                lines.append(f"  Info: {self.info}")
+
+            lines.append(f"")
+            lines.append(f"  Created Via:")
+            if self.via_exploit:
+                lines.append(f"    Exploit: {self.via_exploit}")
+            if self.via_payload:
+                lines.append(f"    Payload: {self.via_payload}")
+
+            # Add meterpreter-specific info if available
+            if "meterpreter" in self.session_type.lower():
+                lines.append(f"")
+                lines.append(f"  Meterpreter Info:")
+                try:
+                    lines.append(f"    PID: {self.process_getpid()}")
+                except Exception:
+                    pass
+                try:
+                    lines.append(f"    User: {self.sys_getuid()}")
+                except Exception:
+                    pass
+                try:
+                    sysinfo = self.sys_sysinfo()
+                    if sysinfo.get("Computer"):
+                        lines.append(f"    Computer: {sysinfo.get('Computer')}")
+                    if sysinfo.get("OS"):
+                        lines.append(f"    OS: {sysinfo.get('OS')}")
+                except Exception:
+                    pass
+
+            lines.append(f"{'─' * 60}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"<Session {self._rust.sid()} - error getting details: {e}>"
+
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: Reserved for future use (consistency with other classes).
+        """
+        # Gather meterpreter info if available
+        meterpreter_info = None
+        if "meterpreter" in self.session_type.lower() and self.alive:
+            meterpreter_info = {}
+            try:
+                meterpreter_info["user"] = self._rust.sys_getuid()
+            except Exception:
+                pass
+            try:
+                meterpreter_info["pid"] = self._rust.process_getpid()
+            except Exception:
+                pass
+            try:
+                sysinfo = self._rust.sys_sysinfo()
+                meterpreter_info["computer"] = sysinfo.get("Computer")
+                meterpreter_info["os"] = sysinfo.get("OS")
+            except Exception:
+                pass
+
+        print_session(
+            sid=self.sid,
+            session_type=self.session_type,
+            host=self.host,
+            port=self.port,
+            alive=self.alive,
+            via_exploit=self.via_exploit,
+            via_payload=self.via_payload,
+            tunnel_peer=self.tunnel_peer,
+            info=self.info,
+            meterpreter_info=meterpreter_info if meterpreter_info else None,
+            full=full,
+        )
 
     def __bool__(self) -> bool:
         """Session is truthy if alive."""

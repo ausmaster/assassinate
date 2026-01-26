@@ -2,6 +2,7 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, get_string_attr, sym, value_to_string, Options};
+use log::{debug, error, info, trace, warn};
 use magnus::{value::BoxValue, value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
 
 /// Database manager
@@ -14,12 +15,15 @@ pub struct DbManager {
 impl DbManager {
     /// Get all hosts
     pub fn hosts(&self) -> Result<Vec<String>> {
+        debug!(target: "msf::db", "Getting all hosts from database");
+
         // MSF hosts() returns an ActiveRecord relation of Mdm::Host objects
         // We need to convert each host to a string representation (IP address)
         let hosts_val = call_method(*self.ruby_db, "hosts", &[])?;
 
         // Check if nil (database might be empty or not configured)
         if hosts_val.is_nil() {
+            trace!(target: "msf::db", "Hosts query returned nil");
             return Ok(Vec::new());
         }
 
@@ -43,15 +47,19 @@ impl DbManager {
             }
         }
 
+        debug!(target: "msf::db", "Found {} hosts in database", result.len());
         Ok(result)
     }
 
     /// Get all services
     pub fn services(&self) -> Result<Vec<String>> {
+        debug!(target: "msf::db", "Getting all services from database");
+
         let services_val = call_method(*self.ruby_db, "services", &[])?;
 
         // Check if nil (database might be empty or not configured)
         if services_val.is_nil() {
+            trace!(target: "msf::db", "Services query returned nil");
             return Ok(Vec::new());
         }
 
@@ -83,6 +91,7 @@ impl DbManager {
             }
         }
 
+        debug!(target: "msf::db", "Found {} services in database", result.len());
         Ok(result)
     }
 
@@ -94,6 +103,8 @@ impl DbManager {
     /// # Returns
     /// Returns the host ID from the database
     pub fn report_host(&self, opts: Option<Options>) -> Result<i64> {
+        info!(target: "msf::db", "Reporting host to database");
+        trace!(target: "msf::db", "report_host options: {:?}", opts.as_ref().map(|o| o.keys().collect::<Vec<_>>()));
         self.report_to_db("report_host", opts)
     }
 

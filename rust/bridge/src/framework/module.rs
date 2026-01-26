@@ -5,6 +5,7 @@ use crate::ruby_bridge::{
     build_opts, call_method, get_bool_attr, get_string_attr, responds_to_public, sym,
     value_to_string, Options, RubyVal,
 };
+use log::{debug, error, info, trace, warn};
 use magnus::{value::BoxValue, value::ReprValue, RArray, TryConvert, Value};
 use std::collections::HashMap;
 
@@ -20,26 +21,37 @@ pub struct Module {
 impl Module {
     /// Get module name
     pub fn name(&self) -> Result<String> {
-        get_string_attr(*self.ruby_module, "name")
+        trace!(target: "msf::module", "Getting module name");
+        let name = get_string_attr(*self.ruby_module, "name")?;
+        trace!(target: "msf::module", "Module name: {}", name);
+        Ok(name)
     }
 
     /// Get module full name
     pub fn fullname(&self) -> Result<String> {
-        get_string_attr(*self.ruby_module, "fullname")
+        trace!(target: "msf::module", "Getting module fullname");
+        let fullname = get_string_attr(*self.ruby_module, "fullname")?;
+        trace!(target: "msf::module", "Module fullname: {}", fullname);
+        Ok(fullname)
     }
 
     /// Get module description
     pub fn description(&self) -> Result<String> {
+        trace!(target: "msf::module", "Getting module description");
         get_string_attr(*self.ruby_module, "description")
     }
 
     /// Get module type
     pub fn module_type(&self) -> Result<String> {
-        get_string_attr(*self.ruby_module, "type")
+        trace!(target: "msf::module", "Getting module type");
+        let mtype = get_string_attr(*self.ruby_module, "type")?;
+        trace!(target: "msf::module", "Module type: {}", mtype);
+        Ok(mtype)
     }
 
     /// Get the framework instance this module belongs to
     pub fn framework(&self) -> Result<super::Framework> {
+        trace!(target: "msf::module", "Getting module's framework reference");
         let fw_val = call_method(*self.ruby_module, "framework", &[])?;
         Ok(super::Framework {
             ruby_framework: BoxValue::new(fw_val),
@@ -48,6 +60,7 @@ impl Module {
 
     /// Get module datastore
     pub fn datastore(&self) -> Result<DataStore> {
+        trace!(target: "msf::module", "Getting module datastore");
         let datastore_val = call_method(*self.ruby_module, "datastore", &[])?;
 
         Ok(DataStore {
@@ -57,15 +70,20 @@ impl Module {
 
     /// Set a datastore option
     pub fn set_option(&self, key: &str, value: &str) -> Result<()> {
+        debug!(target: "msf::module", "Setting option {}={}", key, value);
         let datastore = self.datastore()?;
         datastore.set(key, value)?;
+        trace!(target: "msf::module", "Option {} set successfully", key);
         Ok(())
     }
 
     /// Get a datastore option
     pub fn get_option(&self, key: &str) -> Result<Option<String>> {
+        trace!(target: "msf::module", "Getting option: {}", key);
         let datastore = self.datastore()?;
-        datastore.get(key)
+        let value = datastore.get(key)?;
+        trace!(target: "msf::module", "Option {} = {:?}", key, value);
+        Ok(value)
     }
 
     /// Validate module configuration
@@ -73,10 +91,14 @@ impl Module {
     /// Returns Ok(true) if valid, Ok(false) if invalid.
     /// Only returns Err for unexpected errors (not validation failures).
     pub fn validate(&self) -> Result<bool> {
+        debug!(target: "msf::module", "Validating module configuration");
         let result = call_method(*self.ruby_module, "validate", &[]);
 
         match result {
-            Ok(_) => Ok(true),
+            Ok(_) => {
+                debug!(target: "msf::module", "Module validation passed");
+                Ok(true)
+            }
             Err(e) => {
                 // Ruby's validate method raises an exception with the validation
                 // error message when options are invalid. This is expected behavior,
@@ -86,9 +108,11 @@ impl Module {
                     || error_msg.contains("required option")
                     || error_msg.contains("is not set")
                 {
+                    warn!(target: "msf::module", "Module validation failed: {}", error_msg);
                     Ok(false)
                 } else {
                     // Unexpected error, propagate it
+                    error!(target: "msf::module", "Module validation error: {}", error_msg);
                     Err(AssassinateError::ModuleValidationError(error_msg))
                 }
             }
@@ -104,6 +128,10 @@ impl Module {
     /// * `RunAsJob` - RubyVal::Bool(true) to run as background job (for handlers)
     /// * `ForceBlocking` - RubyVal::Bool(true) to wait for session (default if RunAsJob not set)
     pub fn exploit(&self, payload: &str, options: Option<Options>) -> Result<Option<i64>> {
+        let fullname = self.fullname().unwrap_or_else(|_| "unknown".to_string());
+        info!(target: "msf::module", "Executing exploit {} with payload {}", fullname, payload);
+        trace!(target: "msf::module", "Exploit options: {:?}", options);
+
         // CRITICAL: Set PAYLOAD in the module's datastore, not just the options hash.
         // MSF's exploit_simple checks datastore['PAYLOAD'] for target validation.
         self.set_option("PAYLOAD", payload)?;
@@ -114,6 +142,8 @@ impl Module {
             .and_then(|opts| opts.get("RunAsJob"))
             .map(|v| matches!(v, RubyVal::Bool(true)))
             .unwrap_or(false);
+
+        debug!(target: "msf::module", "Exploit mode: run_as_job={}", run_as_job);
 
         // Build options, adding defaults
         let mut opts = options.unwrap_or_default();
@@ -129,22 +159,26 @@ impl Module {
         let opts_val = build_opts(Some(opts))?;
 
         // Call exploit_simple on the module
+        debug!(target: "msf::module", "Calling exploit_simple");
         let session_val = call_method(*self.ruby_module, "exploit_simple", &[opts_val])?;
 
         // Handle all failure cases: nil, false, or non-session objects
         // In Ruby: nil and false are falsy, everything else is truthy
         if session_val.is_nil() {
+            debug!(target: "msf::module", "Exploit returned nil (no session)");
             return Ok(None);
         }
         // Check if the value is falsy (Ruby false)
         let is_falsy: bool = TryConvert::try_convert(session_val).unwrap_or(false);
         if is_falsy {
+            debug!(target: "msf::module", "Exploit returned false (no session)");
             return Ok(None);
         }
 
         // Check if it's actually a session object before calling sid
         let responds_to_sid = responds_to_public(session_val, "sid");
         if !responds_to_sid {
+            debug!(target: "msf::module", "Exploit result does not respond to sid (not a session)");
             return Ok(None);
         }
 
@@ -157,38 +191,60 @@ impl Module {
                     e
                 ))
             })?;
+        info!(target: "msf::module", "Exploit successful! Session {} created", session_id);
         Ok(Some(session_id))
     }
 
     /// Run an auxiliary module
     /// Returns true if successful, false otherwise
     pub fn run(&self, options: Option<Options>) -> Result<bool> {
+        let fullname = self.fullname().unwrap_or_else(|_| "unknown".to_string());
+        info!(target: "msf::module", "Running auxiliary module: {}", fullname);
+        trace!(target: "msf::module", "Run options: {:?}", options);
+
         let mut opts = options.unwrap_or_default();
         opts.entry("Quiet".into()).or_insert(RubyVal::Bool(true));
         let opts_val = build_opts(Some(opts))?;
 
         // Call run_simple on the module
+        debug!(target: "msf::module", "Calling run_simple");
         match call_method(*self.ruby_module, "run_simple", &[opts_val]) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
+            Ok(_) => {
+                info!(target: "msf::module", "Module {} completed successfully", fullname);
+                Ok(true)
+            }
+            Err(e) => {
+                warn!(target: "msf::module", "Module {} failed: {}", fullname, e);
+                Ok(false)
+            }
         }
     }
 
     /// Check if target is vulnerable
     /// Returns check result code as string
     pub fn check(&self) -> Result<String> {
+        let fullname = self.fullname().unwrap_or_else(|_| "unknown".to_string());
+        info!(target: "msf::module", "Running vulnerability check: {}", fullname);
+
         let mut opts = Options::new();
         opts.insert("Quiet".into(), RubyVal::Bool(true));
         let opts_val = build_opts(Some(opts))?;
 
         // Call check_simple on the module
+        debug!(target: "msf::module", "Calling check_simple");
         match call_method(*self.ruby_module, "check_simple", &[opts_val]) {
-            Ok(result) => Ok(value_to_string(result)?),
+            Ok(result) => {
+                let result_str = value_to_string(result)?;
+                info!(target: "msf::module", "Check result for {}: {}", fullname, result_str);
+                Ok(result_str)
+            }
             Err(e) => {
                 let err_msg = e.to_string();
                 if err_msg.contains("NotImplementedError") || err_msg.contains("Unsupported") {
+                    debug!(target: "msf::module", "Check not implemented for {}", fullname);
                     Ok("Unsupported".to_string())
                 } else {
+                    warn!(target: "msf::module", "Check failed for {}: {}", fullname, err_msg);
                     Ok("Unknown".to_string())
                 }
             }
@@ -197,14 +253,20 @@ impl Module {
 
     /// Check if module has check method
     pub fn has_check(&self) -> Result<bool> {
+        trace!(target: "msf::module", "Checking if module has check method");
         let result = call_method(*self.ruby_module, "has_check?", &[])?;
-        Ok(result.to_bool())
+        let has_check = result.to_bool();
+        trace!(target: "msf::module", "has_check: {}", has_check);
+        Ok(has_check)
     }
 
     /// Get available payloads for this exploit
     pub fn compatible_payloads(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting compatible payloads");
+
         // Check if module responds to compatible_payloads using Magnus built-in
         if !responds_to_public(*self.ruby_module, "compatible_payloads") {
+            trace!(target: "msf::module", "Module does not support compatible_payloads");
             return Ok(vec![]);
         }
 
@@ -233,14 +295,18 @@ impl Module {
             }
         }
 
+        debug!(target: "msf::module", "Found {} compatible payloads", result.len());
         Ok(result)
     }
 
     /// Get available actions for this auxiliary/post module
     /// Returns list of action names
     pub fn actions(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting module actions");
+
         // Check if module responds to actions using Magnus built-in
         if !responds_to_public(*self.ruby_module, "actions") {
+            trace!(target: "msf::module", "Module does not support actions");
             return Ok(vec![]);
         }
 
@@ -265,23 +331,30 @@ impl Module {
             result.push(value_to_string(name_val)?);
         }
 
+        trace!(target: "msf::module", "Found {} actions", result.len());
         Ok(result)
     }
 
     /// Get the default action for this auxiliary/post module
     /// Returns None if module doesn't support actions or has no default
     pub fn default_action(&self) -> Result<Option<String>> {
+        trace!(target: "msf::module", "Getting default action");
+
         // Check if module responds to default_action using Magnus built-in
         if !responds_to_public(*self.ruby_module, "default_action") {
+            trace!(target: "msf::module", "Module does not support default_action");
             return Ok(None);
         }
 
         let default_val = call_method(*self.ruby_module, "default_action", &[])?;
 
         if default_val.is_nil() {
+            trace!(target: "msf::module", "No default action set");
             Ok(None)
         } else {
-            Ok(Some(value_to_string(default_val)?))
+            let action = value_to_string(default_val)?;
+            trace!(target: "msf::module", "Default action: {}", action);
+            Ok(Some(action))
         }
     }
 
@@ -290,26 +363,34 @@ impl Module {
     /// Falls back to default_action if ACTION is not set
     /// Returns None if module doesn't support actions
     pub fn action(&self) -> Result<Option<String>> {
+        trace!(target: "msf::module", "Getting current action");
+
         // Check if module responds to action using Magnus built-in
         if !responds_to_public(*self.ruby_module, "action") {
+            trace!(target: "msf::module", "Module does not support action");
             return Ok(None);
         }
 
         let action_val = call_method(*self.ruby_module, "action", &[])?;
 
         if action_val.is_nil() {
+            trace!(target: "msf::module", "No current action");
             Ok(None)
         } else {
             // action returns an AuxiliaryAction object, get its name using LazyId
             let name_val: Value = action_val.funcall(*sym::NAME, ()).map_err(|e| {
                 AssassinateError::RubyError(format!("Failed to get action name: {}", e))
             })?;
-            Ok(Some(value_to_string(name_val)?))
+            let action = value_to_string(name_val)?;
+            trace!(target: "msf::module", "Current action: {}", action);
+            Ok(Some(action))
         }
     }
 
     /// Get module authors
     pub fn author(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting module authors");
+
         let author_val = call_method(*self.ruby_module, "author", &[])?;
 
         // author is an array of Author objects - must call to_s on each
@@ -325,11 +406,14 @@ impl Module {
             authors.push(value_to_string(author_obj)?);
         }
 
+        trace!(target: "msf::module", "Found {} authors", authors.len());
         Ok(authors)
     }
 
     /// Get module references (CVE, BID, URL, etc.)
     pub fn references(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting module references");
+
         let refs_val = call_method(*self.ruby_module, "references", &[])?;
 
         // References is an array of Ref objects - must call to_s on each
@@ -345,20 +429,25 @@ impl Module {
             refs.push(value_to_string(ref_obj)?);
         }
 
+        trace!(target: "msf::module", "Found {} references", refs.len());
         Ok(refs)
     }
 
     /// Get module options (returns the options attribute reader)
     pub fn options(&self) -> Result<String> {
+        trace!(target: "msf::module", "Getting module options string");
         get_string_attr(*self.ruby_module, "options")
     }
 
     /// Get module target platforms
     pub fn platform(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting module platforms");
+
         let platform_val = call_method(*self.ruby_module, "platform", &[])?;
 
         // Platform can be PlatformList or nil
         if platform_val.is_nil() {
+            trace!(target: "msf::module", "No platform specified");
             return Ok(vec![]);
         }
 
@@ -377,15 +466,19 @@ impl Module {
             platforms.push(value_to_string(name_val)?);
         }
 
+        trace!(target: "msf::module", "Platforms: {:?}", platforms);
         Ok(platforms)
     }
 
     /// Get module target architectures
     pub fn arch(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting module architectures");
+
         let arch_val = call_method(*self.ruby_module, "arch", &[])?;
 
         // Arch can be an array or nil
         if arch_val.is_nil() {
+            trace!(target: "msf::module", "No architecture specified");
             return Ok(vec![]);
         }
 
@@ -402,19 +495,24 @@ impl Module {
             archs.push(value_to_string(arch_obj)?);
         }
 
+        trace!(target: "msf::module", "Architectures: {:?}", archs);
         Ok(archs)
     }
 
     /// Get exploit targets (for exploit modules only)
     pub fn targets(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting exploit targets");
+
         // Check if module responds to targets using Magnus built-in
         if !responds_to_public(*self.ruby_module, "targets") {
+            trace!(target: "msf::module", "Module does not support targets");
             return Ok(vec![]);
         }
 
         let targets_val = call_method(*self.ruby_module, "targets", &[])?;
 
         if targets_val.is_nil() {
+            trace!(target: "msf::module", "No targets defined");
             return Ok(vec![]);
         }
 
@@ -435,37 +533,52 @@ impl Module {
             target_names.push(value_to_string(name_val)?);
         }
 
+        debug!(target: "msf::module", "Found {} exploit targets", target_names.len());
         Ok(target_names)
     }
 
     /// Get vulnerability disclosure date
     pub fn disclosure_date(&self) -> Result<Option<String>> {
+        trace!(target: "msf::module", "Getting disclosure date");
+
         let date_val = call_method(*self.ruby_module, "disclosure_date", &[])?;
 
         if date_val.is_nil() {
+            trace!(target: "msf::module", "No disclosure date");
             Ok(None)
         } else {
-            Ok(Some(value_to_string(date_val)?))
+            let date = value_to_string(date_val)?;
+            trace!(target: "msf::module", "Disclosure date: {}", date);
+            Ok(Some(date))
         }
     }
 
     /// Get module rank (e.g., "excellent", "great", "good", "normal", "average", "low", "manual")
     pub fn rank(&self) -> Result<String> {
-        get_string_attr(*self.ruby_module, "rank")
+        trace!(target: "msf::module", "Getting module rank");
+        let rank = get_string_attr(*self.ruby_module, "rank")?;
+        trace!(target: "msf::module", "Module rank: {}", rank);
+        Ok(rank)
     }
 
     /// Check if module requires privileged access
     pub fn privileged(&self) -> Result<bool> {
-        get_bool_attr(*self.ruby_module, "privileged")
+        trace!(target: "msf::module", "Checking if module is privileged");
+        let priv_result = get_bool_attr(*self.ruby_module, "privileged")?;
+        trace!(target: "msf::module", "Module privileged: {}", priv_result);
+        Ok(priv_result)
     }
 
     /// Get module license
     pub fn license(&self) -> Result<String> {
+        trace!(target: "msf::module", "Getting module license");
         get_string_attr(*self.ruby_module, "license")
     }
 
     /// Get module aliases
     pub fn aliases(&self) -> Result<Vec<String>> {
+        trace!(target: "msf::module", "Getting module aliases");
+
         let aliases_val = call_method(*self.ruby_module, "aliases", &[])?;
 
         // Convert to array of strings
@@ -474,14 +587,18 @@ impl Module {
                 AssassinateError::ConversionError(format!("Failed to convert aliases: {}", e))
             })?;
 
+        trace!(target: "msf::module", "Found {} aliases", aliases.len());
         Ok(aliases)
     }
 
     /// Get module notes
     pub fn notes(&self) -> Result<HashMap<String, String>> {
+        trace!(target: "msf::module", "Getting module notes");
+
         let notes_val = call_method(*self.ruby_module, "notes", &[])?;
 
         if notes_val.is_nil() {
+            trace!(target: "msf::module", "No notes found");
             return Ok(HashMap::new());
         }
 
@@ -512,6 +629,7 @@ impl Module {
             }
         }
 
+        trace!(target: "msf::module", "Found {} note entries", notes.len());
         Ok(notes)
     }
 
@@ -519,10 +637,13 @@ impl Module {
 
     /// Get structured options with full details (type, required, default, description)
     pub fn options_structured(&self) -> Result<HashMap<String, serde_json::Value>> {
+        trace!(target: "msf::module", "Getting structured options");
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let options_val = call_method(*self.ruby_module, "options", &[])?;
 
         if options_val.is_nil() {
+            trace!(target: "msf::module", "No options defined");
             return Ok(HashMap::new());
         }
 
@@ -582,15 +703,19 @@ impl Module {
             structured_options.insert(opt_name, serde_json::Value::Object(opt_details));
         }
 
+        debug!(target: "msf::module", "Found {} structured options", structured_options.len());
         Ok(structured_options)
     }
 
     /// Get list of missing required options
     pub fn missing_required(&self) -> Result<Vec<String>> {
+        debug!(target: "msf::module", "Checking for missing required options");
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let options_val = call_method(*self.ruby_module, "options", &[])?;
 
         if options_val.is_nil() {
+            trace!(target: "msf::module", "No options defined");
             return Ok(Vec::new());
         }
 
@@ -627,15 +752,22 @@ impl Module {
 
                 // If nil or empty string, it's missing
                 if current_val.is_nil() {
+                    trace!(target: "msf::module", "Required option {} is nil", opt_name);
                     missing.push(opt_name);
                 } else if let Ok(val_str) = value_to_string(current_val) {
                     if val_str.is_empty() {
+                        trace!(target: "msf::module", "Required option {} is empty", opt_name);
                         missing.push(opt_name);
                     }
                 }
             }
         }
 
+        if !missing.is_empty() {
+            debug!(target: "msf::module", "Missing required options: {:?}", missing);
+        } else {
+            debug!(target: "msf::module", "All required options are set");
+        }
         Ok(missing)
     }
 
@@ -646,6 +778,8 @@ impl Module {
     /// This returns the maximum size (in bytes) that the payload can be
     /// for the currently selected exploit target.
     pub fn payload_space(&self) -> Result<Option<i64>> {
+        trace!(target: "msf::module", "Getting payload space for current target");
+
         // Try target-specific payload_space first
         let target = self.current_target_obj()?;
         if !target.is_nil() {
@@ -665,6 +799,7 @@ impl Module {
                                                 e
                                             ))
                                         })?;
+                                    debug!(target: "msf::module", "Payload space (from target): {} bytes", space);
                                     return Ok(Some(space));
                                 }
                             }
@@ -683,10 +818,12 @@ impl Module {
                         e
                     ))
                 })?;
+                debug!(target: "msf::module", "Payload space (from module): {} bytes", space);
                 return Ok(Some(space));
             }
         }
 
+        trace!(target: "msf::module", "No payload space constraint");
         Ok(None)
     }
 
@@ -695,6 +832,8 @@ impl Module {
     /// Returns the bytes that cannot appear in the payload. These are typically
     /// characters that would break the exploit (e.g., null bytes, newlines).
     pub fn payload_badchars(&self) -> Result<Vec<u8>> {
+        trace!(target: "msf::module", "Getting payload bad characters");
+
         // Try target-specific badchars first
         let target = self.current_target_obj()?;
         if !target.is_nil() {
@@ -714,7 +853,9 @@ impl Module {
                                                 e
                                             ))
                                         })?;
-                                    return Ok(unsafe { rstring.as_slice() }.to_vec());
+                                    let badchars = unsafe { rstring.as_slice() }.to_vec();
+                                    debug!(target: "msf::module", "Found {} bad characters (from target)", badchars.len());
+                                    return Ok(badchars);
                                 }
                             }
                         }
@@ -730,10 +871,13 @@ impl Module {
                     .map_err(|e: magnus::Error| {
                         AssassinateError::ConversionError(format!("Failed to convert badchars: {}", e))
                     })?;
-                return Ok(unsafe { rstring.as_slice() }.to_vec());
+                let badchars = unsafe { rstring.as_slice() }.to_vec();
+                debug!(target: "msf::module", "Found {} bad characters (from module)", badchars.len());
+                return Ok(badchars);
             }
         }
 
+        trace!(target: "msf::module", "No bad characters defined");
         Ok(Vec::new())
     }
 
@@ -742,8 +886,11 @@ impl Module {
     /// Returns the platform string (e.g., "linux", "windows") for the
     /// currently selected target.
     pub fn target_platform(&self) -> Result<Option<String>> {
+        trace!(target: "msf::module", "Getting target platform");
+
         let target = self.current_target_obj()?;
         if target.is_nil() {
+            trace!(target: "msf::module", "No target object available");
             return Ok(None);
         }
 
@@ -760,13 +907,16 @@ impl Module {
                                     e
                                 ))
                             })?;
-                            return Ok(Some(value_to_string(name_val)?));
+                            let platform = value_to_string(name_val)?;
+                            debug!(target: "msf::module", "Target platform: {}", platform);
+                            return Ok(Some(platform));
                         }
                     }
                 }
             }
         }
 
+        trace!(target: "msf::module", "No target platform defined");
         Ok(None)
     }
 
@@ -775,8 +925,11 @@ impl Module {
     /// Returns the architecture string (e.g., "x86", "x64", "aarch64") for the
     /// currently selected target.
     pub fn target_arch(&self) -> Result<Option<String>> {
+        trace!(target: "msf::module", "Getting target architecture");
+
         let target = self.current_target_obj()?;
         if target.is_nil() {
+            trace!(target: "msf::module", "No target object available");
             return Ok(None);
         }
 
@@ -789,24 +942,31 @@ impl Module {
                         let arch_obj: Value = arch_array.entry(0).map_err(|e| {
                             AssassinateError::ConversionError(format!("Failed to get arch: {}", e))
                         })?;
-                        return Ok(Some(value_to_string(arch_obj)?));
+                        let arch = value_to_string(arch_obj)?;
+                        debug!(target: "msf::module", "Target architecture: {}", arch);
+                        return Ok(Some(arch));
                     }
                 }
             }
         }
 
+        trace!(target: "msf::module", "No target architecture defined");
         Ok(None)
     }
 
     /// Get the currently selected target index
     pub fn target_index(&self) -> Result<Option<i64>> {
+        trace!(target: "msf::module", "Getting target index");
+
         if !responds_to_public(*self.ruby_module, "target") {
+            trace!(target: "msf::module", "Module does not support targets");
             return Ok(None);
         }
 
         // Get the datastore TARGET value
         if let Ok(Some(target_str)) = self.get_option("TARGET") {
             if let Ok(idx) = target_str.parse::<i64>() {
+                trace!(target: "msf::module", "Target index from datastore: {}", idx);
                 return Ok(Some(idx));
             }
         }
@@ -815,22 +975,28 @@ impl Module {
         if let Ok(default_val) = call_method(*self.ruby_module, "default_target", &[]) {
             if !default_val.is_nil() {
                 let idx: i64 = TryConvert::try_convert(default_val).unwrap_or(0);
+                trace!(target: "msf::module", "Using default target index: {}", idx);
                 return Ok(Some(idx));
             }
         }
 
+        trace!(target: "msf::module", "Using fallback target index: 0");
         Ok(Some(0))
     }
 
     /// Get the current target object (internal helper)
     fn current_target_obj(&self) -> Result<Value> {
+        trace!(target: "msf::module", "Getting current target object");
+
         // Check if module responds to targets
         if !responds_to_public(*self.ruby_module, "targets") {
+            trace!(target: "msf::module", "Module does not support targets");
             return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
         }
 
         let targets_val = call_method(*self.ruby_module, "targets", &[])?;
         if targets_val.is_nil() {
+            trace!(target: "msf::module", "Targets is nil");
             return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
         }
 
@@ -839,11 +1005,13 @@ impl Module {
         })?;
 
         if targets_array.len() == 0 {
+            trace!(target: "msf::module", "Targets array is empty");
             return Ok(crate::ruby_bridge::get_ruby()?.qnil().as_value());
         }
 
         // Get target index from datastore or use default
         let target_idx = self.target_index()?.unwrap_or(0) as usize;
+        trace!(target: "msf::module", "Selecting target at index {}", target_idx);
 
         if target_idx < targets_array.len() {
             let target: Value = targets_array.entry(target_idx as isize).map_err(|e| {
@@ -852,6 +1020,7 @@ impl Module {
             Ok(target)
         } else {
             // Fall back to first target
+            warn!(target: "msf::module", "Target index {} out of bounds, falling back to 0", target_idx);
             let target: Value = targets_array.entry(0).map_err(|e| {
                 AssassinateError::ConversionError(format!("Failed to get target: {}", e))
             })?;
@@ -867,11 +1036,15 @@ impl Module {
     /// - reason: Why the check returned this result
     /// - details: Additional diagnostic details
     pub fn check_detailed(&self) -> Result<serde_json::Value> {
+        let fullname = self.fullname().unwrap_or_else(|_| "unknown".to_string());
+        info!(target: "msf::module", "Running detailed vulnerability check: {}", fullname);
+
         let mut opts = Options::new();
         opts.insert("Quiet".into(), RubyVal::Bool(true));
         let opts_val = build_opts(Some(opts))?;
 
         // Call check_simple on the module
+        debug!(target: "msf::module", "Calling check_simple");
         let result = call_method(*self.ruby_module, "check_simple", &[opts_val]);
 
         match result {
@@ -881,12 +1054,14 @@ impl Module {
 
                 // Get the code (symbol like :safe, :vulnerable, etc.)
                 let code_str = value_to_string(check_code)?;
+                info!(target: "msf::module", "Check result for {}: {}", fullname, code_str);
                 details.insert("code".to_string(), serde_json::json!(code_str));
 
                 // Try to get message
                 if let Ok(msg_val) = call_method(check_code, "message", &[]) {
                     if !msg_val.is_nil() {
                         if let Ok(msg) = value_to_string(msg_val) {
+                            debug!(target: "msf::module", "Check message: {}", msg);
                             details.insert("message".to_string(), serde_json::json!(msg));
                         }
                     }
@@ -896,6 +1071,7 @@ impl Module {
                 if let Ok(reason_val) = call_method(check_code, "reason", &[]) {
                     if !reason_val.is_nil() {
                         if let Ok(reason) = value_to_string(reason_val) {
+                            debug!(target: "msf::module", "Check reason: {}", reason);
                             details.insert("reason".to_string(), serde_json::json!(reason));
                         }
                     }
@@ -905,6 +1081,7 @@ impl Module {
                 if let Ok(details_val) = call_method(check_code, "details", &[]) {
                     if !details_val.is_nil() {
                         if let Ok(details_json) = crate::ruby_bridge::hash_to_json(details_val) {
+                            trace!(target: "msf::module", "Check details: {:?}", details_json);
                             details.insert("details".to_string(), details_json);
                         }
                     }
@@ -917,12 +1094,14 @@ impl Module {
                 let mut details = serde_json::Map::new();
 
                 if err_msg.contains("NotImplementedError") || err_msg.contains("Unsupported") {
+                    debug!(target: "msf::module", "Check not implemented for {}", fullname);
                     details.insert("code".to_string(), serde_json::json!("Unsupported"));
                     details.insert(
                         "message".to_string(),
                         serde_json::json!("Check method not implemented for this module"),
                     );
                 } else {
+                    warn!(target: "msf::module", "Check failed for {}: {}", fullname, err_msg);
                     details.insert("code".to_string(), serde_json::json!("Unknown"));
                     details.insert("message".to_string(), serde_json::json!(err_msg));
                 }
@@ -959,6 +1138,10 @@ impl Module {
         badchars: Option<&[u8]>,
         save_registers: Option<Vec<String>>,
     ) -> Result<Vec<u8>> {
+        info!(target: "msf::module", "Generating NOP sled: {} bytes", length);
+        trace!(target: "msf::module", "NOP sled options: badchars={:?}, save_registers={:?}",
+               badchars.map(|b| b.len()), save_registers);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash
@@ -966,6 +1149,7 @@ impl Module {
 
         // Add BadChars if provided
         if let Some(bc) = badchars {
+            debug!(target: "msf::module", "NOP sled avoiding {} bad characters", bc.len());
             let key = ruby.str_new("BadChars").as_value();
             let val = ruby.str_from_slice(bc).as_value();
             opts_hash.aset(key, val).map_err(|e| {
@@ -974,7 +1158,8 @@ impl Module {
         }
 
         // Add SaveRegisters if provided
-        if let Some(regs) = save_registers {
+        if let Some(ref regs) = save_registers {
+            debug!(target: "msf::module", "NOP sled preserving registers: {:?}", regs);
             let key = ruby.str_new("SaveRegisters").as_value();
             let regs_array: magnus::RArray = ruby.ary_new();
             for reg in regs {
@@ -991,10 +1176,12 @@ impl Module {
         let length_val = ruby.integer_from_i64(length as i64).as_value();
 
         // Call nop_module.generate_sled(length, opts)
+        debug!(target: "msf::module", "Calling generate_sled");
         let sled_val = call_method(*self.ruby_module, "generate_sled", &[length_val, opts_hash.as_value()])?;
 
         // Handle nil result
         if sled_val.is_nil() {
+            error!(target: "msf::module", "NOP sled generation returned nil");
             return Err(AssassinateError::ModuleExecutionError(
                 "NOP sled generation returned nil".into(),
             ));
@@ -1009,6 +1196,8 @@ impl Module {
         })?;
 
         // Get raw bytes from Ruby string (may contain non-UTF8 data)
-        Ok(unsafe { sled_str.as_slice() }.to_vec())
+        let sled = unsafe { sled_str.as_slice() }.to_vec();
+        info!(target: "msf::module", "Generated NOP sled: {} bytes", sled.len());
+        Ok(sled)
     }
 }

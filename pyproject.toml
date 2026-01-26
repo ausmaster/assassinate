@@ -29,10 +29,11 @@ classifiers = [
 dependencies = [
     "ansible-core>=2.15.0",
     "ansible-runner>=2.3.0",
-    "ansible>=9.0.0",  # Includes community.general for Alpine APK support
+    "ansible>=9.0.0", # Includes community.general for Alpine APK support
     "msgpack>=1.0.0",
     "packaging>=21.0",
     "setuptools>=80.9.0",
+    "rich>=13.0.0", # Beautiful terminal output with auto-scaling
 ]
 
 [project.optional-dependencies]

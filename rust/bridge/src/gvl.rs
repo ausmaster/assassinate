@@ -7,6 +7,7 @@
 //! This module provides utilities to temporarily release the GVL, allowing
 //! Ruby background threads to execute.
 
+use log::trace;
 use std::time::Duration;
 
 /// Default polling interval: 100ms
@@ -61,17 +62,24 @@ where
         Some(Duration::from_millis(timeout_ms))
     };
 
+    trace!(target: "msf::gvl", "poll_releasing_gvl starting (interval: {:?}, timeout: {:?})", interval, timeout);
+
     let start = std::time::Instant::now();
+    let mut iterations = 0u64;
 
     loop {
+        iterations += 1;
+
         // Check condition (with GVL held)
         if check_fn() {
+            trace!(target: "msf::gvl", "poll_releasing_gvl: condition met after {} iterations ({:?})", iterations, start.elapsed());
             return true;
         }
 
         // Check timeout (if set)
         if let Some(t) = timeout {
             if start.elapsed() >= t {
+                trace!(target: "msf::gvl", "poll_releasing_gvl: timeout after {} iterations ({:?})", iterations, start.elapsed());
                 return false;
             }
         }
@@ -85,12 +93,14 @@ where
         };
 
         if sleep_duration.is_zero() {
+            trace!(target: "msf::gvl", "poll_releasing_gvl: sleep_duration is zero, returning false");
             return false;
         }
 
         // Release GVL and sleep (Ruby threads can run!)
         // CRITICAL: Must wrap in protect() to handle Ruby exceptions/signals safely.
         // Without this, signals from killed sessions cause segfaults.
+        trace!(target: "msf::gvl", "poll_releasing_gvl: releasing GVL for {:?} (iteration {})", sleep_duration, iterations);
         let tv = rb_sys::timeval {
             tv_sec: sleep_duration.as_secs() as _,
             tv_usec: sleep_duration.subsec_micros() as _,

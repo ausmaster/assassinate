@@ -31,9 +31,14 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, List, Mapping, Optional, Union, TYPE_CHECKING
 
 from .options import ModuleOptions
+from assassinate.console import print_module
+
+# Get logger for this module
+logger = logging.getLogger("msf.module")
 
 if TYPE_CHECKING:
     from .session import Session
@@ -66,13 +71,16 @@ class BaseModule:
         """
         self._rust = rust_module
         self._options: Optional[ModuleOptions] = None
+        logger.debug(f"BaseModule initialized: {rust_module.fullname()}")
 
     # === Module Type ===
 
     @property
     def module_type(self) -> str:
         """Module type (auxiliary, encoder, evasion, exploit, nop, payload, post)."""
-        return self._rust.module_type()
+        result = self._rust.module_type()
+        logger.debug(f"module_type() -> {result}")
+        return result
 
     # === Options (attribute-style access) ===
 
@@ -85,6 +93,7 @@ class BaseModule:
             module.options.RPORT = 445
         """
         if self._options is None:
+            logger.debug(f"Creating ModuleOptions for {self.fullname}")
             self._options = ModuleOptions(self._rust)
         return self._options
 
@@ -144,12 +153,23 @@ class BaseModule:
 
     def validate(self) -> bool:
         """Validate all options are correctly configured."""
-        return self._rust.validate()
+        logger.debug(f"validate() called for {self.fullname}")
+        try:
+            result = self._rust.validate()
+            if result:
+                logger.debug(f"Module {self.fullname} validation passed")
+            else:
+                logger.warning(f"Module {self.fullname} validation failed")
+            return result
+        except Exception as e:
+            logger.error(f"Module {self.fullname} validation error: {e}")
+            raise
 
     # === Backward Compatibility ===
 
     def set_option(self, key: str, value: Any) -> None:
         """Set option value (prefer module.options.KEY = value)."""
+        logger.debug(f"set_option({key}, {value}) on {self.fullname}")
         self._rust._set_option(key, str(value))
 
     def _get_all_options(self) -> dict:
@@ -161,12 +181,193 @@ class BaseModule:
                 val = self._rust._get_option(key)
                 if val is not None and val != "":
                     opts[key] = val
-        except Exception:
-            pass
+            logger.debug(f"_get_all_options() -> {len(opts)} options")
+        except Exception as e:
+            logger.debug(f"_get_all_options() error (ignored): {e}")
         return opts
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}: {self.fullname}>"
+        parts = [f"<{self.__class__.__name__} {self.fullname}"]
+        try:
+            parts.append(f"({self.rank})")
+            if self.platform:
+                parts.append(f"platform={','.join(self.platform[:2])}")
+        except Exception:
+            pass
+        return " ".join(parts) + ">"
+
+    def __str__(self) -> str:
+        desc = self.description
+        if len(desc) > 60:
+            desc = desc[:57] + "..."
+        return f"{self.fullname} - {desc}"
+
+    def summary(self, full: bool = False) -> str:
+        """Get a detailed multi-line summary of this module.
+
+        Args:
+            full: If True, show all references and authors without truncation.
+                  Default False limits to 10 references and 5 authors.
+
+        Returns:
+            Formatted string with full module details including
+            description, all options with descriptions, references, and authors.
+
+        Example:
+            >>> print(module.summary())       # Truncated
+            >>> print(module.summary(full=True))  # Full output
+            >>> module.p()       # Shorthand for truncated
+            >>> module.p(full=True)  # Shorthand for full
+        """
+        lines = [
+            f"{'═' * 78}",
+            f"  {self.fullname}",
+            f"{'═' * 78}",
+            f"",
+            f"  Type: {self.module_type.upper()}    Rank: {self.rank.upper()}",
+        ]
+
+        if self.platform:
+            lines.append(f"  Platform: {', '.join(self.platform)}")
+        if self.arch:
+            lines.append(f"  Arch: {', '.join(self.arch)}")
+
+        # Full description with word wrapping
+        if self.description:
+            lines.append(f"")
+            lines.append(f"  Description:")
+            desc = self.description.strip()
+            for para in desc.split('\n'):
+                para = para.strip()
+                if not para:
+                    lines.append(f"")
+                    continue
+                while para:
+                    if len(para) <= 72:
+                        lines.append(f"    {para}")
+                        break
+                    idx = para[:72].rfind(' ')
+                    if idx == -1:
+                        idx = 72
+                    lines.append(f"    {para[:idx]}")
+                    para = para[idx:].lstrip()
+
+        # All options with full details
+        try:
+            schema = self.options.schema()
+            if schema:
+                # Separate required and optional
+                required_opts = {k: v for k, v in schema.items() if v.get("required")}
+                optional_opts = {k: v for k, v in schema.items() if not v.get("required")}
+
+                def format_option(name: str, info: dict) -> list:
+                    """Format a single option with all its details."""
+                    opt_lines = []
+                    current_val = self.options[name]
+                    default_val = info.get("default", "")
+                    opt_type = info.get("type", "string")
+                    opt_desc = info.get("desc", "")
+
+                    # Build value display
+                    if current_val:
+                        val_display = f'"{current_val}"'
+                    elif default_val:
+                        val_display = f'(default: "{default_val}")'
+                    else:
+                        val_display = "(not set)"
+
+                    # Option header line
+                    opt_lines.append(f"    {name} [{opt_type}] = {val_display}")
+
+                    # Description with word wrap
+                    if opt_desc:
+                        desc_text = opt_desc.strip()
+                        while desc_text:
+                            if len(desc_text) <= 68:
+                                opt_lines.append(f"      └─ {desc_text}")
+                                break
+                            idx = desc_text[:68].rfind(' ')
+                            if idx == -1:
+                                idx = 68
+                            opt_lines.append(f"      └─ {desc_text[:idx]}")
+                            desc_text = desc_text[idx:].lstrip()
+                            if desc_text:
+                                # Continuation lines
+                                opt_lines[-1] = opt_lines[-1].replace("└─", "  ")
+
+                    return opt_lines
+
+                # Required options section
+                if required_opts:
+                    lines.append(f"")
+                    lines.append(f"  ┌{'─' * 74}┐")
+                    lines.append(f"  │ REQUIRED OPTIONS                                                        │")
+                    lines.append(f"  └{'─' * 74}┘")
+                    for name, info in required_opts.items():
+                        lines.extend(format_option(name, info))
+
+                # Optional options section
+                if optional_opts:
+                    lines.append(f"")
+                    lines.append(f"  ┌{'─' * 74}┐")
+                    lines.append(f"  │ OPTIONAL OPTIONS                                                        │")
+                    lines.append(f"  └{'─' * 74}┘")
+                    for name, info in optional_opts.items():
+                        lines.extend(format_option(name, info))
+
+        except Exception as e:
+            logger.debug(f"Error getting options schema: {e}")
+
+        # References (CVEs, URLs, etc.)
+        if self.references:
+            lines.append(f"")
+            lines.append(f"  References:")
+            ref_limit = None if full else 10
+            for ref in self.references[:ref_limit]:
+                lines.append(f"    • {ref}")
+            if not full and len(self.references) > 10:
+                lines.append(f"    ... and {len(self.references) - 10} more")
+
+        # Authors
+        if self.author:
+            lines.append(f"")
+            lines.append(f"  Authors:")
+            auth_limit = None if full else 5
+            for auth in self.author[:auth_limit]:
+                lines.append(f"    • {auth}")
+            if not full and len(self.author) > 5:
+                lines.append(f"    ... and {len(self.author) - 5} more")
+
+        lines.append(f"{'─' * 78}")
+        return "\n".join(lines)
+
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: If True, show all references and authors without truncation.
+        """
+        # Gather option values
+        options_values = {}
+        try:
+            for name in self.options.keys():
+                options_values[name] = self.options[name]
+        except Exception:
+            pass
+
+        print_module(
+            fullname=self.fullname,
+            module_type=self.module_type,
+            rank=self.rank,
+            description=self.description,
+            platform=self.platform,
+            arch=self.arch,
+            options_schema=self.options.schema() if hasattr(self, 'options') else None,
+            options_values=options_values,
+            references=self.references,
+            authors=self.author,
+            full=full,
+        )
 
 
 # =============================================================================
@@ -198,19 +399,33 @@ class ExploitModule(BaseModule):
     @property
     def targets(self) -> List[str]:
         """Available exploit targets."""
-        return self._rust.targets()
+        targets = self._rust.targets()
+        logger.debug(f"targets() -> {len(targets)} targets")
+        return targets
 
     def compatible_payloads(self) -> List[str]:
         """Get list of compatible payload names."""
-        return self._rust.compatible_payloads()
+        logger.debug(f"compatible_payloads() called for {self.fullname}")
+        payloads = self._rust.compatible_payloads()
+        logger.debug(f"compatible_payloads() -> {len(payloads)} payloads")
+        return payloads
 
     def has_check(self) -> bool:
         """Check if module supports vulnerability checking."""
-        return self._rust.has_check()
+        result = self._rust.has_check()
+        logger.debug(f"has_check() -> {result}")
+        return result
 
     def check(self) -> str:
         """Run vulnerability check against target."""
-        return self._rust.check()
+        logger.info(f"Running vulnerability check: {self.fullname}")
+        try:
+            result = self._rust.check()
+            logger.info(f"Check result for {self.fullname}: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Check failed for {self.fullname}: {e}")
+            raise
 
     def exploit(
         self,
@@ -259,30 +474,53 @@ class ExploitModule(BaseModule):
         # Extract payload name and options
         if isinstance(payload, str):
             payload_name = payload
+            logger.debug(f"Payload specified as string: {payload_name}")
             # Apply payload_options if provided
             if payload_options:
+                logger.debug(f"Applying payload_options: {payload_options}")
                 for key, value in payload_options.items():
                     self._rust._set_option(key, str(value))
         else:
             # PayloadModule - extract fullname and configured options
             payload_name = payload.fullname
+            logger.debug(f"Payload specified as PayloadModule: {payload_name}")
             # MSF expects payload name without "payload/" prefix
             if payload_name.startswith("payload/"):
                 payload_name = payload_name[8:]
             # Copy all configured options from payload to exploit's datastore
             payload_opts = payload._get_all_options()
+            logger.debug(f"Copying {len(payload_opts)} options from PayloadModule")
             for key, value in payload_opts.items():
                 self._rust._set_option(key, str(value))
 
-        result = self._rust.exploit(payload_name, timeout, job)
+        logger.info(
+            f"Executing exploit {self.fullname} with payload {payload_name} (job={job}, timeout={timeout}s)"
+        )
 
-        # If job=True, result is job_id (str) or None
-        # If job=False, result is PySession or None
-        if result is None:
-            return None
-        if job:
-            return result  # str job_id
-        return Session(result)  # Wrap PySession
+        try:
+            result = self._rust.exploit(payload_name, timeout, job)
+
+            # If job=True, result is job_id (str) or None
+            # If job=False, result is PySession or None
+            if result is None:
+                if job:
+                    logger.warning(f"Exploit job failed to start: {self.fullname}")
+                else:
+                    logger.warning(f"No session obtained from exploit: {self.fullname}")
+                return None
+
+            if job:
+                logger.info(f"Exploit job started: {self.fullname} (job_id={result})")
+                return result  # str job_id
+
+            session = Session(result)
+            logger.success(
+                f"Session {session.sid} established from {self.fullname}"
+            )
+            return session
+        except Exception as e:
+            logger.error(f"Exploit execution failed for {self.fullname}: {e}")
+            raise
 
     async def exploit_async(
         self,
@@ -329,25 +567,37 @@ class ExploitModule(BaseModule):
                     tasks.append(module.exploit_async("cmd/unix/interact"))
                 return await asyncio.gather(*tasks)
         """
+        logger.debug(
+            f"exploit_async() called: payload={payload}, timeout={timeout}, job={job}"
+        )
+
         # Extract payload name and apply options
         if isinstance(payload, str):
             payload_name = payload
             if payload_options:
+                logger.debug(f"Applying payload_options: {payload_options}")
                 for key, value in payload_options.items():
                     self._rust._set_option(key, str(value))
         else:
             payload_name = payload.fullname
+            logger.debug(f"Payload from PayloadModule: {payload_name}")
             # MSF expects payload name without "payload/" prefix
             if payload_name.startswith("payload/"):
                 payload_name = payload_name[8:]
             payload_opts = payload._get_all_options()
+            logger.debug(f"Copying {len(payload_opts)} options from PayloadModule")
             for key, value in payload_opts.items():
                 self._rust._set_option(key, str(value))
 
         if job:
             # Just register the job and return
+            logger.info(f"Starting async exploit job: {self.fullname}")
             job_id = self._rust.exploit(payload_name, timeout, True)
             await asyncio.sleep(0)  # Yield to event loop
+            if job_id:
+                logger.info(f"Async exploit job started: job_id={job_id}")
+            else:
+                logger.warning("Async exploit job failed to start")
             return job_id
 
         from . import wait_for_new_session, list_sessions
@@ -355,11 +605,16 @@ class ExploitModule(BaseModule):
 
         # Track sessions before launching exploit
         existing_sessions = set(list_sessions())
+        logger.debug(f"Existing sessions before exploit: {existing_sessions}")
 
         # Launch exploit as background job (creates Ruby thread)
+        logger.info(
+            f"Launching async exploit {self.fullname} with payload {payload_name}"
+        )
         self._rust.exploit(payload_name, timeout, True)
 
         # Wait for session with GVL released (allows Ruby threads to run)
+        logger.debug(f"Waiting for new session (timeout: {timeout * 1000}ms)")
         session = wait_for_new_session(
             existing_sessions=existing_sessions,
             timeout_ms=timeout * 1000,
@@ -368,6 +623,11 @@ class ExploitModule(BaseModule):
 
         # Yield to asyncio event loop
         await asyncio.sleep(0)
+
+        if session:
+            logger.success(f"Async exploit got session {session.sid}")
+        else:
+            logger.warning("Async exploit timed out waiting for session")
 
         return session
 
@@ -400,11 +660,15 @@ class AuxiliaryModule(BaseModule):
 
     def actions(self) -> List[str]:
         """Get available actions for this module."""
-        return self._rust.actions()
+        actions = self._rust.actions()
+        logger.debug(f"actions() -> {actions}")
+        return actions
 
     def default_action(self) -> Optional[str]:
         """Get default action name."""
-        return self._rust.default_action()
+        action = self._rust.default_action()
+        logger.debug(f"default_action() -> {action}")
+        return action
 
     @property
     def action(self) -> Optional[str]:
@@ -414,6 +678,7 @@ class AuxiliaryModule(BaseModule):
     @action.setter
     def action(self, value: str) -> None:
         """Set current action."""
+        logger.debug(f"Setting action to: {value}")
         self._rust._set_option("ACTION", value)
 
     def run(self) -> bool:
@@ -422,7 +687,17 @@ class AuxiliaryModule(BaseModule):
         Returns:
             True if successful, False otherwise
         """
-        return self._rust.run()
+        logger.info(f"Running auxiliary module: {self.fullname}")
+        try:
+            result = self._rust.run()
+            if result:
+                logger.info(f"Auxiliary module {self.fullname} completed successfully")
+            else:
+                logger.warning(f"Auxiliary module {self.fullname} returned false")
+            return result
+        except Exception as e:
+            logger.error(f"Auxiliary module {self.fullname} failed: {e}")
+            raise
 
 
 # =============================================================================
@@ -449,11 +724,15 @@ class PostModule(BaseModule):
 
     def actions(self) -> List[str]:
         """Get available actions for this module."""
-        return self._rust.actions()
+        actions = self._rust.actions()
+        logger.debug(f"actions() -> {actions}")
+        return actions
 
     def default_action(self) -> Optional[str]:
         """Get default action name."""
-        return self._rust.default_action()
+        action = self._rust.default_action()
+        logger.debug(f"default_action() -> {action}")
+        return action
 
     @property
     def action(self) -> Optional[str]:
@@ -463,6 +742,7 @@ class PostModule(BaseModule):
     @action.setter
     def action(self, value: str) -> None:
         """Set current action."""
+        logger.debug(f"Setting action to: {value}")
         self._rust._set_option("ACTION", value)
 
     def run(self, session: "Session") -> bool:
@@ -482,14 +762,38 @@ class PostModule(BaseModule):
             post = create_module("post/multi/gather/env")
             post.run(session)
         """
+        logger.debug(f"PostModule.run() called with session: {session}")
+
         if session is None:
+            logger.error("PostModule.run() called without session")
             raise TypeError("PostModule.run() requires a session argument")
         if not session.alive:
+            logger.error(f"PostModule.run() called with dead session {session.sid}")
             raise ValueError("Session is not alive")
+
+        logger.info(
+            f"Running post module {self.fullname} on session {session.sid}"
+        )
 
         # Set SESSION option internally
         self._rust._set_option("SESSION", str(session.sid))
-        return self._rust.run()
+
+        try:
+            result = self._rust.run()
+            if result:
+                logger.info(
+                    f"Post module {self.fullname} completed successfully on session {session.sid}"
+                )
+            else:
+                logger.warning(
+                    f"Post module {self.fullname} returned false on session {session.sid}"
+                )
+            return result
+        except Exception as e:
+            logger.error(
+                f"Post module {self.fullname} failed on session {session.sid}: {e}"
+            )
+            raise
 
 
 # =============================================================================
@@ -512,11 +816,16 @@ class EvasionModule(BaseModule):
     @property
     def targets(self) -> List[str]:
         """Available targets."""
-        return self._rust.targets()
+        targets = self._rust.targets()
+        logger.debug(f"targets() -> {len(targets)} targets")
+        return targets
 
     def compatible_payloads(self) -> List[str]:
         """Get list of compatible payload names (if supported)."""
-        return self._rust.compatible_payloads()
+        logger.debug(f"compatible_payloads() called for {self.fullname}")
+        payloads = self._rust.compatible_payloads()
+        logger.debug(f"compatible_payloads() -> {len(payloads)} payloads")
+        return payloads
 
     def run(self) -> bool:
         """Run the evasion module.
@@ -524,7 +833,17 @@ class EvasionModule(BaseModule):
         Returns:
             True if successful, False otherwise
         """
-        return self._rust.run()
+        logger.info(f"Running evasion module: {self.fullname}")
+        try:
+            result = self._rust.run()
+            if result:
+                logger.info(f"Evasion module {self.fullname} completed successfully")
+            else:
+                logger.warning(f"Evasion module {self.fullname} returned false")
+            return result
+        except Exception as e:
+            logger.error(f"Evasion module {self.fullname} failed: {e}")
+            raise
 
 
 # =============================================================================
@@ -581,18 +900,32 @@ class PayloadModule(BaseModule):
         """
         from . import forge_payload, forge_formatted
 
+        logger.debug(
+            f"generate() called for {self.fullname} (format={format}, extra_options={extra_options})"
+        )
+
         # Collect current module options
         opts = self._get_all_options()
         opts.update(extra_options)
+        logger.debug(f"Payload options: {opts}")
 
-        if format == "raw":
-            return forge_payload(self.fullname, opts)
-        else:
-            # Use forge_formatted for non-raw formats (returns string, encode to bytes)
-            result = forge_formatted(self.fullname, format, "buf", opts)
-            if isinstance(result, str):
-                return result.encode("utf-8")
-            return result
+        try:
+            if format == "raw":
+                logger.info(f"Generating raw payload: {self.fullname}")
+                result = forge_payload(self.fullname, opts)
+                logger.info(f"Generated {len(result)} bytes of raw payload")
+                return result
+            else:
+                # Use forge_formatted for non-raw formats (returns string, encode to bytes)
+                logger.info(f"Generating payload {self.fullname} in format: {format}")
+                result = forge_formatted(self.fullname, format, "buf", opts)
+                if isinstance(result, str):
+                    result = result.encode("utf-8")
+                logger.info(f"Generated {len(result)} bytes of formatted payload")
+                return result
+        except Exception as e:
+            logger.error(f"Payload generation failed for {self.fullname}: {e}")
+            raise
 
     def to_handler(self) -> "ExploitModule":
         """Create a handler module configured for this payload.
@@ -618,18 +951,23 @@ class PayloadModule(BaseModule):
         """
         from . import create_module as _create_module
 
+        logger.info(f"Creating handler for payload: {self.fullname}")
+
         handler = _create_module("exploit/multi/handler")
         handler.options.PAYLOAD = self.fullname
 
         # Copy relevant options from payload to handler
+        copied_opts = []
         for opt_name in ["LHOST", "LPORT", "RHOST", "RPORT"]:
             try:
                 opt_val = self._rust._get_option(opt_name)
                 if opt_val is not None:
                     handler._rust._set_option(opt_name, opt_val)
-            except Exception:
-                pass
+                    copied_opts.append(f"{opt_name}={opt_val}")
+            except Exception as e:
+                logger.debug(f"Could not copy option {opt_name}: {e}")
 
+        logger.debug(f"Handler configured with: {', '.join(copied_opts)}")
         return handler
 
 
@@ -689,12 +1027,28 @@ class EncoderModule(BaseModule):
         """
         from . import forge_encoded
 
+        logger.debug(
+            f"encode_payload() called: payload={payload_name}, iterations={iterations}, options={options}"
+        )
+
         # Strip 'encoder/' prefix if present in our fullname
         encoder_name = self.fullname
         if encoder_name.startswith("encoder/"):
             encoder_name = encoder_name[8:]  # Remove "encoder/" prefix
 
-        return forge_encoded(payload_name, encoder_name, iterations, options or None)
+        logger.info(
+            f"Encoding payload {payload_name} with encoder {encoder_name} ({iterations} iterations)"
+        )
+
+        try:
+            result = forge_encoded(payload_name, encoder_name, iterations, options or None)
+            logger.info(f"Encoded payload: {len(result)} bytes")
+            return result
+        except Exception as e:
+            logger.error(
+                f"Encoding failed for {payload_name} with {encoder_name}: {e}"
+            )
+            raise
 
     def encode(
         self, data: bytes, badchars: Optional[bytes] = None, iterations: int = 1
@@ -726,6 +1080,9 @@ class EncoderModule(BaseModule):
                 badchars=b"\\x00\\x0a"
             )
         """
+        logger.error(
+            "encode() called with raw bytes - not supported. Use encode_payload() instead."
+        )
         raise NotImplementedError(
             "Direct raw byte encoding is not supported. Use encode_payload() "
             "to encode a payload by name, or use forge_payload_with_badchars() "
@@ -782,8 +1139,21 @@ class NopModule(BaseModule):
             # NOP sled preserving registers
             sled = nop.generate_sled(32, save_registers=["eax", "ebx"])
         """
+        logger.debug(
+            f"generate_sled() called: length={length}, badchars={badchars}, save_registers={save_registers}"
+        )
+
         # Convert badchars to list of ints for Rust
         bc = list(badchars) if badchars else None
-        return self._rust.generate_sled(length, bc, save_registers)
+
+        logger.info(f"Generating NOP sled: {length} bytes using {self.fullname}")
+
+        try:
+            result = self._rust.generate_sled(length, bc, save_registers)
+            logger.info(f"Generated NOP sled: {len(result)} bytes")
+            return result
+        except Exception as e:
+            logger.error(f"NOP sled generation failed for {self.fullname}: {e}")
+            raise
 
 

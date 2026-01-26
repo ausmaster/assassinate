@@ -23,6 +23,7 @@
 
 use crate::error::{AssassinateError, Result};
 use crate::ruby_bridge::{call_method, get_ruby, value_to_string};
+use log::{debug, error, info, trace, warn};
 use magnus::{value::BoxValue, value::ReprValue, TryConvert, Value};
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +53,7 @@ pub struct RouteManager {
 impl RouteManager {
     /// Get the Rex::Socket::SwitchBoard singleton
     pub fn new(ruby_sessions: Value) -> Result<Self> {
+        trace!(target: "msf::routing", "Creating RouteManager");
         let ruby = get_ruby()?;
 
         // Get Rex::Socket::SwitchBoard singleton
@@ -75,6 +77,7 @@ impl RouteManager {
     /// # Returns
     /// `true` if the route was added, `false` if it already exists
     pub fn add_route(&self, subnet: &str, netmask: &str, session_id: i64) -> Result<bool> {
+        info!(target: "msf::routing", "Adding route {}/{} via session {}", subnet, netmask, session_id);
         let ruby = get_ruby()?;
 
         // Get the session object
@@ -82,6 +85,7 @@ impl RouteManager {
         let session = call_method(*self.ruby_sessions, "[]", &[sid_val])?;
 
         if session.is_nil() {
+            error!(target: "msf::routing", "Session {} not found for routing", session_id);
             return Err(AssassinateError::SessionNotFound(session_id));
         }
 
@@ -94,7 +98,13 @@ impl RouteManager {
             &[subnet_val, netmask_val, session],
         )?;
 
-        Ok(result.to_bool())
+        let added = result.to_bool();
+        if added {
+            info!(target: "msf::routing", "Route added: {}/{} via session {}", subnet, netmask, session_id);
+        } else {
+            debug!(target: "msf::routing", "Route already exists: {}/{}", subnet, netmask);
+        }
+        Ok(added)
     }
 
     /// Remove a route through a session
@@ -107,6 +117,7 @@ impl RouteManager {
     /// # Returns
     /// `true` if the route was removed, `false` if it wasn't found
     pub fn remove_route(&self, subnet: &str, netmask: &str, session_id: i64) -> Result<bool> {
+        info!(target: "msf::routing", "Removing route {}/{} via session {}", subnet, netmask, session_id);
         let ruby = get_ruby()?;
 
         // Get the session object
@@ -114,6 +125,7 @@ impl RouteManager {
         let session = call_method(*self.ruby_sessions, "[]", &[sid_val])?;
 
         if session.is_nil() {
+            error!(target: "msf::routing", "Session {} not found for routing", session_id);
             return Err(AssassinateError::SessionNotFound(session_id));
         }
 
@@ -126,11 +138,18 @@ impl RouteManager {
             &[subnet_val, netmask_val, session],
         )?;
 
-        Ok(result.to_bool())
+        let removed = result.to_bool();
+        if removed {
+            info!(target: "msf::routing", "Route removed: {}/{}", subnet, netmask);
+        } else {
+            warn!(target: "msf::routing", "Route not found: {}/{}", subnet, netmask);
+        }
+        Ok(removed)
     }
 
     /// List all routes in the routing table
     pub fn list_routes(&self) -> Result<Vec<Route>> {
+        debug!(target: "msf::routing", "Listing all routes");
         let _ruby = get_ruby()?;  // Ensure Ruby is initialized
         let mut routes = Vec::new();
 
@@ -139,13 +158,17 @@ impl RouteManager {
 
         // Handle nil/empty case
         if routes_val.is_nil() {
+            trace!(target: "msf::routing", "Routes is nil");
             return Ok(routes);
         }
 
         // routes is an array - iterate over it
         let routes_array: magnus::RArray = match magnus::RArray::from_value(routes_val) {
             Some(arr) => arr,
-            None => return Ok(routes), // Empty or nil
+            None => {
+                trace!(target: "msf::routing", "No routes found");
+                return Ok(routes);
+            }
         };
 
         for route_obj in routes_array.into_iter() {
@@ -186,12 +209,15 @@ impl RouteManager {
             });
         }
 
+        debug!(target: "msf::routing", "Found {} routes", routes.len());
         Ok(routes)
     }
 
     /// Flush all routes from the routing table
     pub fn flush_routes(&self) -> Result<()> {
+        info!(target: "msf::routing", "Flushing all routes");
         call_method(*self.ruby_switchboard, "flush_routes", &[])?;
+        info!(target: "msf::routing", "All routes flushed");
         Ok(())
     }
 
@@ -204,6 +230,7 @@ impl RouteManager {
     /// # Returns
     /// `true` if the route exists, `false` otherwise
     pub fn route_exists(&self, subnet: &str, netmask: &str) -> Result<bool> {
+        trace!(target: "msf::routing", "Checking if route {}/{} exists", subnet, netmask);
         let ruby = get_ruby()?;
 
         let subnet_val = ruby.str_new(subnet).as_value();
@@ -215,7 +242,9 @@ impl RouteManager {
             &[subnet_val, netmask_val],
         )?;
 
-        Ok(result.to_bool())
+        let exists = result.to_bool();
+        trace!(target: "msf::routing", "Route {}/{} exists: {}", subnet, netmask, exists);
+        Ok(exists)
     }
 
     /// Find the best session for routing to an address
@@ -226,6 +255,7 @@ impl RouteManager {
     /// # Returns
     /// The session ID if a route exists, None otherwise
     pub fn best_comm(&self, addr: &str) -> Result<Option<i64>> {
+        debug!(target: "msf::routing", "Finding best route to {}", addr);
         let ruby = get_ruby()?;
 
         let addr_val = ruby.str_new(addr).as_value();
@@ -233,6 +263,7 @@ impl RouteManager {
         let comm = call_method(*self.ruby_switchboard, "best_comm", &[addr_val])?;
 
         if comm.is_nil() {
+            debug!(target: "msf::routing", "No route to {}", addr);
             return Ok(None);
         }
 
@@ -243,9 +274,13 @@ impl RouteManager {
                     .map_err(|e: magnus::Error| {
                         AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
                     })?;
+                debug!(target: "msf::routing", "Best route to {} via session {}", addr, sid);
                 Ok(Some(sid))
             }
-            Err(_) => Ok(None), // Not a session
+            Err(_) => {
+                debug!(target: "msf::routing", "Best comm to {} is not a session", addr);
+                Ok(None)
+            }
         }
     }
 
@@ -254,6 +289,7 @@ impl RouteManager {
     /// # Arguments
     /// * `session_id` - The session ID to remove routes for
     pub fn remove_by_session(&self, session_id: i64) -> Result<()> {
+        info!(target: "msf::routing", "Removing all routes via session {}", session_id);
         let ruby = get_ruby()?;
 
         // Get the session object
@@ -261,17 +297,20 @@ impl RouteManager {
         let session = call_method(*self.ruby_sessions, "[]", &[sid_val])?;
 
         if session.is_nil() {
+            error!(target: "msf::routing", "Session {} not found", session_id);
             return Err(AssassinateError::SessionNotFound(session_id));
         }
 
         call_method(*self.ruby_switchboard, "remove_by_comm", &[session])?;
-
+        info!(target: "msf::routing", "All routes via session {} removed", session_id);
         Ok(())
     }
 
     /// Get the number of routes
     pub fn route_count(&self) -> Result<usize> {
+        trace!(target: "msf::routing", "Getting route count");
         let routes = self.list_routes()?;
+        trace!(target: "msf::routing", "Route count: {}", routes.len());
         Ok(routes.len())
     }
 }

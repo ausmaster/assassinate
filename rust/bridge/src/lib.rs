@@ -37,6 +37,23 @@
 //! module.options.RHOSTS = "192.168.1.100"  # Attribute-style access
 //! session = module.exploit("cmd/unix/interact")
 //! ```
+//!
+//! ## Logging
+//!
+//! This crate uses the `log` crate for logging. When compiled with the `pyo3` feature,
+//! logs are automatically bridged to Python's `logging` module via `pyo3-log`.
+//!
+//! - Rust logs with `target: "msf::module"` appear as Python logger `msf.module`
+//! - Log levels: TRACE→DEBUG, DEBUG→DEBUG, INFO→INFO, WARN→WARNING, ERROR→ERROR
+//!
+//! Configure logging from Python:
+//! ```python
+//! import logging
+//! logging.basicConfig(level=logging.DEBUG)
+//! ```
+
+// Re-export log macros for use throughout the crate
+pub use log::{debug, error, info, trace, warn};
 
 pub mod error;
 pub mod framework;

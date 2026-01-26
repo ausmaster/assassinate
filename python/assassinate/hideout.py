@@ -144,7 +144,7 @@ class Hideout:
 
             self.version = msf.framework_version()
             self._initialized = True
-            logger.info(f"Hideout established - Framework v{self.version}")
+            logger.success(f"Hideout established - Framework v{self.version}")
 
         except Exception as e:
             logger.error(f"Failed to establish hideout: {e}")

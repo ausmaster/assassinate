@@ -1,6 +1,10 @@
 """Pythonic wrapper for module options with attribute-style access."""
 
+import logging
 from typing import Any, Dict, Iterator, Optional
+
+# Get logger for this module
+logger = logging.getLogger("msf.options")
 
 
 class ModuleOptions:
@@ -30,13 +34,16 @@ class ModuleOptions:
         if name.startswith('_'):
             return object.__getattribute__(self, name)
         module = object.__getattribute__(self, '_module')
-        return module._get_option(name)
+        value = module._get_option(name)
+        logger.debug(f"Get option {name} = {value}")
+        return value
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Set option value by attribute name (e.g., options.RHOSTS = "...")."""
         if name.startswith('_'):
             object.__setattr__(self, name, value)
         else:
+            logger.debug(f"Set option {name} = {value}")
             module = object.__getattribute__(self, '_module')
             module._set_option(name, str(value))
             # Invalidate schema cache since we modified options
@@ -75,7 +82,10 @@ class ModuleOptions:
     def missing_required(self) -> list:
         """Get list of required options that aren't set."""
         module = object.__getattribute__(self, '_module')
-        return module._missing_required()
+        missing = module._missing_required()
+        if missing:
+            logger.debug(f"Missing required options: {missing}")
+        return missing
 
     def __repr__(self) -> str:
         """Pretty-print all options with current values."""

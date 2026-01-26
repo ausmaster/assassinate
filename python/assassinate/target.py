@@ -19,6 +19,10 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Set
 
+from assassinate.log_config import get_logger
+
+logger = get_logger("target")
+
 
 class Target:
     """A target to be assassinated.
@@ -66,6 +70,8 @@ class Target:
         if services:
             self.ports.update(services.keys())
 
+        logger.debug(f"Target created: {host}")
+
     def add_port(self, port: int, service: Optional[str] = None) -> None:
         """Record an open port on the target.
 
@@ -76,6 +82,9 @@ class Target:
         self.ports.add(port)
         if service:
             self.services[port] = service
+            logger.debug(f"Added port {port}/{service} on {self.host}")
+        else:
+            logger.debug(f"Added port {port} on {self.host}")
 
     def has_port(self, port: int) -> bool:
         """Check if a port is known to be open.
@@ -123,6 +132,7 @@ class Target:
         """
         if vuln not in self.vulns:
             self.vulns.append(vuln)
+            logger.info(f"Vulnerability found on {self.host}: {vuln}")
 
     def add_note(self, note: str) -> None:
         """Add a note about the target.
@@ -145,6 +155,7 @@ class Target:
     def mark_profiled(self) -> None:
         """Mark the target as having been profiled."""
         self._profiled = True
+        logger.debug(f"Target {self.host} marked as profiled")
 
     def summary(self) -> str:
         """Get a summary of what's known about the target.

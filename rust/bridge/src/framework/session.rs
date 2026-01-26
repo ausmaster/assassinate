@@ -9,6 +9,7 @@ use crate::ruby_bridge::{
     call_bool_with_str, call_method, call_str_with_str, call_strings_with_str, call_void_with_str,
     get_i64_attr, get_string_attr, sym, to_ruby_str, value_to_string, Options,
 };
+use log::{debug, error, info, trace, warn};
 use magnus::{value::BoxValue, value::ReprValue, IntoValue, RArray, RHash, TryConvert, Value};
 
 /// Session manager for listing and accessing sessions
@@ -21,6 +22,8 @@ pub struct SessionManager {
 impl SessionManager {
     /// List all session IDs
     pub fn list(&self) -> Result<Vec<i64>> {
+        trace!(target: "msf::session", "Listing all sessions");
+
         let keys_val = call_method(*self.ruby_sessions, "keys", &[])?;
 
         let session_ids: Vec<i64> =
@@ -28,11 +31,14 @@ impl SessionManager {
                 AssassinateError::ConversionError(format!("Failed to convert session IDs: {}", e))
             })?;
 
+        debug!(target: "msf::session", "Found {} sessions: {:?}", session_ids.len(), session_ids);
         Ok(session_ids)
     }
 
     /// Get a session by ID
     pub fn get(&self, session_id: i64) -> Result<Option<Session>> {
+        trace!(target: "msf::session", "Getting session {}", session_id);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.integer_from_i64(session_id).as_value();
 
@@ -40,8 +46,10 @@ impl SessionManager {
 
         // Check if nil
         if session_val.is_nil() {
+            debug!(target: "msf::session", "Session {} not found", session_id);
             Ok(None)
         } else {
+            debug!(target: "msf::session", "Session {} retrieved", session_id);
             Ok(Some(Session {
                 ruby_session: BoxValue::new(session_val),
                 session_id,
@@ -51,6 +59,8 @@ impl SessionManager {
 
     /// Kill a session by ID
     pub fn kill(&self, session_id: i64) -> Result<bool> {
+        info!(target: "msf::session", "Killing session {}", session_id);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.integer_from_i64(session_id).as_value();
 
@@ -58,11 +68,19 @@ impl SessionManager {
         let result_val = call_method(*self.ruby_sessions, "delete", &[id_val])?;
 
         // If delete returns nil, session didn't exist
-        Ok(!result_val.is_nil())
+        let existed = !result_val.is_nil();
+        if existed {
+            info!(target: "msf::session", "Session {} killed", session_id);
+        } else {
+            warn!(target: "msf::session", "Session {} not found for killing", session_id);
+        }
+        Ok(existed)
     }
 
     /// Get a session by ID (raw version without PyO3)
     pub fn get_raw(&self, session_id: i64) -> Result<Option<Value>> {
+        trace!(target: "msf::session", "Getting raw session {}", session_id);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.integer_from_i64(session_id).as_value();
 
@@ -89,9 +107,12 @@ impl SessionManager {
     ///
     /// Use this for connecting to raw shells that don't speak MSF payload protocol.
     pub fn create_shell_session(&self, host: &str, port: u16, timeout: u32) -> Result<i64> {
+        info!(target: "msf::session", "Creating shell session to {}:{} (timeout: {}s)", host, port, timeout);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Get Rex::Socket::Tcp class
+        debug!(target: "msf::session", "Getting Rex::Socket::Tcp class");
         let rex_socket_tcp = ruby.eval::<Value>("Rex::Socket::Tcp").map_err(|e| {
             AssassinateError::RubyError(format!("Failed to get Rex::Socket::Tcp: {}", e))
         })?;
@@ -112,14 +133,18 @@ impl SessionManager {
         call_method(opts, "[]=", &[timeout_key, timeout_val])?;
 
         // Create the socket connection
+        debug!(target: "msf::session", "Connecting to {}:{}", host, port);
         let socket = call_method(rex_socket_tcp, "create", &[opts])?;
 
         if socket.is_nil() {
+            error!(target: "msf::session", "Failed to connect to {}:{}", host, port);
             return Err(AssassinateError::RubyError(format!(
                 "Failed to connect to {}:{}",
                 host, port
             )));
         }
+
+        debug!(target: "msf::session", "Socket connected, creating CommandShell");
 
         // Get Msf::Sessions::CommandShell class
         let cmd_shell_class = ruby
@@ -132,6 +157,7 @@ impl SessionManager {
         let session = call_method(cmd_shell_class, "new", &[socket])?;
 
         if session.is_nil() {
+            error!(target: "msf::session", "Failed to create CommandShell session");
             return Err(AssassinateError::RubyError(
                 "Failed to create CommandShell session".to_string(),
             ));
@@ -140,6 +166,7 @@ impl SessionManager {
         // Set the platform to 'linux' (for shell_to_meterpreter compatibility)
         // This is needed because direct socket sessions don't have exploit context
         // The platform attr_accessor expects a string like 'linux', 'windows', 'osx'
+        debug!(target: "msf::session", "Setting session platform=linux, arch=x64");
         let platform_val = ruby.str_new("linux").as_value();
         call_method(session, "platform=", &[platform_val])?;
 
@@ -154,6 +181,7 @@ impl SessionManager {
         call_method(session, "exploit_datastore=", &[empty_hash])?;
 
         // Register the session with framework
+        debug!(target: "msf::session", "Registering session with framework");
         call_method(*self.ruby_sessions, "register", &[session])?;
 
         // Get the session ID - it's assigned during registration
@@ -163,6 +191,7 @@ impl SessionManager {
             AssassinateError::ConversionError(format!("Failed to get session ID: {}", e))
         })?;
 
+        info!(target: "msf::session", "Shell session {} created to {}:{}", session_id, host, port);
         Ok(session_id)
     }
 }
@@ -178,27 +207,38 @@ pub struct Session {
 impl Session {
     /// Get session type
     pub fn session_type(&self) -> Result<String> {
-        get_string_attr(*self.ruby_session, "type")
+        trace!(target: "msf::session", "Getting session {} type", self.session_id);
+        let stype = get_string_attr(*self.ruby_session, "type")?;
+        trace!(target: "msf::session", "Session {} type: {}", self.session_id, stype);
+        Ok(stype)
     }
 
     /// Get session info
     pub fn info(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} info", self.session_id);
         get_string_attr(*self.ruby_session, "info")
     }
 
     /// Check if session is alive
     pub fn alive(&self) -> Result<bool> {
-        crate::ruby_bridge::get_bool_attr(*self.ruby_session, "alive?")
+        trace!(target: "msf::session", "Checking if session {} is alive", self.session_id);
+        let is_alive = crate::ruby_bridge::get_bool_attr(*self.ruby_session, "alive?")?;
+        trace!(target: "msf::session", "Session {} alive: {}", self.session_id, is_alive);
+        Ok(is_alive)
     }
 
     /// Kill the session
     pub fn kill(&self) -> Result<()> {
+        info!(target: "msf::session", "Killing session {}", self.session_id);
         call_method(*self.ruby_session, "kill", &[])?;
+        info!(target: "msf::session", "Session {} killed", self.session_id);
         Ok(())
     }
 
     /// Write data to the session
     pub fn write(&self, data: &str) -> Result<usize> {
+        trace!(target: "msf::session", "Writing {} bytes to session {}", data.len(), self.session_id);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
 
@@ -207,11 +247,14 @@ impl Session {
         // Try to convert to integer (bytes written)
         let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
 
+        trace!(target: "msf::session", "Wrote {} bytes to session {}", bytes_written, self.session_id);
         Ok(bytes_written as usize)
     }
 
     /// Read data from the session
     pub fn read(&self, length: Option<usize>) -> Result<String> {
+        trace!(target: "msf::session", "Reading from session {} (length: {:?})", self.session_id, length);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let result = if let Some(len) = length {
@@ -222,14 +265,19 @@ impl Session {
         };
 
         if result.is_nil() {
+            trace!(target: "msf::session", "Session {} read returned nil", self.session_id);
             Ok(String::new())
         } else {
-            Ok(value_to_string(result)?)
+            let data = value_to_string(result)?;
+            trace!(target: "msf::session", "Read {} bytes from session {}", data.len(), self.session_id);
+            Ok(data)
         }
     }
 
     /// Execute a command in the session (shell command)
     pub fn execute(&self, command: &str) -> Result<String> {
+        debug!(target: "msf::session", "Session {} executing (legacy): {}", self.session_id, command);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Write command
@@ -256,58 +304,72 @@ impl Session {
     ///
     /// Note: shell_command always waits for the full timeout to collect all output.
     pub fn run_cmd(&self, command: &str, timeout: Option<u32>) -> Result<String> {
+        let timeout_secs = timeout.unwrap_or(5);
+        debug!(target: "msf::session", "Session {} run_cmd: {} (timeout: {}s)", self.session_id, command, timeout_secs);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let cmd_val = ruby.str_new(command).as_value();
-        let timeout_val = ruby.integer_from_i64(timeout.unwrap_or(5) as i64).as_value();
+        let timeout_val = ruby.integer_from_i64(timeout_secs as i64).as_value();
 
         // Call Ruby's shell_command(cmd, timeout) directly
         let result = call_method(*self.ruby_session, "shell_command", &[cmd_val, timeout_val])?;
 
         if result.is_nil() {
+            debug!(target: "msf::session", "Session {} run_cmd returned nil", self.session_id);
             Ok(String::new())
         } else {
-            value_to_string(result)
+            let output = value_to_string(result)?;
+            trace!(target: "msf::session", "Session {} run_cmd output: {} bytes", self.session_id, output.len());
+            Ok(output)
         }
     }
 
     /// Get session description
     pub fn desc(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} description", self.session_id);
         get_string_attr(*self.ruby_session, "desc")
     }
 
     /// Get tunnel peer (remote address)
     pub fn tunnel_peer(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} tunnel_peer", self.session_id);
         get_string_attr(*self.ruby_session, "tunnel_peer")
     }
 
     /// Get target host
     pub fn target_host(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} target_host", self.session_id);
         get_string_attr(*self.ruby_session, "target_host")
     }
 
     /// Get session host
     pub fn session_host(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} session_host", self.session_id);
         get_string_attr(*self.ruby_session, "session_host")
     }
 
     /// Get session port
     pub fn session_port(&self) -> Result<i64> {
+        trace!(target: "msf::session", "Getting session {} session_port", self.session_id);
         get_i64_attr(*self.ruby_session, "session_port")
     }
 
     /// Get exploit that created this session
     pub fn via_exploit(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} via_exploit", self.session_id);
         get_string_attr(*self.ruby_session, "via_exploit")
     }
 
     /// Get payload that created this session
     pub fn via_payload(&self) -> Result<String> {
+        trace!(target: "msf::session", "Getting session {} via_payload", self.session_id);
         get_string_attr(*self.ruby_session, "via_payload")
     }
 
     /// Create Session from raw Ruby value (for daemon use)
     pub fn from_raw(session_val: Value, session_id: i64) -> Self {
+        debug!(target: "msf::session", "Creating Session from raw Ruby value, id={}", session_id);
         Session {
             ruby_session: BoxValue::new(session_val),
             session_id,
@@ -328,12 +390,17 @@ impl Session {
     /// Read output from shell session
     /// Only works for command shell sessions (not Meterpreter)
     pub fn shell_read(&self) -> Result<String> {
+        trace!(target: "msf::session", "Session {} shell_read", self.session_id);
+
         let result = call_method(*self.ruby_session, "shell_read", &[])?;
 
         if result.is_nil() {
+            trace!(target: "msf::session", "Session {} shell_read returned nil", self.session_id);
             Ok(String::new())
         } else {
-            Ok(value_to_string(result)?)
+            let data = value_to_string(result)?;
+            trace!(target: "msf::session", "Session {} shell_read: {} bytes", self.session_id, data.len());
+            Ok(data)
         }
     }
 
@@ -341,6 +408,8 @@ impl Session {
     /// Only works for command shell sessions (not Meterpreter)
     /// Returns number of bytes written
     pub fn shell_write(&self, data: &str) -> Result<usize> {
+        trace!(target: "msf::session", "Session {} shell_write: {} bytes", self.session_id, data.len());
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let data_val = ruby.str_new(data).as_value();
 
@@ -349,6 +418,7 @@ impl Session {
         // Try to convert to integer (bytes written)
         let bytes_written: i64 = TryConvert::try_convert(result).unwrap_or(data.len() as i64);
 
+        trace!(target: "msf::session", "Session {} shell_write wrote {} bytes", self.session_id, bytes_written);
         Ok(bytes_written as usize)
     }
 
@@ -385,6 +455,9 @@ impl Session {
         lport: u16,
         extra_options: Option<Options>,
     ) -> Result<bool> {
+        info!(target: "msf::session", "Session {} upgrading to meterpreter (handler: {}:{})",
+              self.session_id, lhost, lport);
+
         use crate::ruby_bridge::RubyVal;
 
         // Use run_post_module which properly handles module creation and options
@@ -396,12 +469,20 @@ impl Session {
 
         // Merge any extra options provided by the caller
         if let Some(extra) = extra_options {
+            debug!(target: "msf::session", "Session {} shell_to_meterpreter extra options: {:?}",
+                   self.session_id, extra.keys().collect::<Vec<_>>());
             for (k, v) in extra {
                 options.insert(k, v);
             }
         }
 
-        self.run_post_module("post/multi/manage/shell_to_meterpreter", options)
+        let result = self.run_post_module("post/multi/manage/shell_to_meterpreter", options)?;
+        if result {
+            info!(target: "msf::session", "Session {} meterpreter upgrade initiated", self.session_id);
+        } else {
+            warn!(target: "msf::session", "Session {} meterpreter upgrade failed", self.session_id);
+        }
+        Ok(result)
     }
 
     // ========== Meterpreter Extension Helpers (DRY) ==========
@@ -459,12 +540,16 @@ impl Session {
     /// Get current working directory (pwd)
     /// Only works on Meterpreter sessions
     pub fn fs_pwd(&self) -> Result<String> {
-        get_string_attr(self.fs_dir_ext()?, "pwd")
+        trace!(target: "msf::session::fs", "Session {} fs_pwd", self.session_id);
+        let pwd = get_string_attr(self.fs_dir_ext()?, "pwd")?;
+        trace!(target: "msf::session::fs", "Session {} pwd: {}", self.session_id, pwd);
+        Ok(pwd)
     }
 
     /// Change working directory (chdir)
     /// Only works on Meterpreter sessions
     pub fn fs_chdir(&self, path: &str) -> Result<()> {
+        debug!(target: "msf::session::fs", "Session {} fs_chdir: {}", self.session_id, path);
         call_void_with_str(self.fs_dir_ext()?, "chdir", path)
     }
 
@@ -472,18 +557,23 @@ impl Session {
     /// Returns list of filenames (strings)
     /// Only works on Meterpreter sessions
     pub fn fs_ls(&self, path: &str) -> Result<Vec<String>> {
-        call_strings_with_str(self.fs_dir_ext()?, "entries", path)
+        debug!(target: "msf::session::fs", "Session {} fs_ls: {}", self.session_id, path);
+        let entries = call_strings_with_str(self.fs_dir_ext()?, "entries", path)?;
+        trace!(target: "msf::session::fs", "Session {} fs_ls found {} entries", self.session_id, entries.len());
+        Ok(entries)
     }
 
     /// Create directory
     /// Only works on Meterpreter sessions
     pub fn fs_mkdir(&self, path: &str) -> Result<()> {
+        info!(target: "msf::session::fs", "Session {} fs_mkdir: {}", self.session_id, path);
         call_void_with_str(self.fs_dir_ext()?, "mkdir", path)
     }
 
     /// Remove directory (must be empty)
     /// Only works on Meterpreter sessions
     pub fn fs_rmdir(&self, path: &str) -> Result<()> {
+        info!(target: "msf::session::fs", "Session {} fs_rmdir: {}", self.session_id, path);
         call_void_with_str(self.fs_dir_ext()?, "rmdir", path)
     }
 
@@ -533,18 +623,23 @@ impl Session {
     /// Check if file/directory exists
     /// Only works on Meterpreter sessions
     pub fn fs_exists(&self, path: &str) -> Result<bool> {
-        call_bool_with_str(self.fs_file_ext()?, "exist?", path)
+        trace!(target: "msf::session::fs", "Session {} fs_exists: {}", self.session_id, path);
+        let exists = call_bool_with_str(self.fs_file_ext()?, "exist?", path)?;
+        trace!(target: "msf::session::fs", "Session {} fs_exists({}) = {}", self.session_id, path, exists);
+        Ok(exists)
     }
 
     /// Delete file
     /// Only works on Meterpreter sessions
     pub fn fs_rm(&self, path: &str) -> Result<()> {
+        info!(target: "msf::session::fs", "Session {} fs_rm: {}", self.session_id, path);
         call_void_with_str(self.fs_file_ext()?, "rm", path)
     }
 
     /// Move/rename file
     /// Only works on Meterpreter sessions
     pub fn fs_mv(&self, old_path: &str, new_path: &str) -> Result<()> {
+        info!(target: "msf::session::fs", "Session {} fs_mv: {} -> {}", self.session_id, old_path, new_path);
         call_method(
             self.fs_file_ext()?,
             "mv",
@@ -556,6 +651,7 @@ impl Session {
     /// Copy file
     /// Only works on Meterpreter sessions
     pub fn fs_cp(&self, src_path: &str, dst_path: &str) -> Result<()> {
+        info!(target: "msf::session::fs", "Session {} fs_cp: {} -> {}", self.session_id, src_path, dst_path);
         call_method(
             self.fs_file_ext()?,
             "cp",
@@ -568,35 +664,44 @@ impl Session {
     /// Returns "\\" on Windows, "/" on Unix
     /// Only works on Meterpreter sessions
     pub fn fs_separator(&self) -> Result<String> {
+        trace!(target: "msf::session::fs", "Session {} fs_separator", self.session_id);
         get_string_attr(self.fs_file_ext()?, "separator")
     }
 
     /// Expand path (resolve environment variables like %appdata%, $HOME)
     /// Only works on Meterpreter sessions
     pub fn fs_expand_path(&self, path: &str) -> Result<String> {
-        call_str_with_str(self.fs_file_ext()?, "expand_path", path)
+        debug!(target: "msf::session::fs", "Session {} fs_expand_path: {}", self.session_id, path);
+        let expanded = call_str_with_str(self.fs_file_ext()?, "expand_path", path)?;
+        debug!(target: "msf::session::fs", "Session {} fs_expand_path({}) = {}", self.session_id, path, expanded);
+        Ok(expanded)
     }
 
     /// Download file from remote to local
     /// Only works on Meterpreter sessions
     pub fn fs_download_file(&self, local_path: &str, remote_path: &str) -> Result<String> {
+        info!(target: "msf::session::fs", "Session {} fs_download: {} -> {}", self.session_id, remote_path, local_path);
         let status_val = call_method(
             self.fs_file_ext()?,
             "download_file",
             &[to_ruby_str(local_path)?, to_ruby_str(remote_path)?],
         )?;
         // download_file returns status string: "Completed", "Skipped", etc.
-        value_to_string(status_val)
+        let status = value_to_string(status_val)?;
+        info!(target: "msf::session::fs", "Session {} fs_download status: {}", self.session_id, status);
+        Ok(status)
     }
 
     /// Upload file from local to remote
     /// Only works on Meterpreter sessions
     pub fn fs_upload_file(&self, remote_path: &str, local_path: &str) -> Result<()> {
+        info!(target: "msf::session::fs", "Session {} fs_upload: {} -> {}", self.session_id, local_path, remote_path);
         call_method(
             self.fs_file_ext()?,
             "upload_file",
             &[to_ruby_str(remote_path)?, to_ruby_str(local_path)?],
         )?;
+        info!(target: "msf::session::fs", "Session {} fs_upload complete", self.session_id);
         Ok(())
     }
 
@@ -775,6 +880,9 @@ impl Session {
         module_path: &str,
         options: Options,
     ) -> Result<bool> {
+        info!(target: "msf::session", "Session {} running post module: {}", self.session_id, module_path);
+        trace!(target: "msf::session", "Post module options: {:?}", options.keys().collect::<Vec<_>>());
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Get framework from the session (NOT a new framework!)
@@ -783,6 +891,7 @@ impl Session {
         let framework = call_method(*self.ruby_session, "framework", &[])?;
 
         if framework.is_nil() {
+            error!(target: "msf::session", "Session {} has no framework reference", self.session_id);
             return Err(AssassinateError::RubyError(
                 "Session has no framework reference - was it registered properly?".to_string(),
             ));
@@ -792,16 +901,19 @@ impl Session {
         let modules = call_method(framework, "modules", &[])?;
 
         if modules.is_nil() {
+            error!(target: "msf::session", "Framework has no modules collection");
             return Err(AssassinateError::RubyError(
                 "Framework has no modules collection".to_string(),
             ));
         }
 
         // Create the post module
+        debug!(target: "msf::session", "Creating post module: {}", module_path);
         let module_name = ruby.str_new(module_path).as_value();
         let module = call_method(modules, "create", &[module_name])?;
 
         if module.is_nil() {
+            error!(target: "msf::session", "Post module not found: {}", module_path);
             return Err(AssassinateError::ModuleNotFound(module_path.to_string()));
         }
 
@@ -809,11 +921,13 @@ impl Session {
         let datastore = call_method(module, "datastore", &[])?;
 
         if datastore.is_nil() {
+            error!(target: "msf::session", "Module has no datastore");
             return Err(AssassinateError::RubyError(
                 "Module has no datastore".to_string(),
             ));
         }
 
+        debug!(target: "msf::session", "Setting SESSION={} on post module", self.session_id);
         call_method(
             datastore,
             "[]=",
@@ -825,6 +939,7 @@ impl Session {
 
         // Set additional options
         for (key, value) in options {
+            trace!(target: "msf::session", "Setting post module option: {}", key);
             let key_val = ruby.str_new(&key).as_value();
             let value_val = value.into_value_with(&ruby);
             call_method(datastore, "[]=", &[key_val, value_val])?;
@@ -832,16 +947,27 @@ impl Session {
 
         // Call setup() first - this initializes the session reference from the datastore
         // Without setup(), module.session would be nil and cmd_exec wouldn't work
+        debug!(target: "msf::session", "Calling post module setup()");
         call_method(module, "setup", &[])?;
 
         // Run the module
+        debug!(target: "msf::session", "Calling post module run()");
         let result = call_method(module, "run", &[])?;
 
         // Call cleanup() to release any resources
+        debug!(target: "msf::session", "Calling post module cleanup()");
         let _ = call_method(module, "cleanup", &[]);
 
         // Check if nil (failure) or has a value (success)
-        Ok(!result.is_nil())
+        let success = !result.is_nil();
+        if success {
+            info!(target: "msf::session", "Post module {} completed successfully on session {}",
+                  module_path, self.session_id);
+        } else {
+            warn!(target: "msf::session", "Post module {} returned nil on session {}",
+                  module_path, self.session_id);
+        }
+        Ok(success)
     }
 
     // ========== Process Management (Meterpreter) ==========
@@ -849,14 +975,18 @@ impl Session {
     /// Get the current process ID (getpid)
     /// Only works on Meterpreter sessions
     pub fn process_getpid(&self) -> Result<i64> {
+        trace!(target: "msf::session::proc", "Session {} process_getpid", self.session_id);
         let pid_val = call_method(self.sys_process()?, "getpid", &[])?;
-        crate::ruby_bridge::value_to_i64(pid_val)
+        let pid = crate::ruby_bridge::value_to_i64(pid_val)?;
+        trace!(target: "msf::session::proc", "Session {} current PID: {}", self.session_id, pid);
+        Ok(pid)
     }
 
     /// List all running processes
     /// Returns Vec of JSON objects with keys: pid, ppid, name, path, user, session, arch
     /// Only works on Meterpreter sessions
     pub fn process_list(&self) -> Result<Vec<serde_json::Value>> {
+        debug!(target: "msf::session::proc", "Session {} process_list", self.session_id);
         let processes = call_method(self.sys_process()?, "get_processes", &[])?;
         let len = crate::ruby_bridge::ruby_array_len(processes)?;
 
@@ -867,17 +997,20 @@ impl Session {
             result.push(process_json);
         }
 
+        debug!(target: "msf::session::proc", "Session {} found {} processes", self.session_id, result.len());
         Ok(result)
     }
 
     /// Kill a process by PID
     /// Only works on Meterpreter sessions
     pub fn process_kill(&self, pid: i64) -> Result<()> {
+        info!(target: "msf::session::proc", "Session {} killing process {}", self.session_id, pid);
         call_method(
             self.sys_process()?,
             "kill",
             &[crate::ruby_bridge::to_ruby_int(pid)?],
         )?;
+        info!(target: "msf::session::proc", "Session {} killed process {}", self.session_id, pid);
         Ok(())
     }
 
@@ -1296,7 +1429,9 @@ impl Session {
     /// This sends a shutdown packet to terminate the Meterpreter cleanly.
     /// Only works on Meterpreter sessions.
     pub fn meterpreter_shutdown(&self) -> Result<bool> {
+        info!(target: "msf::session::meterpreter", "Session {} meterpreter_shutdown", self.session_id);
         call_method(self.core()?, "shutdown", &[])?;
+        info!(target: "msf::session::meterpreter", "Session {} meterpreter shutdown complete", self.session_id);
         Ok(true)
     }
 
@@ -1306,6 +1441,7 @@ impl Session {
     /// This is useful for tracking sessions across reconnects.
     /// Only works on Meterpreter sessions.
     pub fn meterpreter_machine_id(&self, timeout: Option<u32>) -> Result<String> {
+        debug!(target: "msf::session::meterpreter", "Session {} getting machine_id (timeout: {:?})", self.session_id, timeout);
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         let result = if let Some(t) = timeout {
@@ -1316,9 +1452,12 @@ impl Session {
         };
 
         if result.is_nil() {
+            debug!(target: "msf::session::meterpreter", "Session {} machine_id returned nil", self.session_id);
             Ok(String::new())
         } else {
-            value_to_string(result)
+            let machine_id = value_to_string(result)?;
+            debug!(target: "msf::session::meterpreter", "Session {} machine_id: {}", self.session_id, machine_id);
+            Ok(machine_id)
         }
     }
 
@@ -1378,8 +1517,10 @@ impl Session {
     /// # Arguments
     /// * `extension_name` - Name of the extension to load (e.g., "stdapi", "priv")
     pub fn meterpreter_use(&self, extension_name: &str) -> Result<bool> {
+        info!(target: "msf::session::meterpreter", "Session {} loading extension: {}", self.session_id, extension_name);
         let ext_val = to_ruby_str(extension_name)?;
         call_method(self.core()?, "use", &[ext_val])?;
+        info!(target: "msf::session::meterpreter", "Session {} extension {} loaded", self.session_id, extension_name);
         Ok(true)
     }
 
@@ -1389,10 +1530,12 @@ impl Session {
     /// Returns true if encryption was successfully enabled.
     /// Only works on Meterpreter sessions.
     pub fn meterpreter_secure(&self) -> Result<bool> {
+        info!(target: "msf::session::meterpreter", "Session {} enabling secure mode (TLV encryption)", self.session_id);
         let result = call_method(self.core()?, "secure", &[])?;
         // secure() returns a hash with :key, :type, :weak_key? keys
         // If :key is present and not nil, encryption was enabled
         if result.is_nil() {
+            warn!(target: "msf::session::meterpreter", "Session {} secure mode returned nil", self.session_id);
             return Ok(false);
         }
 
@@ -1403,7 +1546,13 @@ impl Session {
         let key_val: Value = result_hash.aref(*sym::KEY).map_err(|e| {
             AssassinateError::RubyError(format!("Failed to get key: {}", e))
         })?;
-        Ok(!key_val.is_nil())
+        let enabled = !key_val.is_nil();
+        if enabled {
+            info!(target: "msf::session::meterpreter", "Session {} secure mode enabled", self.session_id);
+        } else {
+            warn!(target: "msf::session::meterpreter", "Session {} secure mode failed (no key)", self.session_id);
+        }
+        Ok(enabled)
     }
 
     /// Migrate the Meterpreter to a different process
@@ -1425,6 +1574,9 @@ impl Session {
         writable_dir: Option<&str>,
         timeout: Option<u32>,
     ) -> Result<bool> {
+        info!(target: "msf::session::meterpreter", "Session {} migrating to PID {} (dir: {:?}, timeout: {:?})",
+              self.session_id, target_pid, writable_dir, timeout);
+
         let ruby = crate::ruby_bridge::get_ruby()?;
 
         // Build options hash using RHash::aset with LazyId symbols
@@ -1446,7 +1598,13 @@ impl Session {
             call_method(self.core()?, "migrate", &[pid_val, nil_val, opts_hash.as_value()])?
         };
 
-        Ok(result.to_bool())
+        let success = result.to_bool();
+        if success {
+            info!(target: "msf::session::meterpreter", "Session {} migrated to PID {}", self.session_id, target_pid);
+        } else {
+            warn!(target: "msf::session::meterpreter", "Session {} migration to PID {} failed", self.session_id, target_pid);
+        }
+        Ok(success)
     }
 
     // ========== Meterpreter Transport Management ==========
@@ -1719,15 +1877,24 @@ impl Session {
     /// Only works on Meterpreter sessions.
     pub fn transport_sleep(&self, seconds: u32) -> Result<bool> {
         if seconds == 0 {
+            debug!(target: "msf::session::transport", "Session {} transport_sleep called with 0 seconds", self.session_id);
             return Ok(false);
         }
+
+        info!(target: "msf::session::transport", "Session {} transport_sleep for {} seconds", self.session_id, seconds);
 
         let ruby = crate::ruby_bridge::get_ruby()?;
         let seconds_val = ruby.integer_from_i64(seconds as i64).as_value();
 
         let result = call_method(self.core()?, "transport_sleep", &[seconds_val])?;
 
-        Ok(result.to_bool())
+        let success = result.to_bool();
+        if success {
+            info!(target: "msf::session::transport", "Session {} going to sleep for {}s", self.session_id, seconds);
+        } else {
+            warn!(target: "msf::session::transport", "Session {} transport_sleep failed", self.session_id);
+        }
+        Ok(success)
     }
 
     /// Set the response timeout for Meterpreter commands (in seconds)
@@ -1735,6 +1902,7 @@ impl Session {
     /// This controls how long send_request waits for a response.
     /// Useful for transport switching which may timeout when switching handlers.
     pub fn set_response_timeout(&self, timeout_secs: u32) -> Result<()> {
+        debug!(target: "msf::session::transport", "Session {} set_response_timeout: {}s", self.session_id, timeout_secs);
         let ruby = crate::ruby_bridge::get_ruby()?;
         let timeout_val = ruby.integer_from_u64(timeout_secs as u64).as_value();
         call_method(*self.ruby_session, "response_timeout=", &[timeout_val])?;
@@ -1743,9 +1911,11 @@ impl Session {
 
     /// Get the current response timeout for Meterpreter commands (in seconds)
     pub fn get_response_timeout(&self) -> Result<u32> {
+        trace!(target: "msf::session::transport", "Session {} get_response_timeout", self.session_id);
         let result = call_method(*self.ruby_session, "response_timeout", &[])?;
         let timeout: i64 = TryConvert::try_convert(result)
             .map_err(|e: magnus::Error| AssassinateError::ConversionError(e.to_string()))?;
+        trace!(target: "msf::session::transport", "Session {} response_timeout: {}s", self.session_id, timeout);
         Ok(timeout as u32)
     }
 
@@ -1758,8 +1928,15 @@ impl Session {
     /// because the response comes on the new handler, not the old one.
     /// Use set_response_timeout() to set a short timeout before calling.
     pub fn transport_next(&self) -> Result<bool> {
+        info!(target: "msf::session::transport", "Session {} switching to next transport", self.session_id);
         let result = call_method(self.core()?, "transport_next", &[])?;
-        Ok(result.to_bool())
+        let success = result.to_bool();
+        if success {
+            info!(target: "msf::session::transport", "Session {} switched to next transport", self.session_id);
+        } else {
+            warn!(target: "msf::session::transport", "Session {} transport_next failed", self.session_id);
+        }
+        Ok(success)
     }
 
     /// Switch to the previous transport in the transport list
@@ -1771,7 +1948,14 @@ impl Session {
     /// because the response comes on the new handler, not the old one.
     /// Use set_response_timeout() to set a short timeout before calling.
     pub fn transport_prev(&self) -> Result<bool> {
+        info!(target: "msf::session::transport", "Session {} switching to previous transport", self.session_id);
         let result = call_method(self.core()?, "transport_prev", &[])?;
-        Ok(result.to_bool())
+        let success = result.to_bool();
+        if success {
+            info!(target: "msf::session::transport", "Session {} switched to previous transport", self.session_id);
+        } else {
+            warn!(target: "msf::session::transport", "Session {} transport_prev failed", self.session_id);
+        }
+        Ok(success)
     }
 }

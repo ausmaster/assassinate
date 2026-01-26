@@ -24,8 +24,12 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, List, Optional
 
+from assassinate.log_config import get_logger
+
 if TYPE_CHECKING:
     import msf
+
+logger = get_logger("weapon")
 
 
 class Bullet:
@@ -228,6 +232,7 @@ class Weapon:
         self._module = msf_module
         self._cached_bullets: Optional[List[Bullet]] = None
         self._loaded_bullet: Optional[Bullet] = None
+        logger.debug(f"Weapon initialized: {msf_module.fullname}")
 
     # =========================================================================
     # Identity
@@ -437,6 +442,7 @@ class Weapon:
                 TARGET=0
             )
         """
+        logger.debug(f"Configuring weapon {self.name} with {len(kwargs)} options")
         for key, value in kwargs.items():
             self._module.options[key] = value
         return self
@@ -463,9 +469,11 @@ class Weapon:
             List of compatible Bullet objects
         """
         if self._cached_bullets is None or refresh:
+            logger.debug(f"Fetching compatible bullets for {self.name}")
             if hasattr(self._module, "compatible_payloads"):
                 names = self._module.compatible_payloads()
                 self._cached_bullets = [Bullet(name, self) for name in names]
+                logger.debug(f"Found {len(self._cached_bullets)} compatible bullets")
             else:
                 self._cached_bullets = []
         return self._cached_bullets
@@ -540,11 +548,14 @@ class Weapon:
             found = self.bullet(bullet)
             if found:
                 self._loaded_bullet = found
+                logger.debug(f"Loaded bullet: {found.name}")
             else:
                 # Create a new Bullet from the string
                 self._loaded_bullet = Bullet(bullet, self)
+                logger.debug(f"Created and loaded bullet: {bullet}")
         else:
             self._loaded_bullet = bullet
+            logger.debug(f"Loaded bullet: {bullet.name}")
         return self
 
     @property
@@ -576,8 +587,16 @@ class Weapon:
         Raises:
             AttributeError: If module doesn't support checking
         """
+        logger.info(f"Running vulnerability check with {self.name}")
         if hasattr(self._module, "check"):
-            return self._module.check()
+            try:
+                result = self._module.check()
+                logger.info(f"Check result: {result}")
+                return result
+            except Exception as e:
+                logger.error(f"Check failed for {self.name}: {e}")
+                raise
+        logger.warning(f"{self.name} does not support vulnerability checking")
         raise AttributeError(f"{self.name} does not support vulnerability checking")
 
     # =========================================================================

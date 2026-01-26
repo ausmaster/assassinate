@@ -24,12 +24,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import msf
+from assassinate.console import print_contract, print_mass_contract
 from assassinate.kill import Kill
+from assassinate.log_config import get_logger
 from assassinate.target import Target
 from assassinate.weapon import Bullet, Weapon
 
 if TYPE_CHECKING:
     pass
+
+logger = get_logger("contract")
 
 
 class Contract:
@@ -80,14 +84,18 @@ class Contract:
             weapon: Weapon object or module name
             bullet: Bullet object or name (auto-selected if not provided)
         """
+        logger.debug("Creating contract")
+
         # Normalize target
         if isinstance(target, str):
             self.target = Target(target)
+            logger.debug(f"Target created from string: {target}")
         else:
             self.target = target
 
         # Normalize weapon
         if isinstance(weapon, str):
+            logger.debug(f"Creating weapon from module name: {weapon}")
             mod = msf.create_module(weapon)
             self.weapon = Weapon(mod)
         else:
@@ -96,8 +104,10 @@ class Contract:
         # Normalize bullet (auto-select if not provided)
         if bullet is None:
             self.bullet = self._auto_select_bullet()
+            logger.debug(f"Auto-selected bullet: {self.bullet.name}")
         elif isinstance(bullet, str):
             self.bullet = Bullet(bullet, self.weapon)
+            logger.debug(f"Bullet created from string: {bullet}")
         else:
             self.bullet = bullet
 
@@ -105,6 +115,10 @@ class Contract:
         self._profile_result: Optional[bool] = None
         self._configured = False
         self._executed = False
+
+        logger.info(
+            f"Contract created: {self.weapon.name} -> {self.target.host} with {self.bullet.name}"
+        )
 
     def _auto_select_bullet(self) -> Bullet:
         """Auto-select the best bullet for this weapon.
@@ -167,13 +181,17 @@ class Contract:
             ...     TARGET=0
             ... )
         """
+        logger.debug(f"Configuring contract with {len(options)} options")
+
         # Auto-set RHOSTS from target
         if "RHOSTS" not in options:
             self.weapon.options.RHOSTS = self.target.host
+            logger.debug(f"Auto-set RHOSTS to {self.target.host}")
 
         # Apply provided options
         for key, value in options.items():
             self.weapon.options[key] = value
+            logger.debug(f"Set option {key} = {value}")
 
         self._configured = True
         return self
@@ -216,6 +234,7 @@ class Contract:
             ...     print(f"Target vulnerable! Open ports: {contract.target.ports}")
             ...     kill = contract.execute()
         """
+        logger.info(f"Profiling target {self.target.host} for {self.weapon.name}")
         self._profiled = True
 
         # Ensure RHOSTS is set
@@ -224,9 +243,11 @@ class Contract:
 
         # Get required port
         port = self._get_required_port()
+        logger.debug(f"Required port: {port}")
 
         if port is not None:
             # Check if port is open
+            logger.debug(f"Checking if port {port} is open on {self.target.host}")
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(timeout)
@@ -235,38 +256,52 @@ class Contract:
 
                 if result != 0:
                     # Port closed
+                    logger.info(f"Port {port} is closed on {self.target.host}")
                     self._profile_result = False
                     return False
 
                 # Port is open, update target
+                logger.debug(f"Port {port} is open on {self.target.host}")
                 self.target.add_port(port, self.weapon.service)
 
-            except (socket.error, OSError):
+            except (socket.error, OSError) as e:
+                logger.warning(
+                    f"Socket error checking port {port} on {self.target.host}: {e}"
+                )
                 self._profile_result = False
                 return False
 
         # Run vulnerability check if available
         if self.weapon.has_check():
+            logger.debug(f"Running vulnerability check on {self.target.host}")
             try:
                 check_result = self.weapon.check()
+                logger.debug(f"Check result: {check_result}")
+
                 if "vulnerable" in check_result.lower():
+                    logger.success(f"Target {self.target.host} is VULNERABLE")
                     self._profile_result = True
                     # Record vulnerability
                     for cve in self.weapon.cves:
                         self.target.add_vuln(cve)
                     return True
                 elif "safe" in check_result.lower() or "not vulnerable" in check_result.lower():
+                    logger.info(f"Target {self.target.host} is NOT vulnerable")
                     self._profile_result = False
                     return False
                 # Unknown result, port was open, might still work
-            except Exception:
+                logger.debug("Check result inconclusive, proceeding")
+            except Exception as e:
                 # Check failed, but port is open - might still work
-                pass
+                logger.warning(
+                    f"Vulnerability check failed for {self.target.host}: {e} (proceeding anyway)"
+                )
 
         # No check available or check was inconclusive, port is open
         # Mark target as profiled and assume vulnerable
         self.target.mark_profiled()
         self._profile_result = True
+        logger.info(f"Profile complete for {self.target.host}: assuming vulnerable")
         return True
 
     def _get_required_port(self) -> Optional[int]:
@@ -348,6 +383,10 @@ class Contract:
             ...     print(f"Target eliminated: {kill}")
             ...     print(kill.interrogate("whoami"))
         """
+        logger.info(
+            f"Executing contract: {self.weapon.name} -> {self.target.host} with {self.bullet.name}"
+        )
+
         # Ensure configured
         if not self._configured:
             self.configure()
@@ -355,22 +394,29 @@ class Contract:
         # Validate
         issues = self.validate()
         if issues:
+            logger.error(f"Contract validation failed: {issues}")
             raise ValueError(f"Contract not ready: {', '.join(issues)}")
 
         self._executed = True
 
         # Execute the exploit
         try:
+            logger.debug(f"Running exploit with timeout={timeout}")
             session = self.weapon._module.exploit(self.bullet.name, timeout)
             if session:
+                logger.success(
+                    f"Session {session.sid} established on {self.target.host}"
+                )
                 return Kill(
                     session,
                     target=self.target,
                     via_weapon=self.weapon.fullname,
                     via_payload=self.bullet.name,
                 )
-        except Exception:
-            pass
+            else:
+                logger.warning("No session obtained from exploit")
+        except Exception as e:
+            logger.error(f"Exploit execution failed: {e}", exc_info=True)
 
         return None
 
@@ -414,9 +460,36 @@ class Contract:
 
         return "\n".join(lines)
 
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: Reserved for future use (consistency with other classes).
+        """
+        print_contract(
+            weapon_name=self.weapon.fullname,
+            target_host=self.target.host,
+            bullet_name=self.bullet.name,
+            ready=self.ready,
+            profiled=self._profiled,
+            profile_result=self._profile_result if self._profiled else None,
+            executed=self._kill is not None,
+            kill_id=self._kill.id if self._kill else None,
+            full=full,
+        )
+
     def __repr__(self) -> str:
         status = "ready" if self.ready else "not ready"
-        return f"<Contract: {self.weapon.name} -> {self.target.host} [{status}]>"
+        parts = [f"<Contract {self.weapon.fullname} -> {self.target.host}"]
+        parts.append(f"bullet={self.bullet.name}")
+        parts.append(f"[{status}]")
+        if self._profiled:
+            profile_status = "vulnerable" if self._profile_result else "not vulnerable"
+            parts.append(f"({profile_status})")
+        return " ".join(parts) + ">"
+
+    def __str__(self) -> str:
+        return f"{self.weapon.name} -> {self.target.host}"
 
 
 class MassContract:
@@ -478,6 +551,10 @@ class MassContract:
             bullet: Bullet to use (auto-selected if not provided)
             max_parallel: Maximum concurrent operations
         """
+        logger.info(
+            f"Creating mass contract for {len(targets)} targets with max_parallel={max_parallel}"
+        )
+
         # Normalize targets
         self.targets = [
             Target(t) if isinstance(t, str) else t
@@ -489,6 +566,8 @@ class MassContract:
             self._weapon_name = weapon.fullname
         else:
             self._weapon_name = weapon
+
+        logger.debug(f"Weapon: {self._weapon_name}")
 
         # Normalize bullet
         if isinstance(bullet, Bullet):
@@ -540,14 +619,19 @@ class MassContract:
             >>> vulnerable = [t for t, v in results.items() if v]
             >>> print(f"{len(vulnerable)} targets vulnerable")
         """
+        logger.info(
+            f"Profiling {len(self.targets)} targets (parallel={parallel}, workers={self.max_parallel})"
+        )
         self._profile_results = {}
 
         def profile_target(target: Target) -> Tuple[Target, bool]:
             try:
                 contract = self._create_contract(target)
                 result = contract.profile()
+                logger.debug(f"Profile {target.host}: {result}")
                 return (target, result)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Profile failed for {target.host}: {e}")
                 return (target, False)
 
         if parallel:
@@ -564,6 +648,10 @@ class MassContract:
                 _, result = profile_target(target)
                 self._profile_results[target] = result
 
+        vulnerable_count = sum(1 for v in self._profile_results.values() if v)
+        logger.info(
+            f"Profile complete: {vulnerable_count}/{len(self.targets)} targets vulnerable"
+        )
         return self._profile_results.copy()
 
     # =========================================================================
@@ -592,6 +680,9 @@ class MassContract:
             >>> for kill in kills:
             ...     print(f"  {kill.host}: {kill.interrogate('id')}")
         """
+        logger.info(
+            f"Executing mass contract: {len(self.targets)} targets (timeout={timeout}, stop_on_success={stop_on_success})"
+        )
         self._kills = []
         self._failures = []
 
@@ -600,16 +691,21 @@ class MassContract:
         if profile_first and not self._profile_results:
             self.profile_all()
             targets_to_attack = [t for t, v in self._profile_results.items() if v]
+            logger.info(f"Attacking {len(targets_to_attack)} vulnerable targets")
 
         def attack_target(target: Target) -> Tuple[Target, Optional[Kill], Optional[str]]:
             try:
+                logger.debug(f"Attacking target: {target.host}")
                 contract = self._create_contract(target)
                 kill = contract.execute(timeout)
                 if kill:
+                    logger.success(f"Kill confirmed: {target.host}")
                     return (target, kill, None)
                 else:
+                    logger.debug(f"No session from {target.host}")
                     return (target, None, "No session established")
             except Exception as e:
+                logger.warning(f"Attack failed on {target.host}: {e}")
                 return (target, None, str(e))
 
         # Execute in parallel
@@ -627,6 +723,9 @@ class MassContract:
                     self._kills.append(kill)
                     success_count += 1
                     if stop_on_success and success_count >= stop_on_success:
+                        logger.info(
+                            f"Reached stop_on_success limit ({stop_on_success}), cancelling remaining"
+                        )
                         # Cancel remaining futures
                         for f in futures:
                             f.cancel()
@@ -634,6 +733,9 @@ class MassContract:
                 else:
                     self._failures.append((target, error or "Unknown error"))
 
+        logger.info(
+            f"Mass execution complete: {len(self._kills)} kills, {len(self._failures)} failures ({self.success_rate * 100:.1f}% success)"
+        )
         return self._kills
 
     # Themed alias
@@ -672,8 +774,11 @@ class MassContract:
     # Display
     # =========================================================================
 
-    def summary(self) -> str:
+    def summary(self, full: bool = False) -> str:
         """Get a summary of mass operation results.
+
+        Args:
+            full: If True, show all kills and failures without truncation.
 
         Returns:
             Multi-line string with results
@@ -689,23 +794,56 @@ class MassContract:
 
         if self._kills:
             lines.append("  Confirmed Kills:")
-            for kill in self._kills[:5]:
+            kill_limit = None if full else 5
+            for kill in self._kills[:kill_limit]:
                 lines.append(f"    - {kill.host}:{kill.port}")
-            if len(self._kills) > 5:
+            if not full and len(self._kills) > 5:
                 lines.append(f"    ... and {len(self._kills) - 5} more")
 
         if self._failures:
             lines.append("  Failures:")
-            for target, error in self._failures[:5]:
+            fail_limit = None if full else 5
+            for target, error in self._failures[:fail_limit]:
                 lines.append(f"    - {target.host}: {error}")
-            if len(self._failures) > 5:
+            if not full and len(self._failures) > 5:
                 lines.append(f"    ... and {len(self._failures) - 5} more")
 
         return "\n".join(lines)
 
-    def __repr__(self) -> str:
-        return (
-            f"<MassContract: {self._weapon_name} -> "
-            f"{len(self.targets)} targets "
-            f"[{len(self._kills)} kills, {len(self._failures)} failed]>"
+    def p(self, full: bool = False) -> None:
+        """Print rich formatted summary.
+
+        Args:
+            full: If True, show all kills and failures without truncation.
+        """
+        # Build kills list as (host, port) tuples
+        kills_list = [(k.host, k.port) for k in self._kills]
+
+        # Build failures list as (host, error) tuples
+        failures_list = [(t.host, e) for t, e in self._failures]
+
+        # Get target hosts
+        target_hosts = [t.host for t in self.targets]
+
+        print_mass_contract(
+            weapon_name=self._weapon_name,
+            targets=target_hosts,
+            bullet_name=self.bullet,
+            kills=kills_list,
+            failures=failures_list,
+            attempted=self.attempted,
+            full=full,
         )
+
+    def __repr__(self) -> str:
+        parts = [f"<MassContract {self._weapon_name} -> {len(self.targets)} targets"]
+        if self.bullet:
+            parts.append(f"bullet={self.bullet}")
+        if self.attempted > 0:
+            parts.append(f"[{len(self._kills)} kills, {len(self._failures)} failed, {self.success_rate:.0%}]")
+        else:
+            parts.append(f"[not executed]")
+        return " ".join(parts) + ">"
+
+    def __str__(self) -> str:
+        return f"{self._weapon_name} -> {len(self.targets)} targets"

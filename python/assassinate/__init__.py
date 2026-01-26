@@ -94,7 +94,19 @@ from assassinate.kill import Kill
 from assassinate.catalog import WeaponCatalog, BulletCatalog, WeaponInfo, BulletInfo
 
 # Logging configuration
-from assassinate.log_config import setup_logging, get_logger
+from assassinate.log_config import (
+    setup_logging,
+    get_logger,
+    add_file_handler,
+    set_level,
+    toggle_log_level,
+    get_log_file,
+    disable_console_logging,
+    enable_console_logging,
+    # Custom log levels
+    VERBOSE,
+    SUCCESS,
+)
 
 # Re-export key types from msf for convenience
 import msf
@@ -138,6 +150,14 @@ __all__ = [
     # Logging
     "setup_logging",
     "get_logger",
+    "add_file_handler",
+    "set_level",
+    "toggle_log_level",
+    "get_log_file",
+    "disable_console_logging",
+    "enable_console_logging",
+    "VERBOSE",
+    "SUCCESS",
     # Module classes (re-exported from msf)
     "ExploitModule",
     "AuxiliaryModule",
@@ -159,7 +179,6 @@ __all__ = [
     "msf",
 ]
 
-# Setup default logging based on environment variables
-log_level = os.getenv("ASSASSINATE_LOG_LEVEL", "WARNING")
-log_file = os.getenv("ASSASSINATE_LOG_FILE", None)
-setup_logging(level=log_level, log_file=log_file, structured=True)
+# Note: Logging is auto-configured from environment variables when log_config is imported
+# Use ASSASSINATE_LOG_LEVEL and ASSASSINATE_LOG_FILE to configure
+# Or call setup_logging() explicitly for programmatic configuration
