@@ -35,78 +35,163 @@ from typing import Optional, Union
 # Get logger for this module
 logger = logging.getLogger("msf")
 
-# Import from Rust extension
-from .msf import (
-    AssassinateError,
-    Module as _RustModule,
-    PySession as _RustPySession,
-    check,
-    create_module as _create_module_rust,
-    exploit,
-    framework_version,
-    module_stats,
-    add_module_path,
-    reload_modules,
-    get_module_info,
-    get_session as _get_session_rust,
-    init_msf,
-    is_initialized,
-    kill_session,
-    create_shell_session,
-    list_modules,
-    list_sessions,
-    search,
-    # GVL functions imported but not re-exported (internal use only)
-    poll_releasing_gvl as _poll_releasing_gvl,
-    sleep_releasing_gvl as _sleep_releasing_gvl,
-    job_list,
-    job_info,
-    job_kill,
-    # Payload generation (Tier 2)
-    forge_payload,
-    forge_encoded,
-    forge_executable,
-    list_payloads,
-    forge_payload_with_badchars,
-    forge_formatted,
-    transform_buffer,
-    # Database (Tier 3)
-    db_active,
-    db_driver,
-    db_hosts,
-    db_services,
-    db_vulns,
-    db_creds,
-    db_loot,
-    db_report_host,
-    db_report_service,
-    db_report_vuln,
-    db_report_cred,
-    db_workspaces,
-    db_workspace,
-    db_set_workspace,
-    db_add_workspace,
-    db_find_workspace,
-    db_delete_workspace,
-    db_notes,
-    db_report_note,
-    db_delete_note,
-    # Database query methods (Tier 4.5B)
-    db_get_host,
-    db_get_service,
-    db_get_vuln,
-    db_update_host,
-    db_delete_host,
-    db_update_service,
-    db_delete_service,
-    # Routing (Tier 4)
-    route_add,
-    route_remove,
-    route_list,
-    route_flush,
-    route_exists,
-    route_get,
-)
+# Track whether the Rust extension is available
+_RUST_AVAILABLE = False
+_RUST_IMPORT_ERROR = None
+
+# Try to import from Rust extension
+try:
+    from .msf import (
+        AssassinateError,
+        Module as _RustModule,
+        PySession as _RustPySession,
+        check,
+        create_module as _create_module_rust,
+        exploit,
+        framework_version,
+        module_stats,
+        add_module_path,
+        reload_modules,
+        get_module_info,
+        get_session as _get_session_rust,
+        init_msf,
+        is_initialized,
+        kill_session,
+        create_shell_session,
+        list_modules,
+        list_sessions,
+        search,
+        # GVL functions imported but not re-exported (internal use only)
+        poll_releasing_gvl as _poll_releasing_gvl,
+        sleep_releasing_gvl as _sleep_releasing_gvl,
+        job_list,
+        job_info,
+        job_kill,
+        # Payload generation (Tier 2)
+        forge_payload,
+        forge_encoded,
+        forge_executable,
+        list_payloads,
+        forge_payload_with_badchars,
+        forge_formatted,
+        transform_buffer,
+        # Database (Tier 3)
+        db_active,
+        db_driver,
+        db_hosts,
+        db_services,
+        db_vulns,
+        db_creds,
+        db_loot,
+        db_report_host,
+        db_report_service,
+        db_report_vuln,
+        db_report_cred,
+        db_workspaces,
+        db_workspace,
+        db_set_workspace,
+        db_add_workspace,
+        db_find_workspace,
+        db_delete_workspace,
+        db_notes,
+        db_report_note,
+        db_delete_note,
+        # Database query methods (Tier 4.5B)
+        db_get_host,
+        db_get_service,
+        db_get_vuln,
+        db_update_host,
+        db_delete_host,
+        db_update_service,
+        db_delete_service,
+        # Routing (Tier 4)
+        route_add,
+        route_remove,
+        route_list,
+        route_flush,
+        route_exists,
+        route_get,
+    )
+    _RUST_AVAILABLE = True
+except ImportError as e:
+    _RUST_IMPORT_ERROR = e
+    # Define placeholder error class
+    class AssassinateError(Exception):
+        """Placeholder when Rust module not available."""
+        pass
+
+    # Create stub functions that raise helpful errors
+    def _not_built(*args, **kwargs):
+        raise ImportError(
+            "The msf Rust module is not built. Run one of:\n"
+            "  uv run maturin develop\n"
+            "  uv run assassinate build"
+        )
+
+    # Stub out all the Rust functions
+    _RustModule = None
+    _RustPySession = None
+    check = _not_built
+    _create_module_rust = _not_built
+    exploit = _not_built
+    framework_version = _not_built
+    module_stats = _not_built
+    add_module_path = _not_built
+    reload_modules = _not_built
+    get_module_info = _not_built
+    _get_session_rust = _not_built
+    init_msf = _not_built
+    is_initialized = lambda: False
+    kill_session = _not_built
+    create_shell_session = _not_built
+    list_modules = _not_built
+    list_sessions = _not_built
+    search = _not_built
+    _poll_releasing_gvl = _not_built
+    _sleep_releasing_gvl = _not_built
+    job_list = _not_built
+    job_info = _not_built
+    job_kill = _not_built
+    forge_payload = _not_built
+    forge_encoded = _not_built
+    forge_executable = _not_built
+    list_payloads = _not_built
+    forge_payload_with_badchars = _not_built
+    forge_formatted = _not_built
+    transform_buffer = _not_built
+    db_active = _not_built
+    db_driver = _not_built
+    db_hosts = _not_built
+    db_services = _not_built
+    db_vulns = _not_built
+    db_creds = _not_built
+    db_loot = _not_built
+    db_report_host = _not_built
+    db_report_service = _not_built
+    db_report_vuln = _not_built
+    db_report_cred = _not_built
+    db_workspaces = _not_built
+    db_workspace = _not_built
+    db_set_workspace = _not_built
+    db_add_workspace = _not_built
+    db_find_workspace = _not_built
+    db_delete_workspace = _not_built
+    db_notes = _not_built
+    db_report_note = _not_built
+    db_delete_note = _not_built
+    db_get_host = _not_built
+    db_get_service = _not_built
+    db_get_vuln = _not_built
+    db_update_host = _not_built
+    db_delete_host = _not_built
+    db_update_service = _not_built
+    db_delete_service = _not_built
+    route_add = _not_built
+    route_remove = _not_built
+    route_list = _not_built
+    route_flush = _not_built
+    route_exists = _not_built
+    route_get = _not_built
 
 # Import type-specific module classes
 from .module import (

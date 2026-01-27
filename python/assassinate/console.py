@@ -613,3 +613,98 @@ def print_bullet_info(
         expand=True,
         padding=(1, 2),
     ))
+
+
+# =============================================================================
+# Utility Functions (for CLI/demo)
+# =============================================================================
+
+
+def icon(ok: bool) -> str:
+    """Return themed checkmark or X icon."""
+    return "[green]✓[/green]" if ok else "[red]✗[/red]"
+
+
+def warn_icon() -> str:
+    """Return themed warning icon."""
+    return "[yellow]○[/yellow]"
+
+
+def print_section(title: str, subtitle: str = "") -> None:
+    """Print a section header with optional subtitle."""
+    from rich.rule import Rule
+    console.print()
+    console.print(Rule(f"[bold]{title}[/bold]", style="cyan"))
+    if subtitle:
+        console.print(f"  [dim]{subtitle}[/dim]")
+    console.print()
+
+
+def print_status(message: str, status: str = "info") -> None:
+    """Print a status message with themed icon.
+
+    Args:
+        message: The message to print
+        status: One of "success", "error", "warning", "info"
+    """
+    icons = {
+        "success": "[green]✓[/green]",
+        "error": "[red]✗[/red]",
+        "warning": "[yellow]○[/yellow]",
+        "info": "[cyan]→[/cyan]",
+    }
+    console.print(f"  {icons.get(status, icons['info'])} {message}")
+
+
+def print_kv(label: str, value: str, style: str = "cyan") -> None:
+    """Print a single key-value pair."""
+    console.print(f"  [dim]•[/dim] {label}: [{style}]{value}[/{style}]")
+
+
+def print_list(items: list, title: str = "") -> None:
+    """Print a bulleted list of (label, value) tuples or plain strings.
+
+    Args:
+        items: List of (label, value) tuples or plain strings
+        title: Optional title to print above the list
+    """
+    if title:
+        console.print(f"[bold]{title}[/bold]")
+    for item in items:
+        if isinstance(item, tuple) and len(item) >= 2:
+            label, value = item[0], item[1]
+            console.print(f"  [dim]•[/dim] {label}: [cyan]{value}[/cyan]")
+        else:
+            console.print(f"  [dim]•[/dim] {item}")
+
+
+def print_banner() -> None:
+    """Print the Assassinate ASCII banner."""
+    banner = """[bold cyan]
+    █████╗ ███████╗███████╗ █████╗ ███████╗███████╗██╗███╗   ██╗ █████╗ ████████╗███████╗
+   ██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝██╔════╝██║████╗  ██║██╔══██╗╚══██╔══╝██╔════╝
+   ███████║███████╗███████╗███████║███████╗███████╗██║██╔██╗ ██║███████║   ██║   █████╗
+   ██╔══██║╚════██║╚════██║██╔══██║╚════██║╚════██║██║██║╚██╗██║██╔══██║   ██║   ██╔══╝
+   ██║  ██║███████║███████║██║  ██║███████║███████║██║██║ ╚████║██║  ██║   ██║   ███████╗
+   ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
+[/bold cyan]"""
+    console.print(banner)
+    console.print("[bold]  Precision Exploitation Framework[/bold]\n")
+
+
+# =============================================================================
+# Re-exports for convenience
+# =============================================================================
+
+__all__ = [
+    # Global console and theme
+    "console", "THEME", "get_rank_style",
+    # Printing functions
+    "print_module", "print_session", "print_kill",
+    "print_contract", "print_mass_contract",
+    "print_weapon_info", "print_bullet_info",
+    # Utility functions (for CLI/demo)
+    "icon", "warn_icon", "print_section", "print_status", "print_kv", "print_list", "print_banner",
+    # Rich re-exports
+    "Panel", "Table", "Text", "box",
+]

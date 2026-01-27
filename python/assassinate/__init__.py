@@ -80,7 +80,7 @@ from __future__ import annotations
 
 import os
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # Core high-level interface
 from assassinate.hideout import Hideout
@@ -89,9 +89,22 @@ from assassinate.hideout import Hideout
 from assassinate.target import Target
 from assassinate.weapon import Weapon, Bullet
 from assassinate.arsenal import Arsenal
-from assassinate.contract import Contract, MassContract
+from assassinate.contract import Contract, MassContract, CRED_OPTION_MAP
 from assassinate.kill import Kill
 from assassinate.catalog import WeaponCatalog, BulletCatalog, WeaponInfo, BulletInfo
+
+# Tier 5: Intelligence Layer
+from assassinate.profile import (
+    TargetProfile,
+    LootItem,
+    HarvestResult,
+    Recommendation,
+    HARVEST_MODULES,
+    PRIVESC_MODULES,
+    PERSISTENCE_MODULES,
+)
+from assassinate.intel import Intel
+from assassinate.chain import AttackChain, ChainStage
 
 # Configuration system
 from assassinate.config import (
@@ -121,6 +134,11 @@ from assassinate.log_config import (
     VERBOSE,
     SUCCESS,
 )
+
+# Initialize logging from config system (must be after log_config imports)
+# This ensures config file settings (not just env vars) are applied
+from assassinate.log_config import setup_from_config
+setup_from_config()
 
 # Lazy import msf to avoid circular import (msf/module.py imports from assassinate.console)
 # Users can import these directly from msf if needed
@@ -160,11 +178,23 @@ __all__ = [
     "Contract",
     "MassContract",
     "Kill",
+    "CRED_OPTION_MAP",
     # Catalogs
     "WeaponCatalog",
     "BulletCatalog",
     "WeaponInfo",
     "BulletInfo",
+    # Tier 5: Intelligence Layer
+    "TargetProfile",
+    "LootItem",
+    "HarvestResult",
+    "Recommendation",
+    "Intel",
+    "AttackChain",
+    "ChainStage",
+    "HARVEST_MODULES",
+    "PRIVESC_MODULES",
+    "PERSISTENCE_MODULES",
     # Configuration
     "get_config",
     "reload_config",

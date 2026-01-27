@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "assassinate"
-version = "0.3.0"
+version = "0.5.0"
 description = "A modular, themed exploitation framework with payload (bullet) generation."
 authors = [
     { name = "Austin Stark", email = "austin.stark@blacklanternsecurity.com" }
@@ -37,6 +37,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0", # Automatic env var binding with ASAS_* prefix
     "pyyaml>=6.0.0", # Config file support
+    "maturin>=1.11.5",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +49,7 @@ dev = [
 ]
 
 [project.scripts]
-assassinate-setup = "setup.cli:main"
+assassinate = "assassinate.cli:main"
 
 [tool.mypy]
 python_version = "3.10"

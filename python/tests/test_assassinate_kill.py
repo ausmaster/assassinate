@@ -400,14 +400,14 @@ class TestKillFutureFeatures:
 
         assert "not yet implemented" in str(exc_info.value)
 
-    def test_pivot_not_implemented(self, mock_session):
-        """pivot() raises NotImplementedError."""
+    def test_pivot_requires_meterpreter(self, mock_session):
+        """pivot() returns False for non-meterpreter sessions."""
         kill = Kill(mock_session)
 
-        with pytest.raises(NotImplementedError) as exc_info:
-            kill.pivot("192.168.1.200")
+        # Shell sessions can't pivot
+        result = kill.pivot("10.0.0.0")
 
-        assert "not yet implemented" in str(exc_info.value)
+        assert result is False
 
 
 # =============================================================================
@@ -442,12 +442,13 @@ class TestKillSummary:
         assert "Kill #1" in summary
 
     def test_summary_includes_type(self, mock_session):
-        """summary() includes session type."""
+        """summary() includes session type (uppercase)."""
         kill = Kill(mock_session)
 
         summary = kill.summary()
 
-        assert "shell" in summary
+        # summary() uses type.upper(), so check for uppercase
+        assert "SHELL" in summary
 
     def test_summary_includes_host(self, mock_session):
         """summary() includes host and port."""

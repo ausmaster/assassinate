@@ -3,9 +3,14 @@
 
 Demonstrates all 7 MSF module types in a realistic workflow.
 
-Usage:
-    export MSF_ROOT=~/Projects/metasploit-framework
+Configuration:
+    # Option 1: Environment variable
+    export ASAS_METASPLOIT__ROOT=~/Projects/metasploit-framework
 
+    # Option 2: Config file (~/.config/assassinate/config.yaml)
+    # Option 3: Auto-detection (checks common paths)
+
+Usage:
     # Run full workflow (default)
     python sambacry_msf.py 172.19.0.3
 
@@ -16,10 +21,8 @@ Usage:
 """
 
 import argparse
-import os
 import msf
-
-MSF_ROOT = os.environ.get("MSF_ROOT", "/opt/metasploit-framework")
+from assassinate.config import get_config
 
 
 def main():
@@ -35,8 +38,13 @@ def main():
     parser.add_argument("--no-post", action="store_true", help="Skip post-exploitation phase")
     args = parser.parse_args()
 
-    # Initialize MSF
-    msf.init_msf(MSF_ROOT)
+    # Initialize MSF using config system
+    config = get_config()
+    if not config.metasploit.root:
+        print("[-] MSF not found. Set ASAS_METASPLOIT__ROOT or run: assassinate-setup --config")
+        return 1
+
+    msf.init_msf(str(config.metasploit.root))
     print(f"[*] MSF {msf.framework_version()} initialized")
     print(f"[*] Target: {args.target}\n")
 

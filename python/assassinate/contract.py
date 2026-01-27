@@ -19,11 +19,11 @@ Example:
 from __future__ import annotations
 
 import socket
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import msf
+from assassinate.config import get_config
 from assassinate.console import print_contract, print_mass_contract
 from assassinate.kill import Kill
 from assassinate.log_config import get_logger
@@ -34,6 +34,26 @@ if TYPE_CHECKING:
     pass
 
 logger = get_logger("contract")
+
+
+# Credential mapping registry - maps service type to (user_opt, pass_opt, domain_opt)
+# Used by use_creds() to auto-fill weapon options from stored credentials
+CRED_OPTION_MAP: Dict[str, Tuple[str, str, Optional[str]]] = {
+    "smb": ("SMBUser", "SMBPass", "SMBDomain"),
+    "ssh": ("USERNAME", "PASSWORD", None),
+    "mysql": ("USERNAME", "PASSWORD", None),
+    "postgres": ("USERNAME", "PASSWORD", None),
+    "mssql": ("USERNAME", "PASSWORD", "DOMAIN"),
+    "winrm": ("USERNAME", "PASSWORD", "DOMAIN"),
+    "ftp": ("FTPUSER", "FTPPASS", None),
+    "http": ("HttpUsername", "HttpPassword", None),
+    "telnet": ("USERNAME", "PASSWORD", None),
+    "vnc": ("PASSWORD", None, None),  # VNC often only has password
+    "rdp": ("USERNAME", "PASSWORD", "DOMAIN"),
+    "ldap": ("USERNAME", "PASSWORD", None),
+    # Default fallback
+    "default": ("USERNAME", "PASSWORD", "DOMAIN"),
+}
 
 
 class Contract:
@@ -168,6 +188,7 @@ class Contract:
         """Configure weapon options.
 
         Automatically sets RHOSTS from target if not provided.
+        For reverse payloads, auto-sets LHOST/LPORT from config if not provided.
 
         Args:
             **options: Option names and values
@@ -182,11 +203,21 @@ class Contract:
             ... )
         """
         logger.debug(f"Configuring contract with {len(options)} options")
+        config = get_config()
 
         # Auto-set RHOSTS from target
         if "RHOSTS" not in options:
             self.weapon.options.RHOSTS = self.target.host
             logger.debug(f"Auto-set RHOSTS to {self.target.host}")
+
+        # Auto-set LHOST/LPORT for reverse payloads from config
+        if self.bullet and self.bullet.connection == "reverse":
+            if "LHOST" not in options and config.defaults.lhost:
+                options["LHOST"] = config.defaults.lhost
+                logger.debug(f"Auto-set LHOST to {config.defaults.lhost}")
+            if "LPORT" not in options:
+                options["LPORT"] = config.defaults.lport
+                logger.debug(f"Auto-set LPORT to {config.defaults.lport}")
 
         # Apply provided options
         for key, value in options.items():
@@ -210,11 +241,69 @@ class Contract:
         self.weapon.options[key] = value
         return self
 
+    def use_creds(self, cred: Dict[str, Any]) -> "Contract":
+        """Auto-fill weapon options from a stored credential.
+
+        Uses CRED_OPTION_MAP to determine which weapon options
+        correspond to username, password, and domain based on
+        the weapon's service type.
+
+        Args:
+            cred: Credential dictionary with keys like 'user', 'pass', 'realm'
+                  (typically from hideout.intel.creds())
+
+        Returns:
+            self for method chaining
+
+        Example:
+            >>> # Get credentials from Intel layer
+            >>> ssh_creds = hideout.intel.creds(service="ssh")
+            >>> if ssh_creds:
+            ...     contract.use_creds(ssh_creds[0])
+            ...     kill = contract.execute()
+
+            >>> # Or from a custom source
+            >>> contract.use_creds({
+            ...     "user": "admin",
+            ...     "pass": "password123",
+            ...     "realm": "DOMAIN"
+            ... })
+        """
+        # Determine service type from weapon
+        service = self.weapon.service or "default"
+        service_key = service.lower()
+
+        # Get option mapping for this service
+        mapping = CRED_OPTION_MAP.get(service_key, CRED_OPTION_MAP["default"])
+        user_opt, pass_opt, domain_opt = mapping
+
+        options_to_set: Dict[str, Any] = {}
+
+        # Map credential fields to weapon options
+        user = cred.get("user") or cred.get("username")
+        if user and user_opt:
+            options_to_set[user_opt] = user
+
+        password = cred.get("pass") or cred.get("password")
+        if password and pass_opt:
+            options_to_set[pass_opt] = password
+
+        domain = cred.get("realm") or cred.get("domain")
+        if domain and domain_opt:
+            options_to_set[domain_opt] = domain
+
+        # Apply the options
+        if options_to_set:
+            logger.info(f"Auto-filling credentials for {service}: {list(options_to_set.keys())}")
+            self.configure(**options_to_set)
+
+        return self
+
     # =========================================================================
     # Pre-Execution
     # =========================================================================
 
-    def profile(self, timeout: float = 5.0) -> bool:
+    def profile(self, timeout: float | None = None) -> bool:
         """Profile the target to check if vulnerable.
 
         Performs pre-execution checks:
@@ -224,7 +313,7 @@ class Contract:
         4. Run MSF check() if weapon supports it
 
         Args:
-            timeout: Socket connection timeout in seconds
+            timeout: Socket connection timeout in seconds. Uses config default if None.
 
         Returns:
             True if target appears vulnerable, False otherwise
@@ -234,6 +323,8 @@ class Contract:
             ...     print(f"Target vulnerable! Open ports: {contract.target.ports}")
             ...     kill = contract.execute()
         """
+        if timeout is None:
+            timeout = get_config().defaults.profile_timeout
         logger.info(f"Profiling target {self.target.host} for {self.weapon.name}")
         self._profiled = True
 
@@ -365,14 +456,14 @@ class Contract:
     # Execution
     # =========================================================================
 
-    def execute(self, timeout: int = 60) -> Optional[Kill]:
+    def execute(self, timeout: int | None = None) -> Optional[Kill]:
         """Execute the hit.
 
         Runs the exploit with the loaded bullet and waits for
         a session to be established.
 
         Args:
-            timeout: Seconds to wait for session
+            timeout: Seconds to wait for session. Uses config default if None.
 
         Returns:
             Kill on success, None on failure
@@ -383,6 +474,8 @@ class Contract:
             ...     print(f"Target eliminated: {kill}")
             ...     print(kill.interrogate("whoami"))
         """
+        if timeout is None:
+            timeout = get_config().defaults.timeout
         logger.info(
             f"Executing contract: {self.weapon.name} -> {self.target.host} with {self.bullet.name}"
         )
@@ -421,11 +514,11 @@ class Contract:
         return None
 
     # Themed aliases
-    def assassinate(self, timeout: int = 60) -> Optional[Kill]:
+    def assassinate(self, timeout: int | None = None) -> Optional[Kill]:
         """Alias for execute() - eliminate the target."""
         return self.execute(timeout)
 
-    def hit(self, timeout: int = 60) -> Optional[Kill]:
+    def hit(self, timeout: int | None = None) -> Optional[Kill]:
         """Alias for execute() - perform the hit."""
         return self.execute(timeout)
 
@@ -473,8 +566,8 @@ class Contract:
             ready=self.ready,
             profiled=self._profiled,
             profile_result=self._profile_result if self._profiled else None,
-            executed=self._kill is not None,
-            kill_id=self._kill.id if self._kill else None,
+            executed=self._executed,
+            kill_id=None,  # Contract doesn't track the resulting Kill
             full=full,
         )
 
@@ -541,7 +634,7 @@ class MassContract:
         targets: List[Union[Target, str]],
         weapon: Union[Weapon, str],
         bullet: Optional[Union[Bullet, str]] = None,
-        max_parallel: int = 10,
+        max_parallel: int | None = None,
     ):
         """Initialize a mass contract.
 
@@ -549,8 +642,10 @@ class MassContract:
             targets: List of targets (Target objects or IP strings)
             weapon: Weapon to use (name or Weapon object)
             bullet: Bullet to use (auto-selected if not provided)
-            max_parallel: Maximum concurrent operations
+            max_parallel: Maximum concurrent operations. Uses config default if None.
         """
+        if max_parallel is None:
+            max_parallel = get_config().defaults.max_parallel
         logger.info(
             f"Creating mass contract for {len(targets)} targets with max_parallel={max_parallel}"
         )
@@ -660,14 +755,14 @@ class MassContract:
 
     def execute_all(
         self,
-        timeout: int = 60,
+        timeout: int | None = None,
         stop_on_success: Optional[int] = None,
         profile_first: bool = True,
     ) -> List[Kill]:
         """Execute hits on all targets in parallel.
 
         Args:
-            timeout: Seconds to wait for each session
+            timeout: Seconds to wait for each session. Uses config default if None.
             stop_on_success: Stop after N successful kills (None for all)
             profile_first: Profile targets before attempting exploit
 
@@ -680,6 +775,8 @@ class MassContract:
             >>> for kill in kills:
             ...     print(f"  {kill.host}: {kill.interrogate('id')}")
         """
+        if timeout is None:
+            timeout = get_config().defaults.timeout
         logger.info(
             f"Executing mass contract: {len(self.targets)} targets (timeout={timeout}, stop_on_success={stop_on_success})"
         )

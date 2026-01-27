@@ -9,7 +9,41 @@ import time
 
 import pytest
 
-import msf
+# Try to import msf, auto-build if not available and tools exist
+MSF_AVAILABLE = False
+msf = None  # type: ignore
+
+try:
+    import msf as _msf
+    msf = _msf
+    MSF_AVAILABLE = True
+except ImportError:
+    # msf not built - try to auto-build if tools are available
+    try:
+        from assassinate.system import is_msf_module_installed, check_build_tools, Installer, Step
+
+        if not is_msf_module_installed():
+            tools = check_build_tools()
+            if all(tools.values()):
+                # All build tools available, attempt auto-build
+                print("\n[conftest] msf module not built, attempting auto-build...")
+                installer = Installer(steps={Step.BUILD})
+                if installer.run_build():
+                    # Try import again after build
+                    import msf as _msf
+                    msf = _msf
+                    MSF_AVAILABLE = True
+                    print("[conftest] msf module built successfully!")
+                else:
+                    print("[conftest] Auto-build failed. Run: uv run maturin develop")
+            else:
+                missing = [k for k, v in tools.items() if not v]
+                print(f"\n[conftest] msf module not built. Missing tools: {', '.join(missing)}")
+                print("[conftest] Install tools or run: uv run maturin develop")
+    except ImportError as e:
+        # assassinate.system not available either
+        print(f"\n[conftest] Cannot auto-build msf: {e}")
+        print("[conftest] Run: uv run maturin develop")
 
 
 # =============================================================================
@@ -96,6 +130,9 @@ def msf_init():
     This is a session-scoped fixture that initializes the embedded Ruby VM
     and loads the Metasploit framework. It only runs once per test session.
     """
+    if not MSF_AVAILABLE:
+        pytest.skip("msf module not built. Run: uv run maturin develop")
+
     msf_root = get_msf_root()
     if not os.path.exists(msf_root):
         pytest.skip(f"MSF not found at {msf_root}. Set MSF_ROOT env var.")

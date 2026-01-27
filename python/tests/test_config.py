@@ -84,11 +84,11 @@ class TestConfigBasics:
 
 
 class TestDetection:
-    """Test auto-detection functionality."""
+    """Test auto-detection functionality from system module."""
 
     def test_detection_imports(self):
-        """Detection module can be imported."""
-        from assassinate.detection import (
+        """System module detection functions can be imported."""
+        from assassinate.system import (
             detect_msf_root,
             detect_ruby_manager,
             detect_ruby_version,
@@ -100,14 +100,14 @@ class TestDetection:
 
     def test_detect_ruby_manager(self):
         """Ruby manager detection returns valid value."""
-        from assassinate.detection import detect_ruby_manager
+        from assassinate.system import detect_ruby_manager
 
         manager = detect_ruby_manager()
         assert manager in ("rvm", "rbenv", "system")
 
     def test_ruby_version_from_file(self):
         """Ruby version is read from .ruby-version file."""
-        from assassinate.detection import detect_ruby_version
+        from assassinate.system import detect_ruby_version
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ruby_version_file = Path(tmpdir) / ".ruby-version"
@@ -118,7 +118,7 @@ class TestDetection:
 
     def test_ruby_version_strips_prefix(self):
         """Ruby version strips 'ruby-' prefix if present."""
-        from assassinate.detection import detect_ruby_version
+        from assassinate.system import detect_ruby_version
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ruby_version_file = Path(tmpdir) / ".ruby-version"
@@ -177,3 +177,87 @@ class TestConfigExport:
 
             assert "/test/msf" in yaml_str
             assert "DEBUG" in yaml_str
+
+    def test_to_yaml_includes_new_defaults(self):
+        """YAML export includes new default fields when non-default."""
+        from assassinate.config import AssassinateSettings, reset_config
+
+        reset_config()
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "ASAS_DEFAULTS__MAX_PARALLEL": "20",
+                "ASAS_DEFAULTS__PROFILE_TIMEOUT": "10.0",
+                "ASAS_DEFAULTS__TIMEOUT": "120",
+            },
+            clear=False,
+        ):
+            settings = AssassinateSettings()
+            yaml_str = settings.to_yaml()
+
+            assert "max_parallel: 20" in yaml_str
+            assert "profile_timeout: 10.0" in yaml_str
+            assert "timeout: 120" in yaml_str
+
+
+class TestConfigIntegration:
+    """Test that config values are actually used by modules."""
+
+    def test_config_has_max_parallel(self):
+        """Config has max_parallel field with correct default."""
+        from assassinate.config import AssassinateSettings, reset_config
+
+        reset_config()
+
+        settings = AssassinateSettings()
+        assert settings.defaults.max_parallel == 10
+
+    def test_config_has_profile_timeout(self):
+        """Config has profile_timeout field with correct default."""
+        from assassinate.config import AssassinateSettings, reset_config
+
+        reset_config()
+
+        settings = AssassinateSettings()
+        assert settings.defaults.profile_timeout == 5.0
+
+    def test_env_var_overrides_max_parallel(self):
+        """Environment variable overrides max_parallel default."""
+        from assassinate.config import AssassinateSettings, reset_config
+
+        reset_config()
+
+        with mock.patch.dict(
+            os.environ,
+            {"ASAS_DEFAULTS__MAX_PARALLEL": "20"},
+            clear=False,
+        ):
+            settings = AssassinateSettings()
+            assert settings.defaults.max_parallel == 20
+
+    def test_env_var_overrides_profile_timeout(self):
+        """Environment variable overrides profile_timeout default."""
+        from assassinate.config import AssassinateSettings, reset_config
+
+        reset_config()
+
+        with mock.patch.dict(
+            os.environ,
+            {"ASAS_DEFAULTS__PROFILE_TIMEOUT": "10.5"},
+            clear=False,
+        ):
+            settings = AssassinateSettings()
+            assert settings.defaults.profile_timeout == 10.5
+
+    def test_get_config_returns_new_defaults(self):
+        """get_config() returns settings with new default fields."""
+        from assassinate.config import get_config, reset_config
+
+        reset_config()
+
+        config = get_config()
+        assert hasattr(config.defaults, "max_parallel")
+        assert hasattr(config.defaults, "profile_timeout")
+        assert config.defaults.max_parallel == 10
+        assert config.defaults.profile_timeout == 5.0

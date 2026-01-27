@@ -1,7 +1,7 @@
 """Pythonic wrapper for PySession with property-based access."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from assassinate.console import print_session
 
@@ -30,69 +30,83 @@ class Session:
         session.kill()
     """
 
+    # Properties that never change after session creation
+    _IMMUTABLE_PROPS = frozenset({
+        'sid', 'session_type', 'via_exploit', 'via_payload', 'desc', 'info'
+    })
+
     def __init__(self, rust_session):
         """Initialize wrapper around a PySession from Rust."""
         self._rust = rust_session
+        # Cache for immutable session metadata - avoids repeated FFI calls
+        self._cache: Dict[str, Any] = {}
         logger.debug(f"Session initialized: sid={rust_session.sid()}")
+
+    def _get_cached(self, key: str, getter: Callable[[], Any]) -> Any:
+        """Get a cached value, computing it on first access."""
+        if key not in self._cache:
+            self._cache[key] = getter()
+        return self._cache[key]
 
     # =========================================================================
     # Properties (Pythonic attribute access)
+    # Immutable properties are cached to avoid repeated FFI calls.
     # =========================================================================
 
     @property
     def sid(self) -> int:
-        """Session ID."""
-        return self._rust.sid()
+        """Session ID (cached - never changes)."""
+        return self._get_cached('sid', self._rust.sid)
 
     @property
     def session_type(self) -> str:
-        """Session type (shell, meterpreter, etc.)."""
-        return self._rust.session_type()
+        """Session type (shell, meterpreter, etc.) - cached."""
+        return self._get_cached('session_type', self._rust.session_type)
 
     @property
     def info(self) -> str:
-        """Session info string."""
-        return self._rust.info()
+        """Session info string (cached)."""
+        return self._get_cached('info', self._rust.info)
 
     @property
     def alive(self) -> bool:
-        """True if session is still active."""
+        """True if session is still active (NOT cached - can change)."""
         return self._rust.alive()
 
     @property
     def desc(self) -> str:
-        """Session description."""
-        return self._rust.desc()
+        """Session description (cached)."""
+        return self._get_cached('desc', self._rust.desc)
 
     @property
     def host(self) -> str:
-        """Target host IP address."""
-        return self._rust.session_host()
+        """Target host IP address (cached)."""
+        return self._get_cached('host', self._rust.session_host)
 
     @property
     def port(self) -> int:
-        """Target port."""
-        return self._rust.session_port()
+        """Target port (cached)."""
+        return self._get_cached('port', self._rust.session_port)
 
     @property
     def tunnel_peer(self) -> str:
-        """Tunnel peer address."""
+        """Tunnel peer address (NOT cached - can change with transport)."""
         return self._rust.tunnel_peer()
 
     @property
     def target_host(self) -> str:
-        """Target host."""
-        return self._rust.target_host()
+        """Target host (cached)."""
+        return self._get_cached('target_host', self._rust.target_host)
 
     @property
     def via_exploit(self) -> str:
-        """Exploit that created this session."""
-        return self._rust.via_exploit()
+        """Exploit that created this session (cached)."""
+        return self._get_cached('via_exploit', self._rust.via_exploit)
 
     @property
     def via_payload(self) -> str:
-        """Payload used for this session."""
-        return self._rust.via_payload()
+        """Payload used for this session (cached)."""
+        return self._get_cached('via_payload', self._rust.via_payload)
 
     # =========================================================================
     # Shell Methods

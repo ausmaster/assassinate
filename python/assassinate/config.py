@@ -13,6 +13,8 @@ Environment Variables (automatically bound by Pydantic):
     ASAS_DEFAULTS__LHOST: Default LHOST for reverse payloads
     ASAS_DEFAULTS__LPORT: Default LPORT (default: 4444)
     ASAS_DEFAULTS__TIMEOUT: Default timeout in seconds (default: 60)
+    ASAS_DEFAULTS__MAX_PARALLEL: Max concurrent operations (default: 10)
+    ASAS_DEFAULTS__PROFILE_TIMEOUT: Profile socket timeout in seconds (default: 5.0)
 
 Config File Locations (lower priority than env vars):
     - User: ~/.config/assassinate/config.yaml
@@ -120,6 +122,8 @@ class DefaultsConfig(BaseModel):
     timeout: int = Field(default=60, ge=1)
     lhost: str | None = Field(default=None)
     lport: int = Field(default=4444, ge=1, le=65535)
+    max_parallel: int = Field(default=10, ge=1, le=100)
+    profile_timeout: float = Field(default=5.0, gt=0)
 
 
 # =============================================================================
@@ -164,7 +168,7 @@ class AssassinateSettings(BaseSettings):
 
         # Auto-detect MSF root if not configured
         if settings.metasploit.root is None:
-            from assassinate.detection import detect_msf_root
+            from assassinate.system import detect_msf_root
 
             detected = detect_msf_root()
             if detected:
@@ -173,14 +177,14 @@ class AssassinateSettings(BaseSettings):
 
         # Auto-detect Ruby manager if "auto"
         if settings.ruby.manager == "auto":
-            from assassinate.detection import detect_ruby_manager
+            from assassinate.system import detect_ruby_manager
 
             manager = detect_ruby_manager()
             object.__setattr__(settings.ruby, "manager", manager)
 
         # Auto-detect Ruby version from MSF's .ruby-version
         if settings.ruby.version is None and settings.metasploit.root:
-            from assassinate.detection import detect_ruby_version
+            from assassinate.system import detect_ruby_version
 
             version = detect_ruby_version(settings.metasploit.root)
             if version:
@@ -216,12 +220,20 @@ class AssassinateSettings(BaseSettings):
             if not self.logging.colors:
                 data["logging"]["colors"] = False
 
-        if self.defaults.lhost or self.defaults.lport != 4444:
-            data["defaults"] = {}
-            if self.defaults.lhost:
-                data["defaults"]["lhost"] = self.defaults.lhost
-            if self.defaults.lport != 4444:
-                data["defaults"]["lport"] = self.defaults.lport
+        # Check if any defaults are non-default
+        defaults_data = {}
+        if self.defaults.lhost:
+            defaults_data["lhost"] = self.defaults.lhost
+        if self.defaults.lport != 4444:
+            defaults_data["lport"] = self.defaults.lport
+        if self.defaults.timeout != 60:
+            defaults_data["timeout"] = self.defaults.timeout
+        if self.defaults.max_parallel != 10:
+            defaults_data["max_parallel"] = self.defaults.max_parallel
+        if self.defaults.profile_timeout != 5.0:
+            defaults_data["profile_timeout"] = self.defaults.profile_timeout
+        if defaults_data:
+            data["defaults"] = defaults_data
 
         return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
 

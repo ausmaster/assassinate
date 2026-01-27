@@ -545,12 +545,13 @@ def setup_from_config() -> None:
 
 
 def _auto_configure() -> None:
-    """Auto-configure logging from ASAS_LOGGING__* environment variables."""
+    """Auto-configure logging from ASAS_LOGGING__* environment variables.
+
+    Note: This is called as a fallback by setup_from_config() if config
+    module is not available. Do not call directly at module load time.
+    """
     level = os.environ.get(ENV_LOG_LEVEL)
     log_file = os.environ.get(ENV_LOG_FILE)
 
     if level or log_file:
         setup_logging(level=level, log_file=log_file)
-
-
-_auto_configure()

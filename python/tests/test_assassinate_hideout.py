@@ -11,7 +11,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-from assassinate.hideout import Hideout, KNOWN_SAFEHOUSES
+from assassinate.hideout import Hideout
+from assassinate.system import MSF_SEARCH_PATHS
 from assassinate.arsenal import Arsenal
 from assassinate.contract import Contract, MassContract
 from assassinate.weapon import Weapon
@@ -403,10 +404,10 @@ class TestHideoutEnvironment:
         if msf_root:
             assert str(hideout.safehouse) == os.path.expanduser(msf_root)
 
-    def test_known_safehouses_list(self):
-        """KNOWN_SAFEHOUSES contains expected paths."""
-        assert len(KNOWN_SAFEHOUSES) > 0
-        assert all(isinstance(p, Path) for p in KNOWN_SAFEHOUSES)
+    def test_msf_search_paths_list(self):
+        """MSF_SEARCH_PATHS contains expected paths."""
+        assert len(MSF_SEARCH_PATHS) > 0
+        assert all(isinstance(p, Path) for p in MSF_SEARCH_PATHS)
 
 
 # =============================================================================

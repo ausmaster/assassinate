@@ -6,6 +6,8 @@
 //!   (auxiliary, encoder, evasion, exploit, nop, payload, post)
 //! - Module-level functions for framework operations
 
+use std::collections::HashSet;
+
 use pyo3::create_exception;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -385,7 +387,8 @@ impl MsfModule {
         } else {
             // Wait for session
             let session_manager = framework.sessions()?;
-            let sessions_before = session_manager.list()?;
+            // Use HashSet for O(1) lookups instead of Vec's O(n) contains()
+            let sessions_before: HashSet<i64> = session_manager.list()?.into_iter().collect();
 
             let mut options = Options::new();
             options.insert("Quiet".into(), RubyVal::Bool(false));
@@ -406,9 +409,10 @@ impl MsfModule {
             crate::gvl::poll_releasing_gvl(
                 || {
                     if let Ok(sessions_now) = session_manager.list() {
-                        for sid in &sessions_now {
-                            if !sessions_before.contains(sid) {
-                                if let Ok(Some(s)) = session_manager.get(*sid) {
+                        for sid in sessions_now {
+                            // HashSet.contains() is O(1) vs Vec's O(n)
+                            if !sessions_before.contains(&sid) {
+                                if let Ok(Some(s)) = session_manager.get(sid) {
                                     found_session = Some(PySession { session: s });
                                     return true;
                                 }

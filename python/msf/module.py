@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, List, Mapping, Optional, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union, TYPE_CHECKING
 
 from .options import ModuleOptions
 from assassinate.console import print_module
@@ -63,6 +63,12 @@ class BaseModule:
     which returns the appropriate subclass.
     """
 
+    # Class-level set of immutable metadata properties (for documentation)
+    _IMMUTABLE_METADATA = frozenset({
+        'fullname', 'description', 'author', 'references', 'platform',
+        'arch', 'rank', 'license', 'disclosure_date', 'privileged'
+    })
+
     def __init__(self, rust_module):
         """Initialize with the Rust Module wrapper.
 
@@ -71,16 +77,30 @@ class BaseModule:
         """
         self._rust = rust_module
         self._options: Optional[ModuleOptions] = None
+        # Cache for immutable metadata - avoids repeated FFI calls
+        self._metadata_cache: Dict[str, Any] = {}
         logger.debug(f"BaseModule initialized: {rust_module.fullname()}")
+
+    def _get_cached(self, key: str, getter: Callable[[], Any]) -> Any:
+        """Get a cached value, computing it on first access.
+
+        Args:
+            key: Cache key name
+            getter: Callable to compute the value if not cached
+
+        Returns:
+            Cached or freshly computed value
+        """
+        if key not in self._metadata_cache:
+            self._metadata_cache[key] = getter()
+        return self._metadata_cache[key]
 
     # === Module Type ===
 
     @property
     def module_type(self) -> str:
         """Module type (auxiliary, encoder, evasion, exploit, nop, payload, post)."""
-        result = self._rust.module_type()
-        logger.debug(f"module_type() -> {result}")
-        return result
+        return self._get_cached('module_type', self._rust.module_type)
 
     # === Options (attribute-style access) ===
 
@@ -93,72 +113,68 @@ class BaseModule:
             module.options.RPORT = 445
         """
         if self._options is None:
-            logger.debug(f"Creating ModuleOptions for {self.fullname}")
             self._options = ModuleOptions(self._rust)
         return self._options
 
-    # === Metadata Properties ===
+    # === Metadata Properties (cached - these never change after module creation) ===
 
     @property
     def fullname(self) -> str:
         """Full module path (e.g., 'exploit/linux/samba/is_known_pipename')."""
-        return self._rust.fullname()
+        return self._get_cached('fullname', self._rust.fullname)
 
     @property
     def description(self) -> str:
         """Module description text."""
-        return self._rust.description()
+        return self._get_cached('description', self._rust.description)
 
     @property
     def author(self) -> List[str]:
         """List of module authors."""
-        return self._rust.author()
+        return self._get_cached('author', self._rust.author)
 
     @property
     def references(self) -> List[str]:
         """Security references (CVEs, URLs, etc.)."""
-        return self._rust.references()
+        return self._get_cached('references', self._rust.references)
 
     @property
     def platform(self) -> List[str]:
         """Target platforms (e.g., ['linux', 'unix'])."""
-        return self._rust.platform()
+        return self._get_cached('platform', self._rust.platform)
 
     @property
     def arch(self) -> List[str]:
         """Target architectures (e.g., ['x86', 'x64'])."""
-        return self._rust.arch()
+        return self._get_cached('arch', self._rust.arch)
 
     @property
     def rank(self) -> str:
         """Module reliability rank (excellent, great, good, normal, average, low, manual)."""
-        return self._rust.rank()
+        return self._get_cached('rank', self._rust.rank)
 
     @property
     def license(self) -> str:
         """Module license."""
-        return self._rust.license()
+        return self._get_cached('license', self._rust.license)
 
     @property
     def disclosure_date(self) -> Optional[str]:
         """Vulnerability disclosure date."""
-        return self._rust.disclosure_date()
+        return self._get_cached('disclosure_date', self._rust.disclosure_date)
 
     @property
     def privileged(self) -> bool:
         """Whether module requires privileged access."""
-        return self._rust.privileged()
+        return self._get_cached('privileged', self._rust.privileged)
 
     # === Validation ===
 
     def validate(self) -> bool:
         """Validate all options are correctly configured."""
-        logger.debug(f"validate() called for {self.fullname}")
         try:
             result = self._rust.validate()
-            if result:
-                logger.debug(f"Module {self.fullname} validation passed")
-            else:
+            if not result:
                 logger.warning(f"Module {self.fullname} validation failed")
             return result
         except Exception as e:
@@ -169,7 +185,6 @@ class BaseModule:
 
     def set_option(self, key: str, value: Any) -> None:
         """Set option value (prefer module.options.KEY = value)."""
-        logger.debug(f"set_option({key}, {value}) on {self.fullname}")
         self._rust._set_option(key, str(value))
 
     def _get_all_options(self) -> dict:
@@ -181,9 +196,8 @@ class BaseModule:
                 val = self._rust._get_option(key)
                 if val is not None and val != "":
                     opts[key] = val
-            logger.debug(f"_get_all_options() -> {len(opts)} options")
-        except Exception as e:
-            logger.debug(f"_get_all_options() error (ignored): {e}")
+        except Exception:
+            pass  # Silently ignore errors getting options
         return opts
 
     def __repr__(self) -> str:
@@ -396,6 +410,42 @@ class ExploitModule(BaseModule):
             print(session.run_cmd("whoami"))
     """
 
+    def _extract_payload(
+        self,
+        payload: PayloadSpec,
+        payload_options: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        """Extract payload name and apply options to module datastore.
+
+        Handles both string payload names and PayloadModule objects.
+        Sets options on the exploit's datastore for use during execution.
+
+        Args:
+            payload: Payload name string or configured PayloadModule
+            payload_options: Optional dict of options (ignored if payload is PayloadModule)
+
+        Returns:
+            Normalized payload name (without "payload/" prefix)
+        """
+        if isinstance(payload, str):
+            payload_name = payload
+            # Apply payload_options if provided
+            if payload_options:
+                for key, value in payload_options.items():
+                    self._rust._set_option(key, str(value))
+        else:
+            # PayloadModule - extract fullname and configured options
+            payload_name = payload.fullname
+            # MSF expects payload name without "payload/" prefix
+            if payload_name.startswith("payload/"):
+                payload_name = payload_name[8:]
+            # Copy all configured options from payload to exploit's datastore
+            payload_opts = payload._get_all_options()
+            for key, value in payload_opts.items():
+                self._rust._set_option(key, str(value))
+
+        return payload_name
+
     @property
     def targets(self) -> List[str]:
         """Available exploit targets."""
@@ -471,27 +521,8 @@ class ExploitModule(BaseModule):
         """
         from .session import Session
 
-        # Extract payload name and options
-        if isinstance(payload, str):
-            payload_name = payload
-            logger.debug(f"Payload specified as string: {payload_name}")
-            # Apply payload_options if provided
-            if payload_options:
-                logger.debug(f"Applying payload_options: {payload_options}")
-                for key, value in payload_options.items():
-                    self._rust._set_option(key, str(value))
-        else:
-            # PayloadModule - extract fullname and configured options
-            payload_name = payload.fullname
-            logger.debug(f"Payload specified as PayloadModule: {payload_name}")
-            # MSF expects payload name without "payload/" prefix
-            if payload_name.startswith("payload/"):
-                payload_name = payload_name[8:]
-            # Copy all configured options from payload to exploit's datastore
-            payload_opts = payload._get_all_options()
-            logger.debug(f"Copying {len(payload_opts)} options from PayloadModule")
-            for key, value in payload_opts.items():
-                self._rust._set_option(key, str(value))
+        # Extract payload name and apply options
+        payload_name = self._extract_payload(payload, payload_options)
 
         logger.info(
             f"Executing exploit {self.fullname} with payload {payload_name} (job={job}, timeout={timeout}s)"
@@ -567,27 +598,8 @@ class ExploitModule(BaseModule):
                     tasks.append(module.exploit_async("cmd/unix/interact"))
                 return await asyncio.gather(*tasks)
         """
-        logger.debug(
-            f"exploit_async() called: payload={payload}, timeout={timeout}, job={job}"
-        )
-
-        # Extract payload name and apply options
-        if isinstance(payload, str):
-            payload_name = payload
-            if payload_options:
-                logger.debug(f"Applying payload_options: {payload_options}")
-                for key, value in payload_options.items():
-                    self._rust._set_option(key, str(value))
-        else:
-            payload_name = payload.fullname
-            logger.debug(f"Payload from PayloadModule: {payload_name}")
-            # MSF expects payload name without "payload/" prefix
-            if payload_name.startswith("payload/"):
-                payload_name = payload_name[8:]
-            payload_opts = payload._get_all_options()
-            logger.debug(f"Copying {len(payload_opts)} options from PayloadModule")
-            for key, value in payload_opts.items():
-                self._rust._set_option(key, str(value))
+        # Extract payload name and apply options (uses shared helper)
+        payload_name = self._extract_payload(payload, payload_options)
 
         if job:
             # Just register the job and return

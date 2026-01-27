@@ -3,9 +3,14 @@
 
 Demonstrates three exploitation approaches with increasing control.
 
-Usage:
-    export MSF_ROOT=~/Projects/metasploit-framework
+Configuration:
+    # Option 1: Environment variable
+    export ASAS_METASPLOIT__ROOT=~/Projects/metasploit-framework
 
+    # Option 2: Config file (~/.config/assassinate/config.yaml)
+    # Option 3: Auto-detection (checks common paths)
+
+Usage:
     # Run all methods (default)
     python sambacry_assassinate.py 172.19.0.3
 

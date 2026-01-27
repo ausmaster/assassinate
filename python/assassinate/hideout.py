@@ -38,14 +38,28 @@ from pathlib import Path
 from subprocess import DEVNULL, CalledProcessError, TimeoutExpired, run
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Union
 
-import msf
 from assassinate.log_config import get_logger
+
+import msf
+
+
+def _require_msf():
+    """Ensure msf Rust module is available, raising helpful error if not."""
+    if not msf._RUST_AVAILABLE:
+        raise ImportError(
+            "The msf Rust module is not built. Run one of:\n"
+            "  uv run maturin develop\n"
+            "  uv run assassinate build"
+        )
+
 
 if TYPE_CHECKING:
     from types import TracebackType
     from assassinate.arsenal import Arsenal
+    from assassinate.chain import AttackChain
     from assassinate.config import AssassinateSettings
     from assassinate.contract import Contract, MassContract
+    from assassinate.intel import Intel
     from assassinate.kill import Kill
     from assassinate.target import Target
     from assassinate.weapon import Bullet, Weapon
@@ -94,6 +108,7 @@ class Hideout:
         "_arsenal",
         "_kills",
         "_config",
+        "_intel",
     )
 
     def __init__(
@@ -111,12 +126,15 @@ class Hideout:
         Raises:
             RuntimeError: If environment not ready or initialization fails
             EnvironmentError: If MSF installation cannot be found
+            ImportError: If msf Rust module is not built
         """
+        _require_msf()
         logger.debug("Establishing hideout...")
         self._initialized = False
         self.version: str | None = None
         self._arsenal: Optional["Arsenal"] = None
         self._kills: Dict[int, "Kill"] = {}
+        self._intel: Optional["Intel"] = None
 
         # Load configuration
         from assassinate.config import get_config
@@ -204,6 +222,57 @@ class Hideout:
         return self._arsenal
 
     # =========================================================================
+    # Intelligence Layer
+    # =========================================================================
+
+    @property
+    def intel(self) -> "Intel":
+        """Access the intelligence layer for hosts, services, and credentials.
+
+        Provides a clean API over the MSF database for tracking discovered
+        hosts, services, vulnerabilities, and harvested credentials.
+
+        Returns:
+            Intel instance for database operations
+
+        Note:
+            Database operations require MSF database to be connected.
+            Check `intel.is_active` before using database-dependent methods.
+
+        Example:
+            >>> if hideout.intel.is_active:
+            ...     hosts = hideout.intel.hosts()
+            ...     creds = hideout.intel.creds(service="ssh")
+            ...     for cred in creds:
+            ...         print(f"{cred['user']}@{cred['host']}")
+        """
+        if self._intel is None:
+            from assassinate.intel import Intel
+            self._intel = Intel()
+        return self._intel
+
+    def chain(self) -> "AttackChain":
+        """Create a multi-stage attack chain.
+
+        Attack chains allow declarative definition of multi-hop attack paths
+        with automatic pivoting through compromised hosts.
+
+        Returns:
+            AttackChain instance for building attack paths
+
+        Example:
+            >>> chain = hideout.chain()
+            >>> chain.add("192.168.1.100", samba_weapon, name="dmz")
+            >>> chain.add("10.0.0.50", postgres_weapon, via="dmz", name="db")
+            >>>
+            >>> results = chain.execute()
+            >>> for name, kill in results.items():
+            ...     print(f"{name}: {kill.interrogate('whoami')}")
+        """
+        from assassinate.chain import AttackChain
+        return AttackChain(self)
+
+    # =========================================================================
     # Contract Creation
     # =========================================================================
 
@@ -240,7 +309,7 @@ class Hideout:
         targets: List[Union["Target", str]],
         weapon: Union["Weapon", str],
         bullet: Optional[Union["Bullet", str]] = None,
-        max_parallel: int = 10,
+        max_parallel: int | None = None,
     ) -> "MassContract":
         """Create a mass contract for parallel attacks.
 
@@ -248,7 +317,7 @@ class Hideout:
             targets: List of targets (Target objects or IP strings)
             weapon: Weapon to use for all targets
             bullet: Bullet to use (auto-selected if not provided)
-            max_parallel: Maximum concurrent operations
+            max_parallel: Maximum concurrent operations. Uses config default if None.
 
         Returns:
             MassContract ready for configuration and mass execution
@@ -259,6 +328,8 @@ class Hideout:
             >>> mass.configure(SMB_SHARE_NAME="myshare")
             >>> kills = mass.massacre()
         """
+        if max_parallel is None:
+            max_parallel = self._config.defaults.max_parallel
         from assassinate.contract import MassContract
         return MassContract(targets, weapon, bullet, max_parallel)
 
@@ -271,7 +342,7 @@ class Hideout:
         target: Union["Target", str],
         weapon: Union["Weapon", str],
         bullet: Optional[Union["Bullet", str]] = None,
-        timeout: int = 60,
+        timeout: int | None = None,
         options: Optional[Mapping[str, Any]] = None,
     ) -> Optional["Kill"]:
         """One-liner: configure and execute immediately.
@@ -283,7 +354,7 @@ class Hideout:
             target: Target object or IP string
             weapon: Weapon object or module name
             bullet: Bullet (auto-selected if not provided)
-            timeout: Seconds to wait for session
+            timeout: Seconds to wait for session. Uses config default if None.
             options: Weapon configuration options (e.g., {"RHOSTS": "...", "SMBUser": "..."})
 
         Returns:
@@ -298,6 +369,8 @@ class Hideout:
             >>> if kill:
             ...     print(kill.interrogate("id"))
         """
+        if timeout is None:
+            timeout = self._config.defaults.timeout
         contract = self.contract(target, weapon, bullet)
         if options:
             contract.configure(**options)

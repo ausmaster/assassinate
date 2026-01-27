@@ -46,8 +46,10 @@ class ModuleOptions:
             logger.debug(f"Set option {name} = {value}")
             module = object.__getattribute__(self, '_module')
             module._set_option(name, str(value))
-            # Invalidate schema cache since we modified options
-            object.__setattr__(self, '_schema', None)
+            # NOTE: We do NOT invalidate schema cache here because setting
+            # option VALUES doesn't change the schema (option definitions).
+            # The schema contains metadata like type, default, description
+            # which are immutable after module creation.
 
     def __getitem__(self, name: str) -> Optional[str]:
         """Dict-style access: options["RHOSTS"]."""
