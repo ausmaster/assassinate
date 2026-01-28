@@ -9,16 +9,31 @@ import time
 
 import pytest
 
-# Try to import msf, auto-build if not available and tools exist
-MSF_AVAILABLE = False
-msf = None  # type: ignore
+# Auto-configure Ruby environment for tests
+# This allows running pytest without manual env var setup
+try:
+    from assassinate.system import get_full_ruby_env, detect_msf_root
+
+    # Get Ruby env vars and set them if not already set
+    msf_root = os.environ.get("MSF_ROOT") or detect_msf_root()
+    if msf_root:
+        ruby_env = get_full_ruby_env(msf_root=msf_root)
+        for key, value in ruby_env.items():
+            if key not in os.environ:
+                os.environ[key] = value
+except ImportError:
+    pass  # assassinate not available yet
+
+# Try to import assassinate, auto-build if not available and tools exist
+ASSASSINATE_AVAILABLE = False
+assassinate = None  # type: ignore
 
 try:
-    import msf as _msf
-    msf = _msf
-    MSF_AVAILABLE = True
+    import assassinate as _assassinate
+    assassinate = _assassinate
+    ASSASSINATE_AVAILABLE = True
 except ImportError:
-    # msf not built - try to auto-build if tools are available
+    # assassinate not built - try to auto-build if tools are available
     try:
         from assassinate.system import is_msf_module_installed, check_build_tools, Installer, Step
 
@@ -26,23 +41,23 @@ except ImportError:
             tools = check_build_tools()
             if all(tools.values()):
                 # All build tools available, attempt auto-build
-                print("\n[conftest] msf module not built, attempting auto-build...")
+                print("\n[conftest] assassinate module not built, attempting auto-build...")
                 installer = Installer(steps={Step.BUILD})
                 if installer.run_build():
                     # Try import again after build
-                    import msf as _msf
-                    msf = _msf
-                    MSF_AVAILABLE = True
-                    print("[conftest] msf module built successfully!")
+                    import assassinate as _assassinate
+                    assassinate = _assassinate
+                    ASSASSINATE_AVAILABLE = True
+                    print("[conftest] assassinate module built successfully!")
                 else:
                     print("[conftest] Auto-build failed. Run: uv run maturin develop")
             else:
                 missing = [k for k, v in tools.items() if not v]
-                print(f"\n[conftest] msf module not built. Missing tools: {', '.join(missing)}")
+                print(f"\n[conftest] assassinate module not built. Missing tools: {', '.join(missing)}")
                 print("[conftest] Install tools or run: uv run maturin develop")
     except ImportError as e:
         # assassinate.system not available either
-        print(f"\n[conftest] Cannot auto-build msf: {e}")
+        print(f"\n[conftest] Cannot auto-build assassinate: {e}")
         print("[conftest] Run: uv run maturin develop")
 
 
@@ -130,15 +145,15 @@ def msf_init():
     This is a session-scoped fixture that initializes the embedded Ruby VM
     and loads the Metasploit framework. It only runs once per test session.
     """
-    if not MSF_AVAILABLE:
-        pytest.skip("msf module not built. Run: uv run maturin develop")
+    if not ASSASSINATE_AVAILABLE:
+        pytest.skip("assassinate module not built. Run: uv run maturin develop")
 
     msf_root = get_msf_root()
     if not os.path.exists(msf_root):
         pytest.skip(f"MSF not found at {msf_root}. Set MSF_ROOT env var.")
 
-    if not msf.is_initialized():
-        msf.init_msf(msf_root)
+    if not assassinate.is_initialized():
+        assassinate.init_msf(msf_root)
 
     yield
 
@@ -148,28 +163,28 @@ def msf_init():
 @pytest.fixture
 def exploit_module(msf_init):
     """Create a test exploit module (SambaCry)."""
-    module = msf.create_module("exploit/linux/samba/is_known_pipename")
+    module = assassinate.create_module("exploit/linux/samba/is_known_pipename")
     yield module
 
 
 @pytest.fixture
 def auxiliary_module(msf_init):
     """Create a test auxiliary module (SMB version scanner)."""
-    module = msf.create_module("auxiliary/scanner/smb/smb_version")
+    module = assassinate.create_module("auxiliary/scanner/smb/smb_version")
     yield module
 
 
 @pytest.fixture
 def post_module(msf_init):
     """Create a test post module."""
-    module = msf.create_module("post/multi/gather/env")
+    module = assassinate.create_module("post/multi/gather/env")
     yield module
 
 
 @pytest.fixture
 def payload_module(msf_init):
     """Create a test payload module."""
-    module = msf.create_module("payload/cmd/unix/reverse_bash")
+    module = assassinate.create_module("payload/cmd/unix/reverse_bash")
     yield module
 
 
@@ -213,7 +228,7 @@ def shell_session(msf_init, integration_env):
     print(f"\n[*] Exploiting SambaCry on {target_host}")
 
     # Create and configure exploit
-    exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+    exploit = assassinate.create_module("exploit/linux/samba/is_known_pipename")
     exploit.options.RHOSTS = target_host
     exploit.options.SMB_SHARE_NAME = "myshare"
 
@@ -243,7 +258,7 @@ def configured_exploit(msf_init, integration_env):
     """
     target_host = integration_env["target_host"]
 
-    exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+    exploit = assassinate.create_module("exploit/linux/samba/is_known_pipename")
     exploit.options.RHOSTS = target_host
     exploit.options.SMB_SHARE_NAME = "myshare"
 

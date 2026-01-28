@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, Iterator, Optional
 
 # Get logger for this module
-logger = logging.getLogger("msf.options")
+logger = logging.getLogger("assassinate.options")
 
 
 class ModuleOptions:

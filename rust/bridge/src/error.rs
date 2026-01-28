@@ -29,6 +29,9 @@ pub enum AssassinateError {
     #[error("Session not found: {0}")]
     SessionNotFound(i64),
 
+    #[error("Job error: {0}")]
+    JobError(String),
+
     #[error("DataStore error: {0}")]
     DataStoreError(String),
 

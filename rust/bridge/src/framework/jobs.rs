@@ -48,6 +48,13 @@ impl JobManager {
     /// Kill a job by ID
     pub fn kill(&self, job_id: &str) -> Result<bool> {
         info!(target: "msf::jobs", "Killing job: {}", job_id);
+
+        // First check if job exists - MSF's stop_job silently succeeds for non-existent jobs
+        if self.get(job_id)?.is_none() {
+            debug!(target: "msf::jobs", "Job {} does not exist, nothing to kill", job_id);
+            return Ok(false);
+        }
+
         let ruby = crate::ruby_bridge::get_ruby()?;
         let id_val = ruby.str_new(job_id).as_value();
 
@@ -62,6 +69,108 @@ impl JobManager {
                 Ok(false)
             }
         }
+    }
+
+    /// Wait for a session from an exploit job using MSF's native session_waiter_event.
+    ///
+    /// This is the CORRECT way to wait for a session from a background job.
+    /// It uses MSF's internal `payload.wait_for_session()` which blocks on the
+    /// `session_waiter_event` that is only notified AFTER bootstrap completes.
+    ///
+    /// # Arguments
+    /// * `job_id` - The exploit job ID to wait on
+    /// * `timeout_secs` - Timeout in seconds (default: 60)
+    ///
+    /// # Returns
+    /// * `Ok(Some(session_id))` - Session was created
+    /// * `Ok(None)` - Timeout waiting for session
+    /// * `Err(_)` - Job not found or other error
+    pub fn wait_for_session(&self, job_id: &str, timeout_secs: Option<u32>) -> Result<Option<i64>> {
+        let timeout = timeout_secs.unwrap_or(60);
+        info!(target: "msf::jobs", "Waiting for session from job {} (timeout: {}s)", job_id, timeout);
+
+        let ruby = crate::ruby_bridge::get_ruby()?;
+        let id_val = ruby.str_new(job_id).as_value();
+
+        // Get the job object: framework.jobs[job_id]
+        let job_val = call_method(*self.ruby_jobs, "[]", &[id_val])?;
+        if job_val.is_nil() {
+            warn!(target: "msf::jobs", "Job {} not found", job_id);
+            return Err(AssassinateError::JobError(format!(
+                "Job {} not found",
+                job_id
+            )));
+        }
+
+        // Get the job context: job.ctx which is [exploit, payload]
+        let ctx_val = call_method(job_val, "ctx", &[])?;
+        if ctx_val.is_nil() {
+            warn!(target: "msf::jobs", "Job {} has no context", job_id);
+            return Err(AssassinateError::JobError(format!(
+                "Job {} has no context",
+                job_id
+            )));
+        }
+
+        // ctx is an Array, get the payload handler (index 1)
+        let ctx_array: magnus::RArray = TryConvert::try_convert(ctx_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!(
+                "Failed to convert job context to array: {}",
+                e
+            ))
+        })?;
+
+        if ctx_array.len() < 2 {
+            warn!(target: "msf::jobs", "Job {} context has insufficient elements", job_id);
+            return Err(AssassinateError::JobError(format!(
+                "Job {} context has insufficient elements (expected [exploit, payload])",
+                job_id
+            )));
+        }
+
+        // Get the payload handler (ctx[1])
+        let payload_val: Value = ctx_array.entry(1).map_err(|e| {
+            AssassinateError::RubyError(format!("Failed to get payload from context: {}", e))
+        })?;
+
+        debug!(target: "msf::jobs", "Got payload handler from job {}", job_id);
+
+        // Check if payload responds to wait_for_session
+        if !crate::ruby_bridge::responds_to_public(payload_val, "wait_for_session") {
+            warn!(target: "msf::jobs", "Payload for job {} does not support wait_for_session", job_id);
+            return Err(AssassinateError::JobError(format!(
+                "Payload does not support wait_for_session"
+            )));
+        }
+
+        // Call payload.wait_for_session(timeout)
+        // This blocks on session_waiter_event which is notified AFTER bootstrap completes.
+        // Ruby's Rex::Sync::Event.wait() is GVL-aware - it releases the GVL internally while waiting.
+        debug!(target: "msf::jobs", "Calling payload.wait_for_session({}) for job {}", timeout, job_id);
+        let timeout_val = ruby.integer_from_i64(timeout as i64).as_value();
+
+        let session_val = call_method(payload_val, "wait_for_session", &[timeout_val])?;
+
+        // Check if we got a session
+        if session_val.is_nil() {
+            info!(target: "msf::jobs", "Timeout waiting for session from job {}", job_id);
+            return Ok(None);
+        }
+
+        // Check if it's a session object
+        if !crate::ruby_bridge::responds_to_public(session_val, "sid") {
+            debug!(target: "msf::jobs", "wait_for_session returned non-session value for job {}", job_id);
+            return Ok(None);
+        }
+
+        // Get session ID
+        let sid_val = call_method(session_val, "sid", &[])?;
+        let session_id: i64 = TryConvert::try_convert(sid_val).map_err(|e: magnus::Error| {
+            AssassinateError::ConversionError(format!("Failed to convert session ID: {}", e))
+        })?;
+
+        info!(target: "msf::jobs", "Session {} created from job {}", session_id, job_id);
+        Ok(Some(session_id))
     }
 
     pub fn __repr__(&self) -> Result<String> {

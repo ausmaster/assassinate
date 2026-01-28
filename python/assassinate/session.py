@@ -3,10 +3,10 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from assassinate.console import print_session
+from .console import print_session
 
 # Get logger for this module
-logger = logging.getLogger("msf.session")
+logger = logging.getLogger("assassinate.session")
 
 
 class Session:
@@ -17,7 +17,7 @@ class Session:
     and methods for interacting with the compromised host.
 
     Example:
-        session = msf.get_session(1)
+        session = assassinate.get_session(1)
         print(session.host)          # "192.168.1.100"
         print(session.session_type)  # "shell"
         print(session.alive)         # True

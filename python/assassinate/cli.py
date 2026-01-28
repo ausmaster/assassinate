@@ -6,7 +6,6 @@ Usage:
     assassinate config [--save]    # Show/save configuration
     assassinate build [--force]    # Build Rust module
     assassinate install [--force]  # Install dependencies via Ansible
-    assassinate demo               # Run the demo workflow
 """
 
 from __future__ import annotations
@@ -31,8 +30,8 @@ from assassinate.system import (
 
 def get_module_version() -> str | None:
     try:
-        import msf
-        return msf.framework_version()
+        from . import framework_version
+        return framework_version()
     except Exception:
         return None
 
@@ -318,22 +317,6 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 # =============================================================================
-# Demo Command
-# =============================================================================
-
-
-def cmd_demo(args: argparse.Namespace) -> int:
-    """Run the demo workflow."""
-    if not is_msf_module_installed():
-        console.print(f"{icon(False)} msf module not built")
-        console.print("Run [cyan]assassinate build[/cyan] first")
-        return 1
-    from assassinate.demo import main as demo_main
-    demo_main()
-    return 0
-
-
-# =============================================================================
 # Main
 # =============================================================================
 
@@ -363,13 +346,11 @@ def main() -> int:
     install_p.add_argument("--steps", type=str, help="Only run specified steps")
     install_p.add_argument("--skip-steps", type=str, help="Skip specified steps")
 
-    subparsers.add_parser("demo", help="Run the demo workflow")
-
     args = parser.parse_args()
 
     commands = {
         None: cmd_default, "status": cmd_status, "config": cmd_config,
-        "build": cmd_build, "install": cmd_install, "demo": cmd_demo,
+        "build": cmd_build, "install": cmd_install,
     }
 
     try:

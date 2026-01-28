@@ -7,7 +7,7 @@ description = "Rust FFI bridge to Metasploit Framework via Magnus (Ruby embeddin
 license = "GPL-3.0"
 
 [lib]
-name = "msf"
+name = "assassinate_rust"
 # rlib: Rust library (for use as dependency)
 # cdylib: C-compatible dynamic library (for Python extension via maturin)
 crate-type = ["rlib", "cdylib"]

@@ -25,7 +25,7 @@ use super::singleton::{is_initialized, set_framework, with_framework};
 use crate::{pyo3_wrap, pyo3_wrap_hashmap, pyo3_wrap_json, pyo3_wrap_json_vec};
 
 // Create custom exception
-create_exception!(msf, AssassinateError, PyRuntimeError);
+create_exception!(assassinate, AssassinateError, PyRuntimeError);
 
 // =============================================================================
 // PySession - Wrapper for MSF Session
@@ -845,6 +845,48 @@ fn job_kill(py: Python<'_>, job_id: PyObject) -> PyResult<bool> {
     })?)
 }
 
+/// Wait for a session from an exploit job using MSF's native event mechanism.
+///
+/// This is the CORRECT way to wait for a session from a background job.
+/// It uses MSF's internal `payload.wait_for_session()` which blocks on the
+/// `session_waiter_event`. This event is only notified AFTER bootstrap completes,
+/// guaranteeing the session is fully ready for commands.
+///
+/// Unlike polling `list_sessions()`, this approach:
+/// - Waits for the session to be FULLY initialized (bootstrap complete)
+/// - Uses MSF's native event mechanism (Rex::Sync::Event)
+/// - Releases the GVL internally, allowing Ruby threads to execute
+///
+/// # Arguments
+/// * `job_id` - The exploit job ID to wait on (string or int)
+/// * `timeout_secs` - Timeout in seconds (default: 60)
+///
+/// # Returns
+/// * Session ID if session was created
+/// * None if timeout waiting for session
+///
+/// # Raises
+/// * RuntimeError if job not found or doesn't support wait_for_session
+#[pyfunction]
+#[pyo3(signature = (job_id, timeout_secs=None))]
+fn job_wait_for_session(py: Python<'_>, job_id: PyObject, timeout_secs: Option<u32>) -> PyResult<Option<i64>> {
+    // Convert job_id to string, accepting both int and str
+    let job_id_str: String = if let Ok(s) = job_id.extract::<String>(py) {
+        s
+    } else if let Ok(i) = job_id.extract::<i64>(py) {
+        i.to_string()
+    } else {
+        return Err(PyRuntimeError::new_err(
+            "job_id must be a string or integer",
+        ));
+    };
+
+    Ok(with_framework(|framework| {
+        let jobs = framework.jobs()?;
+        jobs.wait_for_session(&job_id_str, timeout_secs)
+    })?)
+}
+
 // =============================================================================
 // Payload Generation Functions (Tier 2)
 // =============================================================================
@@ -1510,13 +1552,13 @@ fn route_get(addr: &str) -> PyResult<Option<i64>> {
 // Python Module Definition
 // =============================================================================
 
-/// msf - Python bindings for Metasploit Framework
+/// _rust - Python bindings for Metasploit Framework
 ///
 /// This module provides Python access to MSF functionality through
 /// an embedded Ruby VM. The Rust FFI layer is combined with Python
 /// wrappers for a Pythonic API.
 #[pymodule]
-pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
+pub fn _rust(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     // Initialize pyo3-log to bridge Rust log messages to Python logging
     // This MUST be called first, before any log statements
     pyo3_log::init();
@@ -1549,6 +1591,7 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
             "job_list",
             "job_info",
             "job_kill",
+            "job_wait_for_session",
             // Payload generation (Tier 2)
             "forge_payload",
             "forge_encoded",
@@ -1621,6 +1664,7 @@ pub fn msf(py: Python<'_>, module: &Bound<'_, pyo3::types::PyModule>) -> PyResul
     module.add_function(wrap_pyfunction!(job_list, module)?)?;
     module.add_function(wrap_pyfunction!(job_info, module)?)?;
     module.add_function(wrap_pyfunction!(job_kill, module)?)?;
+    module.add_function(wrap_pyfunction!(job_wait_for_session, module)?)?;
 
     // Payload generation (Tier 2)
     module.add_function(wrap_pyfunction!(forge_payload, module)?)?;

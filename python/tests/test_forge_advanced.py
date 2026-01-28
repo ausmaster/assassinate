@@ -5,15 +5,15 @@ Tests for forge_payload_with_badchars() - automatic encoder selection.
 
 import os
 import pytest
-import msf
+import assassinate
 
 
 @pytest.fixture(scope="module")
 def framework():
     """Initialize MSF framework once for the test module."""
     msf_root = os.environ.get("MSF_ROOT", os.path.expanduser("~/Projects/metasploit-framework"))
-    if not msf.is_initialized():
-        msf.init_msf(msf_root)
+    if not assassinate.is_initialized():
+        assassinate.init_msf(msf_root)
     yield
 
 
@@ -24,7 +24,7 @@ class TestForgePayloadWithBadchars:
         """forge_payload_with_badchars() avoids specified bad characters."""
         badchars = b"\x00"  # Null bytes
 
-        payload_bytes, encoder_used = msf.forge_payload_with_badchars(
+        payload_bytes, encoder_used = assassinate.forge_payload_with_badchars(
             "linux/x86/exec",
             badchars,
             iterations=1,
@@ -48,7 +48,7 @@ class TestForgePayloadWithBadchars:
         # Use badchars that are unlikely to appear in this small payload
         badchars = b"\xff\xfe\xfd"  # High bytes rarely in simple payloads
 
-        payload_bytes, encoder_used = msf.forge_payload_with_badchars(
+        payload_bytes, encoder_used = assassinate.forge_payload_with_badchars(
             "linux/x86/exec",
             badchars,
             iterations=1,
@@ -66,7 +66,7 @@ class TestForgePayloadWithBadchars:
         # Common badchars: null, newline, carriage return
         badchars = b"\x00\x0a\x0d"
 
-        payload_bytes, encoder_used = msf.forge_payload_with_badchars(
+        payload_bytes, encoder_used = assassinate.forge_payload_with_badchars(
             "linux/x86/exec",
             badchars,
             iterations=1,
@@ -84,7 +84,7 @@ class TestForgePayloadWithBadchars:
         """forge_payload_with_badchars() supports multiple encoding iterations."""
         badchars = b"\x00"
 
-        payload_bytes, encoder_used = msf.forge_payload_with_badchars(
+        payload_bytes, encoder_used = assassinate.forge_payload_with_badchars(
             "linux/x86/exec",
             badchars,
             iterations=3,  # Multiple iterations
@@ -103,7 +103,7 @@ class TestForgePayloadWithBadchars:
         """forge_payload_with_badchars() with empty badchars returns raw payload."""
         badchars = b""  # No badchars
 
-        payload_bytes, encoder_used = msf.forge_payload_with_badchars(
+        payload_bytes, encoder_used = assassinate.forge_payload_with_badchars(
             "linux/x86/exec",
             badchars,
             options={"CMD": "id"}
@@ -117,7 +117,7 @@ class TestForgePayloadWithBadchars:
         """forge_payload_with_badchars() returns (bytes, encoder_name) tuple."""
         badchars = b"\x00"
 
-        result = msf.forge_payload_with_badchars(
+        result = assassinate.forge_payload_with_badchars(
             "linux/x86/exec",
             badchars,
             options={"CMD": "id"}
@@ -136,7 +136,7 @@ class TestForgeFormatted:
 
     def test_forge_formatted_c(self, framework):
         """forge_formatted() generates C array format."""
-        result = msf.forge_formatted(
+        result = assassinate.forge_formatted(
             "linux/x86/exec",
             "c",
             var_name="shellcode",
@@ -149,7 +149,7 @@ class TestForgeFormatted:
 
     def test_forge_formatted_python(self, framework):
         """forge_formatted() generates Python format."""
-        result = msf.forge_formatted(
+        result = assassinate.forge_formatted(
             "linux/x86/exec",
             "python",
             options={"CMD": "id"}
@@ -161,7 +161,7 @@ class TestForgeFormatted:
 
     def test_forge_formatted_base64(self, framework):
         """forge_formatted() generates base64 format."""
-        result = msf.forge_formatted(
+        result = assassinate.forge_formatted(
             "linux/x86/exec",
             "base64",
             options={"CMD": "id"}
@@ -175,7 +175,7 @@ class TestForgeFormatted:
 
     def test_forge_formatted_rust(self, framework):
         """forge_formatted() generates Rust array format."""
-        result = msf.forge_formatted(
+        result = assassinate.forge_formatted(
             "linux/x86/exec",
             "rust",
             var_name="payload",
@@ -193,21 +193,21 @@ class TestTransformBuffer:
     def test_transform_buffer_hex(self, framework):
         """transform_buffer() converts bytes to hex format."""
         test_bytes = b"ABCD"
-        result = msf.transform_buffer(test_bytes, "hex")
+        result = assassinate.transform_buffer(test_bytes, "hex")
 
         assert result == "\\x41\\x42\\x43\\x44"
 
     def test_transform_buffer_base64(self, framework):
         """transform_buffer() converts bytes to base64."""
         test_bytes = b"ABCD"
-        result = msf.transform_buffer(test_bytes, "base64")
+        result = assassinate.transform_buffer(test_bytes, "base64")
 
         assert result == "QUJDRA=="
 
     def test_transform_buffer_c(self, framework):
         """transform_buffer() converts bytes to C array."""
         test_bytes = b"ABC"
-        result = msf.transform_buffer(test_bytes, "c", var_name="test")
+        result = assassinate.transform_buffer(test_bytes, "c", var_name="test")
 
         assert "unsigned char test[]" in result
         assert "\\x41" in result
@@ -215,7 +215,7 @@ class TestTransformBuffer:
     def test_transform_buffer_num(self, framework):
         """transform_buffer() converts bytes to numeric format."""
         test_bytes = b"\x00\x01\x02"
-        result = msf.transform_buffer(test_bytes, "num")
+        result = assassinate.transform_buffer(test_bytes, "num")
 
         assert "0x00" in result
         assert "0x01" in result
@@ -223,5 +223,5 @@ class TestTransformBuffer:
 
     def test_transform_buffer_invalid_format(self, framework):
         """transform_buffer() raises error for invalid format."""
-        with pytest.raises(msf.AssassinateError):
-            msf.transform_buffer(b"test", "invalid_format")
+        with pytest.raises(assassinate.AssassinateError):
+            assassinate.transform_buffer(b"test", "invalid_format")

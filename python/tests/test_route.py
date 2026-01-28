@@ -6,15 +6,15 @@ Integration tests require INTEGRATION_TESTS=true and a target container.
 
 import os
 import pytest
-import msf
+import assassinate
 
 
 @pytest.fixture(scope="module")
 def framework():
     """Initialize MSF framework once for the test module."""
     msf_root = os.environ.get("MSF_ROOT", os.path.expanduser("~/Projects/metasploit-framework"))
-    if not msf.is_initialized():
-        msf.init_msf(msf_root)
+    if not assassinate.is_initialized():
+        assassinate.init_msf(msf_root)
     yield
 
 
@@ -24,28 +24,28 @@ class TestRouteBasic:
     def test_route_list_empty(self, framework):
         """route_list() returns empty list when no routes exist."""
         # Flush first to ensure clean state
-        msf.route_flush()
-        routes = msf.route_list()
+        assassinate.route_flush()
+        routes = assassinate.route_list()
         assert isinstance(routes, list)
         assert len(routes) == 0
 
     def test_route_flush(self, framework):
         """route_flush() works even when routing table is empty."""
         # Should not raise
-        msf.route_flush()
-        routes = msf.route_list()
+        assassinate.route_flush()
+        routes = assassinate.route_list()
         assert len(routes) == 0
 
     def test_route_exists_nonexistent(self, framework):
         """route_exists() returns False for non-existent route."""
-        msf.route_flush()
-        exists = msf.route_exists("10.10.10.0", "255.255.255.0")
+        assassinate.route_flush()
+        exists = assassinate.route_exists("10.10.10.0", "255.255.255.0")
         assert exists is False
 
     def test_route_get_no_route(self, framework):
         """route_get() returns None when no route exists for address."""
-        msf.route_flush()
-        result = msf.route_get("10.10.10.50")
+        assassinate.route_flush()
+        result = assassinate.route_get("10.10.10.50")
         assert result is None
 
 
@@ -62,10 +62,10 @@ class TestRouteIntegration:
         target_host = os.environ.get("TARGET_HOST", "172.19.0.2")
 
         # Get sessions before exploit
-        sessions_before = set(msf.list_sessions())
+        sessions_before = set(assassinate.list_sessions())
 
         # Run exploit
-        exploit = msf.create_module("exploit/linux/samba/is_known_pipename")
+        exploit = assassinate.create_module("exploit/linux/samba/is_known_pipename")
         exploit.options.RHOSTS = target_host
         exploit.options.SMB_SHARE_NAME = "myshare"
         exploit.exploit("cmd/unix/interact", timeout=30)
@@ -75,7 +75,7 @@ class TestRouteIntegration:
         session_id = None
         for _ in range(30):
             time.sleep(1)
-            sessions_now = set(msf.list_sessions())
+            sessions_now = set(assassinate.list_sessions())
             new_sessions = sessions_now - sessions_before
             if new_sessions:
                 session_id = new_sessions.pop()
@@ -87,23 +87,23 @@ class TestRouteIntegration:
         yield session_id
 
         # Cleanup
-        msf.kill_session(session_id)
+        assassinate.kill_session(session_id)
 
     def test_route_add_remove(self, framework, session):
         """Add and remove a route through a session."""
         # Ensure clean state
-        msf.route_flush()
+        assassinate.route_flush()
 
         # Add route
-        added = msf.route_add("10.10.10.0", "255.255.255.0", session)
+        added = assassinate.route_add("10.10.10.0", "255.255.255.0", session)
         assert added is True
 
         # Verify it exists
-        exists = msf.route_exists("10.10.10.0", "255.255.255.0")
+        exists = assassinate.route_exists("10.10.10.0", "255.255.255.0")
         assert exists is True
 
         # List routes
-        routes = msf.route_list()
+        routes = assassinate.route_list()
         assert len(routes) == 1
         route = routes[0]
         assert route["subnet"] == "10.10.10.0"
@@ -111,43 +111,43 @@ class TestRouteIntegration:
         assert route["session_id"] == session
 
         # Remove route
-        removed = msf.route_remove("10.10.10.0", "255.255.255.0", session)
+        removed = assassinate.route_remove("10.10.10.0", "255.255.255.0", session)
         assert removed is True
 
         # Verify removed
-        exists = msf.route_exists("10.10.10.0", "255.255.255.0")
+        exists = assassinate.route_exists("10.10.10.0", "255.255.255.0")
         assert exists is False
 
     def test_route_get_with_route(self, framework, session):
         """route_get() returns session ID for routed address."""
-        msf.route_flush()
+        assassinate.route_flush()
 
         # Add route
-        msf.route_add("10.10.10.0", "255.255.255.0", session)
+        assassinate.route_add("10.10.10.0", "255.255.255.0", session)
 
         # Check best route
-        best = msf.route_get("10.10.10.50")
+        best = assassinate.route_get("10.10.10.50")
         assert best == session
 
         # Cleanup
-        msf.route_flush()
+        assassinate.route_flush()
 
     def test_multiple_routes(self, framework, session):
         """Can add multiple routes through same session."""
-        msf.route_flush()
+        assassinate.route_flush()
 
         # Add two routes
-        msf.route_add("10.10.10.0", "255.255.255.0", session)
-        msf.route_add("192.168.100.0", "255.255.255.0", session)
+        assassinate.route_add("10.10.10.0", "255.255.255.0", session)
+        assassinate.route_add("192.168.100.0", "255.255.255.0", session)
 
-        routes = msf.route_list()
+        routes = assassinate.route_list()
         assert len(routes) == 2
 
         # Verify both work
-        best1 = msf.route_get("10.10.10.50")
-        best2 = msf.route_get("192.168.100.50")
+        best1 = assassinate.route_get("10.10.10.50")
+        best2 = assassinate.route_get("192.168.100.50")
         assert best1 == session
         assert best2 == session
 
         # Cleanup
-        msf.route_flush()
+        assassinate.route_flush()

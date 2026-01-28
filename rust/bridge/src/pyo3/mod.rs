@@ -17,7 +17,7 @@ pub mod pymodule;
 pub mod singleton;
 
 // Re-export the Python module initializer
-pub use pymodule::msf;
+pub use pymodule::_rust;
 
 // Re-export the custom exception for use in other modules
 pub use pymodule::AssassinateError;

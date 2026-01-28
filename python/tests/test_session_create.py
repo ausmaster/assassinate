@@ -5,15 +5,15 @@ Requires INTEGRATION_TESTS=true and test-shell container running.
 
 import os
 import pytest
-import msf
+import assassinate
 
 
 @pytest.fixture(scope="module")
 def framework():
     """Initialize MSF framework once for the test module."""
     msf_root = os.environ.get("MSF_ROOT", os.path.expanduser("~/Projects/metasploit-framework"))
-    if not msf.is_initialized():
-        msf.init_msf(msf_root)
+    if not assassinate.is_initialized():
+        assassinate.init_msf(msf_root)
     yield
 
 
@@ -33,13 +33,13 @@ class TestCreateShellSession:
         timeout = 10
 
         # Create session
-        session_id = msf.create_shell_session(host, port, timeout)
+        session_id = assassinate.create_shell_session(host, port, timeout)
         assert isinstance(session_id, int)
         assert session_id > 0
 
         try:
             # Get session object
-            session = msf.get_session(session_id)
+            session = assassinate.get_session(session_id)
             assert session is not None
 
             # Run a command
@@ -50,7 +50,7 @@ class TestCreateShellSession:
             assert session.session_type == "shell"
         finally:
             # Cleanup
-            msf.kill_session(session_id)
+            assassinate.kill_session(session_id)
 
     def test_creates_multiple_sessions(self, framework):
         """Can create multiple sessions from same bind shell."""
@@ -59,13 +59,13 @@ class TestCreateShellSession:
         timeout = 10
 
         # Create first session
-        session_id1 = msf.create_shell_session(host, port, timeout)
+        session_id1 = assassinate.create_shell_session(host, port, timeout)
 
         try:
             # Verify first session works
-            session1 = msf.get_session(session_id1)
+            session1 = assassinate.get_session(session_id1)
             assert session1 is not None
             output1 = session1.run_cmd("id")
             assert "uid=" in output1
         finally:
-            msf.kill_session(session_id1)
+            assassinate.kill_session(session_id1)

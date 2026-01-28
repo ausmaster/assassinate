@@ -97,4 +97,4 @@ pub mod pyo3;
 
 // Re-export the pymodule initializer for maturin
 #[cfg(feature = "pyo3")]
-pub use pyo3::msf;
+pub use pyo3::_rust;

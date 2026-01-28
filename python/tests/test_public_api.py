@@ -5,7 +5,7 @@ Verifies that all expected exports are available and that basic API operations w
 
 import pytest
 
-import msf
+import assassinate
 
 
 class TestSearchAPI:
@@ -13,17 +13,17 @@ class TestSearchAPI:
 
     def test_search_finds_modules(self, msf_init):
         """Test that search finds matching modules."""
-        results = msf.search("samba")
+        results = assassinate.search("samba")
         assert len(results) > 0, "Should find samba modules"
 
     def test_search_cve(self, msf_init):
         """Test searching by CVE number."""
-        results = msf.search("CVE-2017-7494")
+        results = assassinate.search("CVE-2017-7494")
         assert len(results) > 0, "Should find CVE modules"
 
     def test_search_empty_for_nonsense(self, msf_init):
         """Test that nonsense query returns empty list."""
-        results = msf.search("xyznonexistent123")
+        results = assassinate.search("xyznonexistent123")
         assert len(results) == 0, "Nonsense query should return empty"
 
 
@@ -32,17 +32,17 @@ class TestSessionAPI:
 
     def test_list_sessions_returns_list(self, msf_init):
         """Test that list_sessions returns a list."""
-        sessions = msf.list_sessions()
+        sessions = assassinate.list_sessions()
         assert isinstance(sessions, list)
 
     def test_get_session_invalid_returns_none(self, msf_init):
         """Test that get_session with invalid ID returns None."""
-        session = msf.get_session(99999)
+        session = assassinate.get_session(99999)
         assert session is None
 
     def test_kill_session_invalid_returns_false(self, msf_init):
         """Test that kill_session with invalid ID returns False."""
-        result = msf.kill_session(99999)
+        result = assassinate.kill_session(99999)
         assert result is False
 
 
@@ -65,7 +65,7 @@ class TestSessionClass:
             "kill",
         ]
         for attr in expected_attrs:
-            assert hasattr(msf.Session, attr), f"Session should have {attr}"
+            assert hasattr(assassinate.Session, attr), f"Session should have {attr}"
 
 
 class TestModuleAPI:
@@ -73,12 +73,12 @@ class TestModuleAPI:
 
     def test_create_module_returns_module(self, msf_init):
         """Test that create_module returns a module object."""
-        module = msf.create_module("exploit/linux/samba/is_known_pipename")
-        assert isinstance(module, msf.ExploitModule)
+        module = assassinate.create_module("exploit/linux/samba/is_known_pipename")
+        assert isinstance(module, assassinate.ExploitModule)
 
     def test_module_options_settable(self, msf_init):
         """Test that module options can be set."""
-        module = msf.create_module("exploit/linux/samba/is_known_pipename")
+        module = assassinate.create_module("exploit/linux/samba/is_known_pipename")
         module.options.RHOSTS = "192.168.1.100"
         assert module.options.RHOSTS == "192.168.1.100"
 
@@ -86,7 +86,7 @@ class TestModuleAPI:
         """Test that exploit method has proper signature."""
         import inspect
 
-        module = msf.create_module("exploit/linux/samba/is_known_pipename")
+        module = assassinate.create_module("exploit/linux/samba/is_known_pipename")
         sig = inspect.signature(module.exploit)
         params = list(sig.parameters.keys())
         assert "payload" in params, "exploit() should have payload param"

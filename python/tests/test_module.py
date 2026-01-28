@@ -5,7 +5,7 @@ Tests module creation, metadata, options, and validation.
 
 import pytest
 
-import msf
+import assassinate
 
 
 class TestModuleCreation:
@@ -13,49 +13,49 @@ class TestModuleCreation:
 
     def test_create_exploit_module(self, msf_init):
         """Test creating an exploit module."""
-        module = msf.create_module("exploit/linux/samba/is_known_pipename")
-        assert isinstance(module, msf.ExploitModule)
+        module = assassinate.create_module("exploit/linux/samba/is_known_pipename")
+        assert isinstance(module, assassinate.ExploitModule)
         assert module.module_type == "exploit"
 
     def test_create_auxiliary_module(self, msf_init):
         """Test creating an auxiliary module."""
-        module = msf.create_module("auxiliary/scanner/smb/smb_version")
-        assert isinstance(module, msf.AuxiliaryModule)
+        module = assassinate.create_module("auxiliary/scanner/smb/smb_version")
+        assert isinstance(module, assassinate.AuxiliaryModule)
         assert module.module_type == "auxiliary"
 
     def test_create_payload_module(self, msf_init):
         """Test creating a payload module."""
-        module = msf.create_module("payload/cmd/unix/reverse_bash")
-        assert isinstance(module, msf.PayloadModule)
+        module = assassinate.create_module("payload/cmd/unix/reverse_bash")
+        assert isinstance(module, assassinate.PayloadModule)
         assert module.module_type == "payload"
 
     def test_create_post_module(self, msf_init):
         """Test creating a post module."""
-        module = msf.create_module("post/multi/gather/env")
-        assert isinstance(module, msf.PostModule)
+        module = assassinate.create_module("post/multi/gather/env")
+        assert isinstance(module, assassinate.PostModule)
         assert module.module_type == "post"
 
     def test_create_encoder_module(self, msf_init):
         """Test creating an encoder module."""
-        module = msf.create_module("encoder/x86/shikata_ga_nai")
-        assert isinstance(module, msf.EncoderModule)
+        module = assassinate.create_module("encoder/x86/shikata_ga_nai")
+        assert isinstance(module, assassinate.EncoderModule)
         assert module.module_type == "encoder"
 
     def test_create_nop_module(self, msf_init):
         """Test creating a NOP module."""
-        module = msf.create_module("nop/x86/single_byte")
-        assert isinstance(module, msf.NopModule)
+        module = assassinate.create_module("nop/x86/single_byte")
+        assert isinstance(module, assassinate.NopModule)
         assert module.module_type == "nop"
 
     def test_create_invalid_module_fails(self, msf_init):
         """Test that creating invalid module raises error."""
         with pytest.raises(Exception):
-            msf.create_module("exploit/nonexistent/fake_module")
+            assassinate.create_module("exploit/nonexistent/fake_module")
 
     def test_multiple_instances_independent(self, msf_init):
         """Test that multiple instances are independent."""
-        module1 = msf.create_module("exploit/linux/samba/is_known_pipename")
-        module2 = msf.create_module("exploit/linux/samba/is_known_pipename")
+        module1 = assassinate.create_module("exploit/linux/samba/is_known_pipename")
+        module2 = assassinate.create_module("exploit/linux/samba/is_known_pipename")
 
         # Set different options on each
         module1.options.RHOSTS = "10.0.0.1"
